@@ -28,4 +28,22 @@ if OUT has-session -t flok 2>/dev/null; then ok "outer kept with reattach_on_det
 expect "client re-attached after detach" '^1$' "$(IN list-clients | wc -l | tr -d ' ')"
 "$BIN" down; sleep 0.5
 if OUT has-session -t flok 2>/dev/null; then bad "down left the outer running"; else ok "down closes the outer"; fi
+
+# `flok up` run interactively (in a pane of a third isolated server, which provides the tty)
+# must exit 0 after a deliberate detach and after `flok down`, so launcher fallbacks stay quiet.
+TTY() { tmux -L e2e-tty "$@"; }
+TTY kill-server 2>/dev/null || true
+sed -i '' '/reattach_on_detach = true/d' "$T/config.toml"   # back to the default: detach tears the outer down
+TTY -f /dev/null new-session -d -s t -x 120 -y 40 "env -u TMUX -u TMUX_PANE FLOK_CONFIG=$FLOK_CONFIG FLOK_STATE=$FLOK_STATE $BIN up; echo UP_EXIT=\$?; sleep 20"
+for _ in $(seq 1 30); do OUT has-session -t flok 2>/dev/null && break; sleep 0.2; done
+sleep 0.8
+IN detach-client -t "$(IN list-clients -F '#{client_tty}' | head -1)"; sleep 1.5
+expect "flok up exits 0 after a deliberate detach" 'UP_EXIT=0' "$(TTY capture-pane -p -t t)"
+TTY kill-server
+TTY -f /dev/null new-session -d -s t -x 120 -y 40 "env -u TMUX -u TMUX_PANE FLOK_CONFIG=$FLOK_CONFIG FLOK_STATE=$FLOK_STATE $BIN up; echo UP_EXIT=\$?; sleep 20"
+for _ in $(seq 1 30); do OUT has-session -t flok 2>/dev/null && break; sleep 0.2; done
+sleep 0.8
+"$BIN" down; sleep 1.5
+expect "flok up exits 0 after flok down" 'UP_EXIT=0' "$(TTY capture-pane -p -t t)"
+TTY kill-server 2>/dev/null || true
 finish

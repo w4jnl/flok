@@ -216,6 +216,10 @@ Layout: `internal/tmux` (exec client + one-call snapshot), `internal/agent` (mod
 - macOS first: sounds use `afplay`. Everything else is plain tmux and works on Linux; a remote
   mode (sidebar on a Linux box, sound on the Mac) is left for later.
 - The outer server is disposable: killing it never touches your sessions.
+- `flok up` exits 0 when you detach (`prefix d`) or run `flok down`, so a launcher can chain
+  `flok up || tmux attach || tmux new-session` and the fallback only runs when flok itself cannot
+  start. Do not start tmux first: `flok up` starts the inner server when needed and refuses to run
+  inside tmux.
 - Detection manifests follow the agents' UIs; when Claude Code or Copilot change their screens,
   update `internal/rules/manifests/` (or drop herdr's newer file into the override dir).
 - Screen rules evaluate the visible pane only; dismissed prompts in scrollback are ignored.

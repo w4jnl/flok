@@ -13,7 +13,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"text/template"
 	"time"
 
@@ -133,7 +132,7 @@ func Up(cfg config.Config, bin string, detach bool) error {
 	if detach {
 		return nil
 	}
-	return execAttach(outer, sess)
+	return runAttach(outer, sess)
 }
 
 func createOuter(cfg config.Config, bin, confPath string, outer *tmux.Local, sess string) error {
@@ -176,13 +175,22 @@ func ensureSidebar(cfg config.Config, bin string, outer *tmux.Local) error {
 	return err
 }
 
-func execAttach(outer *tmux.Local, sess string) error {
+// runAttach attaches this terminal to the outer session and waits. A deliberate teardown
+// (prefix d, `flok down`) kills the outer server, which makes the tmux client exit 1 with
+// "[server exited]"; that is a normal end for `flok up`, so it returns nil then and launcher
+// chains such as `flok up || tmux attach` do not fall through into plain tmux.
+func runAttach(outer *tmux.Local, sess string) error {
 	path, err := exec.LookPath("tmux")
 	if err != nil {
 		return err
 	}
-	argv := append([]string{"tmux"}, outer.Argv("attach-session", "-t", sess)...)
-	return syscall.Exec(path, argv, os.Environ())
+	cmd := exec.Command(path, outer.Argv("attach-session", "-t", sess)...)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	runErr := cmd.Run()
+	if _, err := outer.Run("has-session", "-t", sess); err != nil {
+		return nil // the outer is gone: detach or down, not a failure
+	}
+	return runErr
 }
 
 // sessionIDs lists the inner server's session ids ("" -> server gone).
