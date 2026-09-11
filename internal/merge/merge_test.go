@@ -1,0 +1,186 @@
+package merge
+
+import (
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/w4jnl/flok/internal/agent"
+	"github.com/w4jnl/flok/internal/rules"
+	"github.com/w4jnl/flok/internal/tmux"
+)
+
+func snap(title string, focusedPane string) tmux.Snapshot {
+	return tmux.Snapshot{
+		Sessions: []tmux.Session{{ID: "$1", Name: "Claude", Path: "/p"}, {ID: "$2", Name: "Hugo", Path: "/h"}},
+		Panes: []tmux.Pane{
+			{ID: "%1", SessionID: "$1", SessionName: "Claude", WindowID: "@1", WindowIndex: 1, PaneIndex: 1, WindowActive: true, Active: true, Command: "claude", Path: "/p/x", Title: title},
+			{ID: "%2", SessionID: "$1", SessionName: "Claude", WindowID: "@2", WindowIndex: 2, PaneIndex: 1, WindowActive: false, Active: true, Command: "zsh", Title: "✳ stale"},
+			{ID: "%3", SessionID: "$2", SessionName: "Hugo", WindowID: "@3", WindowIndex: 1, PaneIndex: 1, WindowActive: true, Active: true, Command: "zsh", Title: "host"},
+		},
+		Clients: []tmux.ClientInfo{{TTY: "/dev/ttys9", SessionID: focusedPane, SessionName: "x", Activity: 1}},
+	}
+}
+
+func TestSessionOrder(t *testing.T) {
+	snapshot := tmux.Snapshot{Sessions: []tmux.Session{{ID: "$2", Name: "Alpha", Activity: 5}, {ID: "$0", Name: "Zulu", Activity: 9}, {ID: "$1", Name: "Mid", Activity: 1}}}
+	want := map[string][]string{"index": {"Zulu", "Mid", "Alpha"}, "name": {"Alpha", "Mid", "Zulu"}, "activity": {"Zulu", "Alpha", "Mid"}, "": {"Zulu", "Mid", "Alpha"}}
+	for order, names := range want {
+		s := NewTracker().Build(Inputs{Tmux: snapshot, SessionOrder: order, Now: time.Now()})
+		var got []string
+		for _, sp := range s.Spaces {
+			got = append(got, sp.SessionName)
+		}
+		if strings.Join(got, ",") != strings.Join(names, ",") {
+			t.Errorf("order %q: got %v want %v", order, got, names)
+		}
+	}
+}
+
+func TestTitleTransitionsAndSeen(t *testing.T) {
+	tr := NewTracker()
+	ads := agent.Enabled([]string{"claude"})
+	now := time.Now()
+	// user looks at Hugo ($2); claude works in Claude ($1)
+	s := tr.Build(Inputs{Tmux: snap("◑ job", "$2"), ClientTTY: "/dev/ttys9", Adapters: ads, Now: now})
+	if len(s.Agents) != 1 || s.Agents[0].State != agent.Working || s.Agents[0].Name != "x" || s.Agents[0].Title != "job" {
+		t.Fatalf("working expected: %+v", s.Agents)
+	}
+	if len(s.Spaces) != 2 || s.Spaces[0].Rollup != agent.Working || s.Spaces[1].Current != true || s.Spaces[1].Rollup != "" {
+		t.Fatalf("spaces: %+v", s.Spaces)
+	}
+	// turn ends while unfocused -> done, unseen 1
+	s = tr.Build(Inputs{Tmux: snap("✳ job", "$2"), ClientTTY: "/dev/ttys9", Adapters: ads, Now: now.Add(time.Second)})
+	if s.Agents[0].State != agent.Done || s.Agents[0].Unseen != 1 || s.Unseen != 1 {
+		t.Fatalf("done expected: %+v", s.Agents[0])
+	}
+	// user switches to the Claude session -> seen -> idle
+	s = tr.Build(Inputs{Tmux: snap("✳ job", "$1"), ClientTTY: "/dev/ttys9", Adapters: ads, Now: now.Add(2 * time.Second)})
+	if s.Agents[0].State != agent.Idle || s.Agents[0].Unseen != 0 || !s.Spaces[0].Current {
+		t.Fatalf("idle expected: %+v", s.Agents[0])
+	}
+	// stale title on a zsh pane never becomes an agent
+	for _, a := range s.Agents {
+		if a.PaneID == "%2" {
+			t.Fatal("stale zsh pane listed as agent")
+		}
+	}
+}
+
+func TestFocusFallback(t *testing.T) {
+	f, warn := ResolveFocus(snap("✳ j", "$1"), "/dev/nope")
+	if !f.Found || f.SessionID != "$1" || warn == "" || f.PaneID != "%1" {
+		t.Fatalf("fallback focus: %+v %q", f, warn)
+	}
+	f, warn = ResolveFocus(tmux.Snapshot{}, "/dev/nope")
+	if f.Found || warn == "" {
+		t.Fatalf("no clients: %+v %q", f, warn)
+	}
+}
+
+func TestSortAgents(t *testing.T) {
+	now := time.Now()
+	as := []agent.Agent{
+		{PaneID: "a", State: agent.Idle, SessionName: "b"},
+		{PaneID: "b", State: agent.Done, StateSince: now.Add(-time.Minute)},
+		{PaneID: "c", State: agent.Blocked, StateSince: now.Add(-time.Hour)},
+		{PaneID: "d", State: agent.Blocked, StateSince: now},
+		{PaneID: "e", State: agent.Working},
+		{PaneID: "f", State: agent.Idle, SessionName: "a"},
+	}
+	SortAgents(as)
+	got := ""
+	for _, a := range as {
+		got += a.PaneID
+	}
+	if got != "dcbefa" {
+		t.Fatalf("order %q", got)
+	}
+}
+
+func TestHookAuthorityAndSeen(t *testing.T) {
+	tr := NewTracker()
+	ads := agent.Enabled([]string{"claude"})
+	now := time.Now()
+	hook := map[string]agent.Agent{"%1": {PaneID: "%1", Kind: "claude", State: agent.Done, StateSince: now.Add(-time.Minute), HasHooks: true,
+		Notifications: []agent.Notification{{Kind: "done", At: now.Add(-time.Minute)}}}}
+	// unfocused: done with 1 unseen although the title says idle
+	s := tr.Build(Inputs{Tmux: snap("✳ job", "$2"), ClientTTY: "/dev/ttys9", Adapters: ads, Hook: hook, Now: now})
+	if a := s.Agents[0]; a.State != agent.Done || a.Unseen != 1 || a.Source != "hook" {
+		t.Fatalf("hook done: %+v", a)
+	}
+	// user looks at it -> newly seen, idle
+	s = tr.Build(Inputs{Tmux: snap("✳ job", "$1"), ClientTTY: "/dev/ttys9", Adapters: ads, Hook: hook, Now: now})
+	if a := s.Agents[0]; a.State != agent.Idle || a.Unseen != 0 || len(s.NewlySeen) != 1 || s.NewlySeen[0] != "%1" {
+		t.Fatalf("seen: %+v newly=%v", a, s.NewlySeen)
+	}
+	// persisted seen mark keeps it idle when unfocused again
+	s = tr.Build(Inputs{Tmux: snap("✳ job", "$2"), ClientTTY: "/dev/ttys9", Adapters: ads, Hook: hook, Seen: map[string]time.Time{"%1": now}, Now: now})
+	if a := s.Agents[0]; a.State != agent.Idle || a.Unseen != 0 {
+		t.Fatalf("after seen mark: %+v", a)
+	}
+	// hook says blocked: an idle title (what a permission prompt shows) must never clear it
+	hook["%1"] = agent.Agent{PaneID: "%1", Kind: "claude", State: agent.Blocked, Reason: "permission:Bash", HasHooks: true, StateSince: now}
+	for i := 0; i < 8; i++ {
+		s = tr.Build(Inputs{Tmux: snap("✳ job", "$2"), ClientTTY: "/dev/ttys9", Adapters: ads, Hook: hook, Now: now})
+	}
+	if a := s.Agents[0]; a.State != agent.Blocked {
+		t.Fatalf("blocked must stick: %+v", a)
+	}
+	// hook says working but the title has been idle for 3 polls -> idle (turn interrupted with Esc)
+	hook["%1"] = agent.Agent{PaneID: "%1", Kind: "claude", State: agent.Working, CurrentTool: "Bash", HasHooks: true, StateSince: now}
+	for i := 0; i < 3; i++ {
+		s = tr.Build(Inputs{Tmux: snap("✳ job", "$2"), ClientTTY: "/dev/ttys9", Adapters: ads, Hook: hook, Now: now})
+	}
+	if a := s.Agents[0]; a.State != agent.Idle || a.CurrentTool != "" {
+		t.Fatalf("working hysteresis: %+v", a)
+	}
+	// hook says idle but the spinner shows for 2 polls -> working
+	hook["%1"] = agent.Agent{PaneID: "%1", Kind: "claude", State: agent.Idle, HasHooks: true, StateSince: now}
+	s = tr.Build(Inputs{Tmux: snap("◑ job", "$2"), ClientTTY: "/dev/ttys9", Adapters: ads, Hook: hook, Now: now})
+	s = tr.Build(Inputs{Tmux: snap("◑ job", "$2"), ClientTTY: "/dev/ttys9", Adapters: ads, Hook: hook, Now: now})
+	if a := s.Agents[0]; a.State != agent.Working {
+		t.Fatalf("spinner override: %+v", a)
+	}
+}
+
+func TestScreenRules(t *testing.T) {
+	tr := NewTracker()
+	ads := agent.Enabled([]string{"claude"})
+	now := time.Now()
+	scr := map[string]rules.Result{"%1": {Matched: true, State: agent.Blocked, RuleID: "x"}}
+	// no hooks, plain title: the screen rule decides
+	s := tr.Build(Inputs{Tmux: snap("plain", "$2"), ClientTTY: "/dev/ttys9", Adapters: ads, Screen: scr, Now: now})
+	if a := s.Agents[0]; a.State != agent.Blocked || a.Source != "screen" || a.Reason != "prompt" {
+		t.Fatalf("screen blocked: %+v", a)
+	}
+	// hold keeps the last raw state
+	scr["%1"] = rules.Result{Matched: true, Hold: true, State: agent.Unknown}
+	s = tr.Build(Inputs{Tmux: snap("plain", "$2"), ClientTTY: "/dev/ttys9", Adapters: ads, Screen: scr, Now: now})
+	if a := s.Agents[0]; a.State != agent.Blocked {
+		t.Fatalf("hold: %+v", a)
+	}
+	// evaluated, nothing matched, no title signal: idle fallback; working -> idle transition = done
+	scr["%1"] = rules.Result{Matched: true, State: agent.Working}
+	tr.Build(Inputs{Tmux: snap("plain", "$2"), ClientTTY: "/dev/ttys9", Adapters: ads, Screen: scr, Now: now})
+	scr["%1"] = rules.Result{}
+	s = tr.Build(Inputs{Tmux: snap("plain", "$2"), ClientTTY: "/dev/ttys9", Adapters: ads, Screen: scr, Now: now})
+	if a := s.Agents[0]; a.State != agent.Done || a.Unseen != 1 {
+		t.Fatalf("idle fallback + done: %+v", a)
+	}
+	// hooks say blocked, screen shows the idle prompt box twice -> idle
+	hook := map[string]agent.Agent{"%1": {PaneID: "%1", Kind: "claude", State: agent.Blocked, Reason: "permission:Bash", HasHooks: true, StateSince: now}}
+	scr["%1"] = rules.Result{Matched: true, State: agent.Idle}
+	tr.Build(Inputs{Tmux: snap("✳ j", "$2"), ClientTTY: "/dev/ttys9", Adapters: ads, Hook: hook, Screen: scr, Now: now})
+	s = tr.Build(Inputs{Tmux: snap("✳ j", "$2"), ClientTTY: "/dev/ttys9", Adapters: ads, Hook: hook, Screen: scr, Now: now})
+	if a := s.Agents[0]; a.State != agent.Idle {
+		t.Fatalf("screen clears stale block: %+v", a)
+	}
+	// hooks say working, screen shows a blocker -> blocked
+	hook["%1"] = agent.Agent{PaneID: "%1", Kind: "claude", State: agent.Working, HasHooks: true, StateSince: now}
+	scr["%1"] = rules.Result{Matched: true, State: agent.Blocked}
+	s = tr.Build(Inputs{Tmux: snap("◑ j", "$2"), ClientTTY: "/dev/ttys9", Adapters: ads, Hook: hook, Screen: scr, Now: now})
+	if a := s.Agents[0]; a.State != agent.Blocked || a.Reason != "prompt" {
+		t.Fatalf("screen blocker over hook working: %+v", a)
+	}
+}

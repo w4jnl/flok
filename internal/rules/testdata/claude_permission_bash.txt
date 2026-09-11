@@ -1,0 +1,15 @@
+⏺ Bash(rm -rf /tmp/x)
+  ⎿  Running…
+
+────────────────────────────────────────────────────────────────────
+Bash command
+
+  rm -rf /tmp/x
+  Remove the scratch directory
+
+Do you want to proceed?
+❯ 1. Yes
+  2. Yes, and don't ask again for: rm -rf /tmp/x
+  3. No
+
+Esc to cancel · Tab to amend · ctrl+e to explain

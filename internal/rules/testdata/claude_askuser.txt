@@ -1,0 +1,11 @@
+⏺ I need one decision before continuing.
+
+╭─────────────────────────────────────────────────────────────────╮
+│ Which database should the service use?                         │
+│                                                                 │
+│ ❯ 1. Postgres (Recommended)                                     │
+│   2. SQLite                                                     │
+│   3. Other                                                      │
+│                                                                 │
+│ Enter to select · Tab/arrow keys to navigate · Esc to cancel    │
+╰─────────────────────────────────────────────────────────────────╯

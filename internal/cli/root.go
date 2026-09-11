@@ -1,0 +1,112 @@
+// Package cli dispatches flok subcommands.
+package cli
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"github.com/w4jnl/flok/internal/config"
+	"github.com/w4jnl/flok/internal/launcher"
+)
+
+const Version = "0.1.0"
+
+const usageText = `flok — herdr-like agent sidebar for tmux
+
+usage: flok <command>
+
+  up          start (or re-attach) the sidebar + your tmux server in a nested outer session
+              (--detach: create it without attaching)
+  down        stop the outer session (your tmux server keeps running)
+  sidebar     run the sidebar UI in the current pane (used by up)
+  status      print sessions and agents once (--json for machine output)
+  jump        switch the inner client to the newest agent needing input (else newest done)
+  next, prev  cycle through agent panes in sidebar order        [--client <tty>]
+  toggle      sidebar full width <-> rail;  hide: zoom the work area (sidebar takes no space)
+  reload      restart the sidebar pane after editing config.toml (work pane untouched)
+  focus       move the outer cursor into the sidebar pane
+  keys        keybinds help (tmux popup); --print [--filter q] dumps it as text
+  explain     show which screen-detection rules match agent panes (debugging)
+  doctor      check tmux, hooks, sounds, manifests and the running outer session
+  install     wire Claude Code / Copilot CLI hooks and print the tmux.conf snippet
+              (--claude, --copilot, --tmux; default: all)
+  hook        hook receiver used by the agents (stdin JSON; never call by hand)
+  completion  print a bash or zsh completion script (flok completion bash|zsh)
+  version     print the version
+`
+
+func usage() { fmt.Fprint(os.Stderr, usageText) }
+
+// Main runs the CLI and returns the exit code.
+func Main(args []string) int {
+	if len(args) == 0 {
+		usage()
+		return 2
+	}
+	cfg, err := config.Load("")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "flok: config:", err)
+		return 1
+	}
+	switch args[0] {
+	case "up":
+		detach := len(args) > 1 && (args[1] == "--detach" || args[1] == "-d")
+		return report(launcher.Up(cfg, binPath(), detach))
+	case "down":
+		return report(launcher.Down(cfg))
+	case "sidebar":
+		return runSidebar(cfg)
+	case "status":
+		return runStatus(cfg, args[1:])
+	case "hook":
+		return runHook(cfg, args[1:])
+	case "keys":
+		return runKeys(cfg, args[1:])
+	case "explain":
+		return runExplain(cfg, args[1:])
+	case "doctor":
+		return runDoctor(cfg)
+	case "jump", "next", "prev":
+		return runNav(cfg, args[0], args[1:])
+	case "toggle", "hide", "focus", "reload":
+		return runLayout(cfg, args[0], args[1:])
+	case "install":
+		return runInstall(cfg, args[1:])
+	case "_attach-loop":
+		return report(launcher.AttachLoop(cfg))
+	case "_focus":
+		return report(launcher.SetTerminalFocus(len(args) > 1 && args[1] == "1"))
+	case "completion":
+		return runCompletion(args[1:])
+	case "version", "--version", "-V":
+		fmt.Println("flok", Version)
+		return 0
+	case "help", "-h", "--help":
+		usage()
+		return 0
+	}
+	fmt.Fprintf(os.Stderr, "flok: unknown command %q\n\n", args[0])
+	usage()
+	return 2
+}
+
+func report(err error) int {
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "flok:", err)
+		return 1
+	}
+	return 0
+}
+
+// binPath is the absolute path of this executable, used in tmux commands and hook configs.
+func binPath() string {
+	p, err := os.Executable()
+	if err != nil {
+		return "flok"
+	}
+	if r, err := filepath.EvalSymlinks(p); err == nil {
+		p = r
+	}
+	return p
+}

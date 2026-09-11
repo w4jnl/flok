@@ -1,0 +1,7 @@
+Copilot wants to run: git push origin main
+
+  ❯ Yes
+    No
+    Always allow
+
+Enter to confirm · Esc to cancel
