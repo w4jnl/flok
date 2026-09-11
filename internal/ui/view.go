@@ -350,7 +350,17 @@ func (m Model) viewRail() string {
 	t, w, lay := m.theme, m.width, m.layout()
 	plain := lipgloss.NewStyle()
 	dim := lipgloss.NewStyle().Foreground(t.Comment)
+	cursor := lipgloss.NewStyle().Foreground(t.Pink).Bold(true)
 	lines := make([]string, 0, m.height)
+	// marker shows the keyboard cursor of the active panel: "›" on the selected row.
+	marker := func(sel bool, base lipgloss.Style) string {
+		if sel {
+			return cursor.Background(base.GetBackground()).Render("›")
+		}
+		return base.Render(" ")
+	}
+	overflow := func(n int) string { return pad(dim.Render(fmt.Sprintf("+%d", n)), w, plain) }
+
 	for r := 0; r < lay.spacesRows; r++ {
 		i := m.offset[panelSpaces] + r
 		if i >= len(m.snap.Spaces) {
@@ -358,6 +368,12 @@ func (m Model) viewRail() string {
 			continue
 		}
 		s := m.snap.Spaces[i]
+		sel := m.panel == panelSpaces && m.cursor[panelSpaces] == i
+		hidden := len(m.snap.Spaces) - (m.offset[panelSpaces] + lay.spacesRows)
+		if r == lay.spacesRows-1 && hidden > 0 && !sel {
+			lines = append(lines, overflow(hidden+1))
+			continue
+		}
 		base := lipgloss.NewStyle()
 		if s.Current {
 			base = base.Background(t.CurrentLine)
@@ -366,11 +382,8 @@ func (m Model) viewRail() string {
 		if s.AgentCount > 0 {
 			col = t.StateColor(s.Rollup)
 		}
-		if r == lay.spacesRows-1 && len(m.snap.Spaces) > lay.spacesRows+m.offset[panelSpaces] {
-			lines = append(lines, pad(dim.Render(fmt.Sprintf(" +%d", len(m.snap.Spaces)-lay.spacesRows-m.offset[panelSpaces]+1)), w, plain))
-			continue
-		}
-		lines = append(lines, pad(base.Render(" ")+base.Foreground(col).Render(circled(i+1)), w, base))
+		digit := base.Foreground(col).Bold(sel).Render(circled(i + 1))
+		lines = append(lines, pad(marker(sel, base)+base.Render(" ")+digit, w, base))
 	}
 	lines = append(lines, dim.Render(strings.Repeat("─", w)))
 	for r := 0; r < lay.agentsRows; r++ {
@@ -380,8 +393,10 @@ func (m Model) viewRail() string {
 			continue
 		}
 		a := m.snap.Agents[i]
-		if r == lay.agentsRows-1 && len(m.snap.Agents) > lay.agentsRows+m.offset[panelAgents] {
-			lines = append(lines, pad(dim.Render(fmt.Sprintf(" +%d", len(m.snap.Agents)-lay.agentsRows-m.offset[panelAgents]+1)), w, plain))
+		sel := m.panel == panelAgents && m.cursor[panelAgents] == i
+		hidden := len(m.snap.Agents) - (m.offset[panelAgents] + lay.agentsRows)
+		if r == lay.agentsRows-1 && hidden > 0 && !sel {
+			lines = append(lines, overflow(hidden+1))
 			continue
 		}
 		base := lipgloss.NewStyle()
@@ -392,9 +407,9 @@ func (m Model) viewRail() string {
 		if a.Unseen > 0 {
 			mark = base.Foreground(t.Orange).Render("•")
 		}
-		// like herdr's collapsed rail: the agent index in its state colour, then the status glyph
-		col := base.Foreground(t.StateColor(a.State))
-		lines = append(lines, pad(col.Render(fmt.Sprintf("%2d ", i+1))+col.Render(t.Glyph(a.State, m.frame))+mark, w, base))
+		// like herdr's collapsed rail: cursor, the agent index in its state colour, the status glyph
+		col := base.Foreground(t.StateColor(a.State)).Bold(sel)
+		lines = append(lines, pad(marker(sel, base)+col.Render(fmt.Sprintf("%2d ", i+1))+col.Render(t.Glyph(a.State, m.frame))+mark, w, base))
 	}
 	for len(lines) < m.height {
 		lines = append(lines, strings.Repeat(" ", w))

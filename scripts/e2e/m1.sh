@@ -38,9 +38,19 @@ expect "space hotkey switched to Beta" '^Beta$' "$(IN list-clients -F '#{client_
 
 OUT resize-pane -t "$SIDEBAR" -x 6
 sleep 0.8
-snap=$(capture)
+snap=$(capture); echo "--- rail ---"; printf '%s\n' "$snap" | grep -v '^ *$' | head -5
 expect "rail circled spaces" '①' "$snap"
 expect "rail separator"      '─' "$snap"
+OUT send-keys -t "$SIDEBAR" '!'; sleep 0.6      # a space hotkey parks the cursor in the spaces panel
+expect "rail shows the cursor in the spaces panel" '^›\s*[①②]' "$(capture)"
+OUT send-keys -t "$SIDEBAR" G; sleep 0.5
+expect "rail cursor moves to the last space with G" '^›\s*②' "$(capture)"
+OUT send-keys -t "$SIDEBAR" g; sleep 0.5
+expect "rail cursor moves to the first space with g" '^›\s*①' "$(capture)"
+OUT send-keys -t "$SIDEBAR" Tab; sleep 0.5
+expect "rail cursor moves to agents with Tab" '^› *1 ' "$(capture)"
+OUT send-keys -t "$SIDEBAR" Enter; sleep 0.8
+expect "rail enter opens the agent pane" '^agent$' "$(IN display -p -t Alpha '#{window_name}')"
 
 "$BIN" down
 sleep 0.3

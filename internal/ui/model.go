@@ -460,12 +460,16 @@ func (m Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.openHelp()
 	}
 	if len(k) == 1 {
-		if k[0] >= '1' && k[0] <= '9' {
+		if k[0] >= '1' && k[0] <= '9' { // hotkeys also park the cursor so the rail shows what was picked
 			m.focused = false
+			m.panel, m.cursor[panelAgents] = panelAgents, int(k[0]-'1')
+			m.clamp()
 			return m, m.activate(panelAgents, int(k[0]-'1'), false)
 		}
 		if i := strings.IndexByte("!@#$%^&*(", k[0]); i >= 0 {
 			m.focused = false
+			m.panel, m.cursor[panelSpaces] = panelSpaces, i
+			m.clamp()
 			return m, m.activate(panelSpaces, i, false)
 		}
 	}
