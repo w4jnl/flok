@@ -11,6 +11,16 @@ import (
 )
 
 func main() {
+	// `claude agents --json` shim for the sidebar's registry poller: prints the file named by
+	// FLOK_E2E_REGISTRY (or an empty list).
+	if len(os.Args) >= 3 && os.Args[1] == "agents" && os.Args[2] == "--json" {
+		if data, err := os.ReadFile(os.Getenv("FLOK_E2E_REGISTRY")); err == nil {
+			fmt.Print(string(data))
+		} else {
+			fmt.Print("[]")
+		}
+		return
+	}
 	if len(os.Args) < 2 {
 		for {
 			time.Sleep(time.Hour)

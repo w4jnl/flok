@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/w4jnl/flok/internal/agent"
+	"github.com/w4jnl/flok/internal/claudereg"
 	"github.com/w4jnl/flok/internal/rules"
 	"github.com/w4jnl/flok/internal/tmux"
 )
@@ -127,13 +128,26 @@ func TestHookAuthorityAndSeen(t *testing.T) {
 	if a := s.Agents[0]; a.State != agent.Blocked {
 		t.Fatalf("blocked must stick: %+v", a)
 	}
-	// hook says working but the title has been idle for 3 polls -> idle (turn interrupted with Esc)
+	// hook says working while the title shows the idle glyph (what Claude does inside tmux): stays working
 	hook["%1"] = agent.Agent{PaneID: "%1", Kind: "claude", State: agent.Working, CurrentTool: "Bash", HasHooks: true, StateSince: now}
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 6; i++ {
 		s = tr.Build(Inputs{Tmux: snap("✳ job", "$2"), ClientTTY: "/dev/ttys9", Adapters: ads, Hook: hook, Now: now})
 	}
+	if a := s.Agents[0]; a.State != agent.Working || a.CurrentTool != "Bash" {
+		t.Fatalf("idle title must not clear a hook working state: %+v", a)
+	}
+	// Claude's registry says idle in two fresh samples (Esc interrupted the turn) -> idle
+	reg := map[string]claudereg.Entry{"/dev/ttyagent": {PID: 42, Status: "idle", Name: "job"}}
+	tm := snap("✳ job", "$2")
+	tm.Panes[0].TTY = "/dev/ttyagent"
+	s = tr.Build(Inputs{Tmux: tm, ClientTTY: "/dev/ttys9", Adapters: ads, Hook: hook, Registry: reg, RegistrySeq: 1, Now: now})
+	s = tr.Build(Inputs{Tmux: tm, ClientTTY: "/dev/ttys9", Adapters: ads, Hook: hook, Registry: reg, RegistrySeq: 1, Now: now}) // same sample: not counted twice
+	if a := s.Agents[0]; a.State != agent.Working {
+		t.Fatalf("one registry sample must not clear working: %+v", a)
+	}
+	s = tr.Build(Inputs{Tmux: tm, ClientTTY: "/dev/ttys9", Adapters: ads, Hook: hook, Registry: reg, RegistrySeq: 2, Now: now})
 	if a := s.Agents[0]; a.State != agent.Idle || a.CurrentTool != "" {
-		t.Fatalf("working hysteresis: %+v", a)
+		t.Fatalf("two idle registry samples should clear working: %+v", a)
 	}
 	// hook says idle but the spinner shows for 2 polls -> working
 	hook["%1"] = agent.Agent{PaneID: "%1", Kind: "claude", State: agent.Idle, HasHooks: true, StateSince: now}

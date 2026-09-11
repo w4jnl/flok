@@ -12,6 +12,7 @@ type Result struct {
 	Hold     bool // the winning rule has skip_state_update: keep the previous state
 	State    agent.State
 	RuleID   string
+	Region   string // region of the winning rule ("osc_title" evidence is weaker than screen text)
 	Priority int
 }
 
@@ -39,7 +40,7 @@ func (m *Manifest) Evaluate(s Screen) Result {
 			continue
 		}
 		if r.Matcher.match(c.text, c.lower, c.lines) {
-			best = Result{Matched: true, Hold: r.SkipStateUpdate, State: agent.State(r.State), RuleID: r.ID, Priority: r.Priority}
+			best = Result{Matched: true, Hold: r.SkipStateUpdate, State: agent.State(r.State), RuleID: r.ID, Region: r.Region, Priority: r.Priority}
 		}
 	}
 	if best.Matched && best.State == "" {
@@ -62,7 +63,7 @@ func (m *Manifest) Explain(s Screen) []Result {
 		}
 		text := strings.Join(lines, "\n")
 		if r.Matcher.match(text, strings.ToLower(text), lines) {
-			out = append(out, Result{Matched: true, Hold: r.SkipStateUpdate, State: agent.State(r.State), RuleID: r.ID, Priority: r.Priority})
+			out = append(out, Result{Matched: true, Hold: r.SkipStateUpdate, State: agent.State(r.State), RuleID: r.ID, Region: r.Region, Priority: r.Priority})
 		}
 	}
 	for i := 0; i < len(out); i++ {

@@ -17,12 +17,14 @@ session = "flok"
 [sidebar]
 width = 28
 poll_ms = 250
-registry_poll_ms = 60000
+registry_poll_ms = 1000
 [sounds]
 enabled = false
 ${E2E_EXTRA_CONFIG:-}
 CFG
 FAKE=$T/fakebin; mkdir -p "$FAKE"; go build -o "$FAKE/claude" "$R/scripts/e2e/fakeagent"
+export PATH="$FAKE:$PATH" FLOK_E2E_REGISTRY=$T/registry.json   # the sidebar's `claude agents --json` hits the shim
+registry() { printf '%s' "$1" > "$FLOK_E2E_REGISTRY"; }     # registry '[{"pid":N,"status":"idle",...}]'
 IN() { tmux -L e2e-inner "$@"; }
 OUT() { tmux -L e2e-outer "$@"; }
 cleanup() { OUT kill-server 2>/dev/null || true; IN kill-server 2>/dev/null || true; rm -rf "$T"; }

@@ -47,29 +47,30 @@ const (
 )
 
 type Model struct {
-	d         Deps
-	theme     Theme
-	tracker   *merge.Tracker
-	snap      merge.Snapshot
-	clientTTY string
-	width     int
-	height    int
-	panel     int
-	cursor    [2]int
-	offset    [2]int
-	frame     int
-	animating bool
-	errText   string
-	registry  map[string]claudereg.Entry
-	changes   chan struct{}
-	help      *HelpModel
-	screen    map[string]rules.Result
-	titles    map[string]string
-	progress  map[string]string // pane id -> OSC 9;4 payload for the screen rules
-	prevState map[string]agent.State
-	sounder   notify.Sounder
-	started   time.Time
-	focused   bool // the outer's active pane is the sidebar: keys arrive here
+	d           Deps
+	theme       Theme
+	tracker     *merge.Tracker
+	snap        merge.Snapshot
+	clientTTY   string
+	width       int
+	height      int
+	panel       int
+	cursor      [2]int
+	offset      [2]int
+	frame       int
+	animating   bool
+	errText     string
+	registry    map[string]claudereg.Entry
+	registrySeq int
+	changes     chan struct{}
+	help        *HelpModel
+	screen      map[string]rules.Result
+	titles      map[string]string
+	progress    map[string]string // pane id -> OSC 9;4 payload for the screen rules
+	prevState   map[string]agent.State
+	sounder     notify.Sounder
+	started     time.Time
+	focused     bool // the outer's active pane is the sidebar: keys arrive here
 	// Inner tmux prefix, so chords typed while the sidebar has focus are replayed into the work
 	// pane instead of being swallowed (prefixTmux "C-a", prefixKey "ctrl+a").
 	prefixTmux    string
@@ -238,7 +239,9 @@ func (m Model) needsScreen(a agent.Agent) bool {
 	case "always":
 		return true
 	}
-	return a.Source != "hook"
+	// hook-less agents always; hook agents while a turn or prompt is open, so an interrupted
+	// turn or a dismissed prompt (neither emits a hook) is noticed from the screen
+	return a.Source != "hook" || a.State == agent.Working || a.State == agent.Blocked
 }
 
 // pollScreen captures the relevant panes and evaluates their manifests in the background.
@@ -435,7 +438,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.titles, m.progress = titles, progress
 		m.snap = m.tracker.Build(merge.Inputs{Tmux: msg.snap, ClientTTY: m.clientTTY, Adapters: m.d.Adapters, SessionOrder: m.d.Cfg.Sidebar.SessionOrder,
 			BranchOf: m.d.BranchOf, BranchFromSessionPath: m.d.Cfg.Sidebar.BranchSource == "session_path",
-			Hook: msg.hook, Seen: msg.seen, Registry: m.registry, Screen: m.screen, TerminalUnfocused: msg.unfocused})
+			Hook: msg.hook, Seen: msg.seen, Registry: m.registry, RegistrySeq: m.registrySeq, Screen: m.screen, TerminalUnfocused: msg.unfocused})
 		if m.d.Store != nil {
 			for _, pane := range m.snap.NewlySeen {
 				_ = m.d.Store.MarkSeen(pane, time.Now())
@@ -459,6 +462,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case registryMsg:
 		if msg.entries != nil {
 			m.registry = msg.entries
+			m.registrySeq++
 		}
 		return m, nil
 	case screenTickMsg:

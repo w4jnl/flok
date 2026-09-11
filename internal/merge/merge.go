@@ -42,6 +42,7 @@ type Inputs struct {
 	Hook                  map[string]agent.Agent     // pane id -> hook-owned record
 	Seen                  map[string]time.Time       // pane id -> last seen
 	Registry              map[string]claudereg.Entry // pane tty -> registry entry
+	RegistrySeq           int                        // bumps on every fresh registry poll (for per-sample counting)
 	Screen                map[string]rules.Result    // pane id -> screen-rule result (only evaluated panes)
 	TerminalUnfocused     bool                       // the terminal window itself is not focused
 	SessionOrder          string                     // index | name | activity (see sortSpaces)
@@ -57,6 +58,8 @@ type track struct {
 	idleTitle   int         // consecutive polls with an idle title
 	spinnerPoll int         // consecutive polls with a working title
 	screenIdle  int         // consecutive polls where screen rules saw an idle prompt while hooks said blocked
+	regSeq      int         // registry sample already counted
+	regIdle     int         // consecutive fresh registry samples saying idle
 	lastRaw     agent.State // last raw (pre-done) state, kept across skip_state_update holds
 }
 
@@ -174,10 +177,21 @@ func (t *Tracker) Build(in Inputs) Snapshot {
 		focused := focus.PaneID == p.ID && !in.TerminalUnfocused
 		seenAt := in.Seen[p.ID]
 		scr, screened := in.Screen[p.ID]
-		if screened && scr.Matched && scr.State == agent.Idle {
+		// "idle prompt visible" counts only when a screen region said so; the title-based idle
+		// rule is no evidence, Claude keeps the idle glyph in the title while busy inside tmux.
+		if screened && scr.Matched && scr.State == agent.Idle && scr.Region != "osc_title" {
 			tr.screenIdle++
 		} else {
 			tr.screenIdle = 0
+		}
+		if in.RegistrySeq != tr.regSeq { // count each registry sample once
+			tr.regSeq = in.RegistrySeq
+			switch {
+			case hasReg && reg.Status == "idle":
+				tr.regIdle++
+			case hasReg:
+				tr.regIdle = 0
+			}
 		}
 
 		var a agent.Agent
@@ -192,8 +206,12 @@ func (t *Tracker) Build(in Inputs) Snapshot {
 				if tr.screenIdle >= 2 {
 					a.State, a.Reason = agent.Idle, ""
 				}
-			case agent.Working: // interrupted turn (Esc): a working Claude always shows the spinner
-				if tr.idleTitle >= 3 {
+			case agent.Working:
+				// An interrupted turn (Esc) emits no hook. The title is NOT a signal: Claude Code
+				// keeps the idle "✳" title while busy inside tmux. Trust Claude's own registry
+				// (idle in two consecutive samples) or, without a registry, the screen rules
+				// showing the idle prompt box for three polls.
+				if tr.regIdle >= 2 || (!hasReg && tr.screenIdle >= 3) {
 					a.State, a.CurrentTool, a.ToolDetail, a.TurnStarted = agent.Idle, "", "", time.Time{}
 				}
 			default: // hooks missed a prompt (resumed session): trust the spinner

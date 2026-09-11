@@ -73,12 +73,18 @@ IN select-pane -t "$AGENT" -T "◑ fake-agent"
 hook claude '{"hook_event_name":"PostToolUse","session_id":"abc","tool_name":"AskUserQuestion","tool_use_id":"q1"}'
 wait_for "[◐◓◑◒] $PROJ" 3 || true
 expect "answered question -> working" "[◐◓◑◒] $PROJ" "$(capture)"
-# Interrupted turn: hooks say working, but the title goes idle with no Stop -> idle after 3 polls, no sound, nothing unseen.
+# Inside tmux Claude keeps the idle "✳" title while busy: that must NOT clear a hook working state.
 IN select-pane -t "$AGENT" -T "✳ fake-agent"
-wait_for "○ $PROJ *$" 4 || true
+sleep 2.5
+expect "idle title does not clear hook working" '[◐◓◑◒] (flok|fake-agent)' "$(capture)"
+# Interrupted turn (Esc emits no hook): Claude's registry turns idle -> idle after two samples, no sound, nothing new unseen.
+AGENT_PID=$(IN display -p -t "$AGENT" '#{pane_pid}')
+registry "[{\"pid\":$AGENT_PID,\"status\":\"idle\",\"kind\":\"interactive\",\"name\":\"fake\",\"sessionId\":\"abc\"}]"
+wait_for '○ (flok|fake-agent)' 6 || true
 snap=$(capture)
-expect "interrupted turn -> idle" "○ $PROJ *$" "$snap"
+expect "registry idle x2 -> interrupted turn shows idle" '○ (flok|fake-agent)' "$snap"
 expect "interrupted turn leaves only the earlier block unseen" '^agents · 1' "$snap"
+registry '[]'
 
 hook claude '{"hook_event_name":"SessionEnd","session_id":"abc","reason":"prompt_input_exit"}'
 wait_for "~$PROJ" 3 || true
