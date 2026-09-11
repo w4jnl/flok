@@ -1,6 +1,7 @@
 # Shared setup for the headless end-to-end scripts. Everything runs on ISOLATED tmux servers
 # (e2e-inner / e2e-outer) with a private state dir and config; the real tmux server is untouched.
 set -euo pipefail
+unset TMUX TMUX_PANE FLOK_OUTER FLOK_RIGHT_PANE   # the suites drive their own isolated servers
 R=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 PROJ=$(basename "$R")   # agent rows show the cwd base name
 BIN=$R/bin/flok

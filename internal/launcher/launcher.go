@@ -108,7 +108,7 @@ func termSize() (int, int) {
 // Up creates the outer session (or reuses it) and, unless detach is set, replaces this
 // process with `tmux attach`.
 func Up(cfg config.Config, bin string, detach bool) error {
-	if os.Getenv("TMUX") != "" {
+	if os.Getenv("TMUX") != "" && !detach {
 		return errors.New("flok up: run it from a plain terminal, not inside tmux")
 	}
 	inner := tmux.NewLocal(cfg.Inner.Socket)
