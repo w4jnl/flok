@@ -55,10 +55,19 @@ before the name means that agent has no hook data (restart it after `install --c
 
 ## Install
 
+Homebrew (macOS and Linux), from the `w4jnl/tap` tap:
+
+```sh
+brew install w4jnl/tap/flok
+flok install                       # Claude Code hooks + Copilot hooks (if ~/.copilot exists) + prints the tmux snippet
+```
+
+Or from source (Go 1.27+):
+
 ```sh
 git clone git@github.com:w4jnl/flok.git && cd flok
 make install                       # builds bin/flok and copies it to ~/.local/bin
-flok install                 # Claude Code hooks + Copilot hooks (if ~/.copilot exists) + prints the tmux snippet
+flok install
 ```
 
 Paste the printed snippet **below the tpm `run` line** of your tmux.conf and reload it. Restart
@@ -174,6 +183,16 @@ idle = "comment"
 State lives in `~/.local/state/flok/`: `agents/` (hook records), `seen/`, `events.log`,
 `hook.log`, `runtime.json`, the rendered `outer.conf`.
 
+## Releasing
+
+```sh
+scripts/release.sh 0.1.1     # tags v0.1.1, pushes it, bumps url+sha256 in ../homebrew-tap, creates the GitHub release
+brew update && brew upgrade flok
+```
+
+The version is a build-time variable (`internal/cli.Version`, set via `-ldflags`), so `make build`
+stamps `git describe` and the formula stamps its tag.
+
 ## Development
 
 ```sh
@@ -199,4 +218,5 @@ Layout: `internal/tmux` (exec client + one-call snapshot), `internal/agent` (mod
 
 ## License
 
-MIT. The detection manifests are copied from herdr under the Apache License 2.0; see `NOTICE`.
+MIT (see `LICENSE`). The detection manifests are copied from herdr under the Apache License 2.0;
+see `NOTICE` and `LICENSE-APACHE`.

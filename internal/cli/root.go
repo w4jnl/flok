@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/w4jnl/flok/internal/config"
 	"github.com/w4jnl/flok/internal/launcher"
 )
 
-const Version = "0.1.0"
+// Version is stamped at build time: -ldflags "-X github.com/w4jnl/flok/internal/cli.Version=v0.1.0".
+var Version = "dev"
 
 const usageText = `flok — herdr-like agent sidebar for tmux
 
@@ -80,7 +82,7 @@ func Main(args []string) int {
 	case "completion":
 		return runCompletion(args[1:])
 	case "version", "--version", "-V":
-		fmt.Println("flok", Version)
+		fmt.Println("flok", strings.TrimPrefix(Version, "v"))
 		return 0
 	case "help", "-h", "--help":
 		usage()
@@ -99,14 +101,29 @@ func report(err error) int {
 	return 0
 }
 
-// binPath is the absolute path of this executable, used in tmux commands and hook configs.
+// binPath is the absolute path of this executable, used in hook configs and tmux bindings.
+// Symlinks are kept on purpose: /opt/homebrew/bin/flok stays valid across `brew upgrade`,
+// the Cellar path behind it does not. On Linux os.Executable is already resolved, so a Cellar
+// path is mapped back to <prefix>/bin/flok when that link exists.
 func binPath() string {
 	p, err := os.Executable()
 	if err != nil {
 		return "flok"
 	}
-	if r, err := filepath.EvalSymlinks(p); err == nil {
-		p = r
+	if !filepath.IsAbs(p) {
+		if a, err := filepath.Abs(p); err == nil {
+			p = a
+		}
+	}
+	if i := strings.Index(p, "/Cellar/"); i >= 0 {
+		if link := filepath.Join(p[:i], "bin", filepath.Base(p)); fileExists(link) {
+			return link
+		}
 	}
 	return p
+}
+
+func fileExists(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
 }

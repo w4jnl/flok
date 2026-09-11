@@ -26,6 +26,11 @@ scripts/spike/m0-outer.sh check   # nested-outer passthrough checks on isolated 
 
 `go.mod` says Go 1.27. There is no linter config beyond `go vet`.
 
+Releases: `scripts/release.sh <version>` tags `v<version>`, pushes, then bumps `url`/`sha256` in
+`Formula/flok.rb` of the tap clone (`$FLOK_TAP_DIR`, default `../homebrew-tap`, repo
+`w4jnl/homebrew-tap`) and creates the GitHub release. `internal/cli.Version` is a variable set via
+`-ldflags -X`; never hardcode a version there.
+
 ### End-to-end scripts
 
 `scripts/e2e/lib.sh` builds `bin/flok` and a fake agent binary named `claude`
