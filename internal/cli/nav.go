@@ -132,8 +132,12 @@ func runLayout(cfg config.Config, cmd string, args []string) int {
 	}
 	zoomed, _ := tmux.Display(outer, rt.RightPane, "#{window_zoomed_flag}")
 	switch cmd {
-	case "focus":
-		_, err = outer.Run("select-pane", "-t", rt.SidebarPane)
+	case "focus": // toggle keyboard focus between the sidebar and the work pane
+		if active, _ := tmux.Display(outer, rt.SidebarPane, "#{pane_active}"); active == "1" {
+			_, err = outer.Run("select-pane", "-t", rt.RightPane)
+		} else {
+			_, err = outer.Run("select-pane", "-t", rt.SidebarPane)
+		}
 	case "reload": // restart only the sidebar pane (re-reads config.toml); the work pane is untouched
 		_, err = outer.Run("respawn-pane", "-k", "-t", rt.SidebarPane, "-e", "FLOK_OUTER=1",
 			"-e", "FLOK_RIGHT_PANE="+rt.RightPane, binPath()+" sidebar")

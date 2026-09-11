@@ -70,6 +70,12 @@ type Model struct {
 	sounder   notify.Sounder
 	started   time.Time
 	focused   bool // the outer's active pane is the sidebar: keys arrive here
+	// Inner tmux prefix, so chords typed while the sidebar has focus are replayed into the work
+	// pane instead of being swallowed (prefixTmux "C-a", prefixKey "ctrl+a").
+	prefixTmux    string
+	prefixKey     string
+	prefixPending bool
+	debug         bool
 }
 
 type (
@@ -107,7 +113,53 @@ func New(d Deps) Model {
 	if d.Store != nil {
 		go watchStore(d.Store.Dir, m.changes)
 	}
+	m.debug = os.Getenv("FLOK_DEBUG") != ""
+	m.readPrefix()
 	return m
+}
+
+// readPrefix caches the inner server's prefix key (re-read on `r` and on reload).
+func (m *Model) readPrefix() {
+	if out, err := m.d.Inner.Run("show-options", "-gv", "prefix"); err == nil {
+		m.prefixTmux = strings.TrimSpace(out)
+		m.prefixKey = teaKeyFromTmux(m.prefixTmux)
+	}
+}
+
+// debugf appends to sidebar.log in the state dir when FLOK_DEBUG is set.
+func (m Model) debugf(format string, args ...any) {
+	if !m.debug || m.d.Store == nil {
+		return
+	}
+	f, err := os.OpenFile(filepath.Join(m.d.Store.Dir, "sidebar.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	fmt.Fprintf(f, time.Now().Format("15:04:05.000")+" "+format+"\n", args...)
+}
+
+// forwardChord replays "<prefix> <key>" into the work pane through the outer server. The
+// work pane also takes keyboard focus, except for `prefix b` (rail toggle), so the user can
+// keep navigating the bar after collapsing it.
+func (m *Model) forwardChord(msg tea.KeyMsg) tea.Cmd {
+	outer, right, prefix := m.d.Outer, m.d.RightPane, m.prefixTmux
+	name := tmuxKeyName(msg)
+	stay := name == "b"
+	m.debugf("chord %s %s (stay=%v)", prefix, name, stay)
+	if outer == nil || right == "" || prefix == "" {
+		return nil
+	}
+	if !stay {
+		m.focused = false
+	}
+	return func() tea.Msg {
+		if !stay {
+			_, _ = outer.Run("select-pane", "-t", right)
+		}
+		_, err := outer.Run("send-keys", "-t", right, prefix, name)
+		return switchedMsg{err}
+	}
 }
 
 // watchStore pushes a (coalesced) signal whenever a hook record or seen mark changes.
@@ -435,6 +487,18 @@ func (m Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return model, nil
 	}
 	k := msg.String()
+	m.debugf("key %q focused=%v panel=%d cursor=%v rail=%v", k, m.focused, m.panel, m.cursor, m.isRail())
+	if m.prefixPending {
+		m.prefixPending = false
+		if k == "esc" {
+			return m, nil
+		}
+		return m, m.forwardChord(msg)
+	}
+	if m.prefixKey != "" && k == m.prefixKey {
+		m.prefixPending = true
+		return m, nil
+	}
 	switch k {
 	case "ctrl+c":
 		return m, tea.Quit
@@ -455,6 +519,7 @@ func (m Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.focused = false
 		return m, m.activate(m.panel, m.cursor[m.panel], false)
 	case "r":
+		m.readPrefix()
 		return m, m.poll()
 	case "?":
 		return m, m.openHelp()

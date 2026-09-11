@@ -52,6 +52,24 @@ expect "toggle while hidden unzooms" '^0$' "$(OUT display -p -t "$RIGHT" '#{wind
 "$BIN" hide; "$BIN" hide; sleep 0.3
 expect "hide twice shows again" '^0$' "$(OUT display -p -t "$RIGHT" '#{window_zoomed_flag}')"
 
+# focus toggles; prefix chords typed while the sidebar has focus are replayed into the work pane
+"$BIN" focus; sleep 0.3
+expect "focus selects the sidebar pane"        "^$SIDEBAR\$" "$(OUT display -p -t flok '#{pane_id}')"
+"$BIN" focus; sleep 0.3
+expect "focus again returns to the work pane"  "^$RIGHT\$"   "$(OUT display -p -t flok '#{pane_id}')"
+"$BIN" focus; sleep 0.3
+sess=$(IN list-clients -F '#{client_session}' | head -1)
+before=$(IN list-windows -t "$sess" | wc -l | tr -d ' ')
+OUT send-keys -t "$SIDEBAR" C-b; sleep 0.3; OUT send-keys -t "$SIDEBAR" c; sleep 0.8   # the isolated inner uses the default prefix C-b
+expect "prefix chord from the sidebar reaches the inner (new window)" "^$((before+1))\$" "$(IN list-windows -t "$sess" | wc -l | tr -d ' ')"
+expect "chord hands keyboard focus to the work pane" "^$RIGHT\$" "$(OUT display -p -t flok '#{pane_id}')"
+IN bind-key b new-window -n viab
+"$BIN" focus; sleep 0.3
+OUT send-keys -t "$SIDEBAR" C-b; sleep 0.3; OUT send-keys -t "$SIDEBAR" b; sleep 0.8
+expect "prefix b from the sidebar runs the inner binding" 'viab' "$(IN list-windows -t "$sess" -F '#{window_name}')"
+expect "prefix b keeps the sidebar focused" "^$SIDEBAR\$" "$(OUT display -p -t flok '#{pane_id}')"
+"$BIN" focus; sleep 0.3
+
 # keys --print reads the inner server's bindings (stock notes present on the isolated server)
 IN bind-key -T root C-Right next-window     # the -f /dev/null server has only mouse keys in root
 dump=$("$BIN" keys --print)

@@ -33,7 +33,7 @@ pass=0; fail=0
 ok()  { printf 'PASS  %s\n' "$1"; pass=$((pass+1)); }
 bad() { printf 'FAIL  %s\n' "$1"; fail=$((fail+1)); }
 expect() { # name, pattern (grep -E), text
-  if printf '%s\n' "$3" | grep -qE "$2"; then ok "$1"; else bad "$1 (pattern: $2)"; printf '%s\n' "$3" | grep -v '^ *$' | sed 's/^/      | /'; fi; }
+  if printf '%s\n' "$3" | grep -qE "$2"; then ok "$1"; else bad "$1 (pattern: $2)"; printf '%s\n' "$3" | sed '/^ *$/d; s/^/      | /'; fi; }
 capture() { OUT capture-pane -p -t "$SIDEBAR"; }
 wait_for() { # pattern, seconds
   local i; for i in $(seq 1 $(( ${2:-3} * 10 ))); do capture | grep -qE "$1" && return 0; sleep 0.1; done; return 1; }

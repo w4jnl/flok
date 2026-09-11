@@ -343,6 +343,9 @@ func (m Model) footer(w int) string {
 	if !m.focused { // keys go to the work pane until the sidebar is clicked or `prefix g` is pressed
 		return pad(dim.Render("click or prefix g to focus"), w, lipgloss.NewStyle())
 	}
+	if m.prefixPending {
+		return pad(lipgloss.NewStyle().Foreground(t.Pink).Render(m.prefixTmux+" …"), w, lipgloss.NewStyle())
+	}
 	return joinLR(dim.Render("j/k ⏎ ⇥ 1-9"), dim.Render("esc · ? help"), w)
 }
 
@@ -351,6 +354,9 @@ func (m Model) viewRail() string {
 	plain := lipgloss.NewStyle()
 	dim := lipgloss.NewStyle().Foreground(t.Comment)
 	cursor := lipgloss.NewStyle().Foreground(t.Pink).Bold(true)
+	if !m.focused { // keys are not arriving here: keep the position visible, but quietly
+		cursor = lipgloss.NewStyle().Foreground(t.Comment)
+	}
 	lines := make([]string, 0, m.height)
 	// marker shows the keyboard cursor of the active panel: "›" on the selected row.
 	marker := func(sel bool, base lipgloss.Style) string {

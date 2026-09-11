@@ -104,6 +104,10 @@ In the sidebar pane (`prefix g`, a click, or `flok focus`): `j/k` move, `Enter` 
 the keyboard to the work pane, `Tab` switch panel, `1-9` open agent N, `!@#$%^&*(` open session
 N, `?` help, `Esc`/`q` back to the work pane. Mouse: a click opens the row and keeps the keyboard
 in the sidebar; wheel scrolls. The footer says where the keyboard is.
+`prefix g` toggles keyboard focus between the sidebar and the work pane. While the sidebar has
+focus, any `prefix <key>` chord is replayed into the work pane, so all your tmux bindings keep
+working; only `prefix b` (collapse/expand) keeps the cursor in the sidebar. Set `FLOK_DEBUG=1`
+in the sidebar's environment to log received keys to `sidebar.log` in the state dir.
 
 ## Commands
 
