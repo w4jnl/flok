@@ -43,3 +43,20 @@ func TestPublishLoadAndFreshness(t *testing.T) {
 		t.Fatal("gone expected after Remove")
 	}
 }
+
+func TestHeartbeatRepublishesLastSnapshot(t *testing.T) {
+	p := &Publisher{Dir: t.TempDir()}
+	now := time.Now()
+	if ok, err := p.Publish(Snapshot{Unseen: 1}, now); err != nil || !ok {
+		t.Fatalf("first publish: %v %v", ok, err)
+	}
+	if ok, _ := p.Heartbeat(now.Add(time.Second)); ok {
+		t.Fatal("no heartbeat before the interval")
+	}
+	if ok, err := p.Heartbeat(now.Add(heartbeat + time.Second)); err != nil || !ok {
+		t.Fatalf("heartbeat after the interval: %v %v", ok, err)
+	}
+	if s, _ := Load(p.Dir, now.Add(heartbeat+time.Second)); s.Unseen != 1 {
+		t.Fatalf("heartbeat must rewrite the last snapshot, got %+v", s)
+	}
+}

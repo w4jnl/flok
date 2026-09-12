@@ -21,6 +21,7 @@ import (
 
 	"github.com/w4jnl/flok/internal/config"
 	"github.com/w4jnl/flok/internal/snapshot"
+	"github.com/w4jnl/flok/internal/state"
 	"github.com/w4jnl/flok/internal/tmux"
 )
 
@@ -238,6 +239,8 @@ func createOuter(cfg config.Config, bin, confPath string, outer *tmux.Local, ses
 	cols, rows := termSize()
 	home, _ := os.UserHomeDir()
 	_ = os.Remove(RuntimePath()) // a leftover from an earlier outer must not leak into this one
+	_ = SetTerminalFocus(true)   // a fresh outer is visible and, until a hook says otherwise, focused
+	_ = SetSidebarHidden(false)
 	if _, err := outer.Run("-f", confPath, "new-session", "-d", "-s", sess, "-n", "main", "-x", strconv.Itoa(cols), "-y", strconv.Itoa(rows),
 		"-c", home, "-e", "FLOK_OUTER=1", bin+" _attach-loop"); err != nil {
 		return fmt.Errorf("create outer session: %w", err)
@@ -397,11 +400,13 @@ func Down(cfg config.Config) error {
 	return err
 }
 
-// SetTerminalFocus records whether the terminal window showing the outer client is focused.
+// SetTerminalFocus records whether the terminal window showing the outer client is focused
+// (the outer's client-focus-in/out hooks run `flok _focus 1|0`).
 func SetTerminalFocus(focused bool) error {
-	v := "0"
-	if focused {
-		v = "1"
-	}
-	return os.WriteFile(filepath.Join(config.StateDir(), "terminal-focus"), []byte(v), 0o644)
+	return state.New(config.StateDir()).SetTerminalFocus(focused)
+}
+
+// SetSidebarHidden records whether `flok hide` zoomed the work pane over the sidebar.
+func SetSidebarHidden(hidden bool) error {
+	return state.New(config.StateDir()).SetSidebarHidden(hidden)
 }

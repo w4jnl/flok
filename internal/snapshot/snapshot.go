@@ -83,9 +83,19 @@ func FromMerge(s merge.Snapshot) Snapshot {
 
 // Publisher writes the snapshot atomically, skipping unchanged content between heartbeats.
 type Publisher struct {
-	Dir    string
-	last   []byte
-	lastAt time.Time
+	Dir      string
+	last     []byte
+	lastAt   time.Time
+	lastSnap Snapshot
+}
+
+// Heartbeat rewrites the last published snapshot once the heartbeat interval has elapsed, so
+// readers can tell the sidebar is alive while nothing changes (the merge only runs on changes).
+func (p *Publisher) Heartbeat(now time.Time) (bool, error) {
+	if p.last == nil || now.Sub(p.lastAt) < heartbeat {
+		return false, nil
+	}
+	return p.Publish(p.lastSnap, now)
 }
 
 // Publish returns true when a file was written.
@@ -120,7 +130,7 @@ func (p *Publisher) Publish(s Snapshot, now time.Time) (bool, error) {
 	if err := os.Rename(tmp.Name(), path); err != nil {
 		return false, err
 	}
-	p.last, p.lastAt = body, now
+	p.last, p.lastAt, p.lastSnap = body, now, s
 	return true, nil
 }
 

@@ -47,8 +47,10 @@ expect "rail agent: index + status glyph" '^ *[0-9]+ [○✓●◐◓◑◒]' "$
 expect "toggle restores full width" '^28$' "$(OUT display -p -t "$SIDEBAR" '#{pane_width}')"
 "$BIN" hide; sleep 0.3
 expect "hide zooms the work pane" '^1$' "$(OUT display -p -t "$RIGHT" '#{window_zoomed_flag}')"
+expect "hide writes the hidden marker" '^1$' "$(cat "$T/state/sidebar-hidden")"
 "$BIN" toggle; sleep 0.3
 expect "toggle while hidden unzooms" '^0$' "$(OUT display -p -t "$RIGHT" '#{window_zoomed_flag}')"
+expect "un-hide clears the hidden marker" '^0$' "$(cat "$T/state/sidebar-hidden")"
 "$BIN" hide; "$BIN" hide; sleep 0.3
 expect "hide twice shows again" '^0$' "$(OUT display -p -t "$RIGHT" '#{window_zoomed_flag}')"
 

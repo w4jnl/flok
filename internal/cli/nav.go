@@ -144,12 +144,21 @@ func runLayout(cfg config.Config, cmd string, args []string) int {
 	case "hide":
 		if zoomed == "1" { // un-hide: resizes while hidden scaled the layout underneath, re-pin it
 			_, err = outer.Run("resize-pane", "-Z", "-t", rt.RightPane, ";", "select-layout", "-t", rt.RightPane, "main-vertical")
+			if err == nil {
+				_ = launcher.SetSidebarHidden(false)
+			}
 			break
 		}
 		_, err = outer.Run("resize-pane", "-Z", "-t", rt.RightPane)
+		if err == nil {
+			_ = launcher.SetSidebarHidden(true) // the sidebar pauses its spinner and slows its polls
+		}
 	case "toggle":
 		if zoomed == "1" {
 			_, err = outer.Run("resize-pane", "-Z", "-t", rt.RightPane, ";", "select-layout", "-t", rt.RightPane, "main-vertical")
+			if err == nil {
+				_ = launcher.SetSidebarHidden(false)
+			}
 			break
 		}
 		width, _ := tmux.Display(outer, rt.SidebarPane, "#{pane_width}")

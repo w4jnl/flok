@@ -32,6 +32,7 @@ const Template = `# flok configuration - https://github.com/w4jnl/flok
 # show_branch = true
 # branch_source = "active_pane"   # or "session_path"
 # poll_ms = 1000
+# idle_poll_ms = 3000         # while the terminal is unfocused or the sidebar hidden (spinner pauses too)
 # spinner_ms = 250            # working-spinner frame interval in the sidebar
 # fps = 15                    # renderer frame-rate cap (Bubble Tea default 60 wakes up far more often)
 # registry_poll_ms = 10000    # "claude agents --json" costs ~0.2 s CPU: polled at this rate only while

@@ -31,6 +31,7 @@ type Sidebar struct {
 	ShowBranch       bool    `toml:"show_branch"`
 	BranchSource     string  `toml:"branch_source"`
 	PollMs           int     `toml:"poll_ms"`
+	IdlePollMs       int     `toml:"idle_poll_ms"` // poll interval while the terminal is unfocused or the sidebar hidden
 	SpinnerMs        int     `toml:"spinner_ms"`
 	FPS              int     `toml:"fps"` // Bubble Tea renderer frame rate cap (1..120)
 	RegistryPollMs   int     `toml:"registry_poll_ms"`
@@ -109,7 +110,7 @@ func Default() Config {
 	return Config{
 		Inner:   Inner{Socket: "default", ReattachOnDetach: false},
 		Outer:   Outer{Socket: "flok", Session: "flok", ExtraConf: "~/.config/flok/outer.extra.conf"},
-		Sidebar: Sidebar{Width: 28, RailWidth: 6, RailThreshold: 12, SessionsMaxRatio: 0.4, AgentRows: 2, SessionOrder: "index", ShowBranch: true, BranchSource: "active_pane", PollMs: 1000, SpinnerMs: 250, FPS: 15, RegistryPollMs: 10000, ScreenPollMs: 2000, CaptureLines: 0, StaleWorkingMin: 30},
+		Sidebar: Sidebar{Width: 28, RailWidth: 6, RailThreshold: 12, SessionsMaxRatio: 0.4, AgentRows: 2, SessionOrder: "index", ShowBranch: true, BranchSource: "active_pane", PollMs: 1000, IdlePollMs: 3000, SpinnerMs: 250, FPS: 15, RegistryPollMs: 10000, ScreenPollMs: 2000, CaptureLines: 0, StaleWorkingMin: 30},
 		Agents:  Agents{Enabled: []string{"claude", "copilot"}, ManifestDir: "~/.config/flok/agents", ScreenRules: "auto"},
 		Keys:    Keys{Tables: []string{"prefix", "root", "copy-mode-vi"}},
 		Sounds: Sounds{Enabled: true, Player: "hook", Volume: 0.6, MinIntervalMs: 750,

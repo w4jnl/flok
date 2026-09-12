@@ -130,9 +130,34 @@ func (s *Store) LoadSeen() map[string]time.Time {
 }
 
 // TerminalFocused reports the last client-focus-in/out hook of the outer server (default true).
-func (s *Store) TerminalFocused() bool {
-	data, err := os.ReadFile(filepath.Join(s.Dir, "terminal-focus"))
-	return err != nil || strings.TrimSpace(string(data)) != "0"
+func (s *Store) TerminalFocused() bool { return readFlag(s.Dir, "terminal-focus") != "0" }
+
+// SidebarHidden reports whether `flok hide` zoomed the work pane over the sidebar (default false).
+func (s *Store) SidebarHidden() bool { return readFlag(s.Dir, "sidebar-hidden") == "1" }
+
+// SetTerminalFocus and SetSidebarHidden write the 0/1 marker files the sidebar polls and watches;
+// while either says "nobody can see the sidebar" it pauses the spinner and polls slowly.
+func (s *Store) SetTerminalFocus(focused bool) error {
+	return writeFlag(s.Dir, "terminal-focus", focused)
+}
+func (s *Store) SetSidebarHidden(hidden bool) error {
+	return writeFlag(s.Dir, "sidebar-hidden", hidden)
+}
+
+func readFlag(dir, name string) string {
+	data, err := os.ReadFile(filepath.Join(dir, name))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
+func writeFlag(dir, name string, v bool) error {
+	b := []byte("0")
+	if v {
+		b = []byte("1")
+	}
+	return os.WriteFile(filepath.Join(dir, name), b, 0o644)
 }
 
 // AppendEvent appends one JSON line to events.log, rotating at 5 MB.

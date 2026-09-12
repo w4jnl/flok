@@ -301,6 +301,7 @@ agent_rows = 2              # 2: project + "kind · title" line per agent; 1: si
 show_branch = true
 branch_source = "active_pane"   # or "session_path"
 poll_ms = 1000
+idle_poll_ms = 3000         # while the terminal is unfocused or the sidebar hidden; the spinner pauses too
 spinner_ms = 250            # working-spinner frame interval in the sidebar
 fps = 15                    # renderer frame-rate cap; 60 (Bubble Tea default) wakes up needlessly often
 registry_poll_ms = 10000    # `claude agents --json` costs ~0.2 s CPU: polled at this rate only while a

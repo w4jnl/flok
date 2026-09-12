@@ -103,12 +103,18 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
   tmux snapshot, `registry_poll_ms`, `screen_poll_ms`) plus an fsnotify watch on the store so
   hook writes re-render immediately. CPU rules that are easy to undo by accident: an unchanged
   poll (fingerprint of the raw tmux output + hook records) skips the merge and keeps the cached
-  frame; all screen captures go in one tmux invocation (`captureAll`); the registry is only
-  queried while a Claude turn/prompt is open or a pane lacks hooks (else once a minute); sidebar
-  focus comes from `tea.FocusMsg`/`BlurMsg` with an outer `pane_active` check every 5th poll as
-  fallback; the renderer runs at `fps` (15). `FLOK_CPUPROFILE=<file>` in the sidebar's
-  environment writes a 30 s CPU profile after start (`tmux -L flok set-environment -g …` then
-  `flok reload`). Sounds are played by the hook by default
+  frame (the fast path calls `Publisher.Heartbeat` so flok-bar still sees a live snapshot); only
+  the 1 s tick spawns tmux — screen results, registry samples and hook/marker changes go through
+  `rebuild()`, which re-merges the cached tmux snapshot (`screenSeq` still advances once per
+  sample with results, identical or not, because the merge counts samples); all screen captures
+  go in one tmux invocation (`captureAll`); the registry is only queried while a Claude
+  turn/prompt is open or a pane lacks hooks (else once a minute); sidebar focus comes from
+  `tea.FocusMsg`/`BlurMsg` with an outer `pane_active window_zoomed_flag` check every 5th poll as
+  fallback; **idle mode** (`terminal-focus` = 0 from the outer's client-focus hooks, or
+  `sidebar-hidden` = 1 written by `flok hide`/`toggle`) pauses the spinner and stretches polls and
+  captures to `idle_poll_ms`, with an fsnotify watch on those two markers for prompt resume; the
+  renderer runs at `fps` (15). `FLOK_CPUPROFILE=<file>` in the sidebar's environment writes a
+  30 s CPU profile after start (`tmux -L flok set-environment -g …` then `flok reload`). Sounds are played by the hook by default
   (`sounds.player = "hook"`); the sidebar only plays them for title/screen-derived transitions or
   when `player = "sidebar"`.
 
