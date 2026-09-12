@@ -104,11 +104,20 @@ func (p *Publisher) Publish(s Snapshot, now time.Time) (bool, error) {
 		return false, err
 	}
 	path := filepath.Join(p.Dir, FileName)
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	tmp, err := os.CreateTemp(p.Dir, FileName+".*.tmp")
+	if err != nil {
 		return false, err
 	}
-	if err := os.Rename(tmp, path); err != nil {
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		os.Remove(tmp.Name())
+		return false, err
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmp.Name())
+		return false, err
+	}
+	if err := os.Rename(tmp.Name(), path); err != nil {
 		return false, err
 	}
 	p.last, p.lastAt = body, now

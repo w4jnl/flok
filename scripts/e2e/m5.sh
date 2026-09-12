@@ -30,7 +30,7 @@ expect "sidebar still alive" '^sessions' "$(capture)"
 IN detach-client -t "$(IN list-clients -F '#{client_tty}' | head -1)"; sleep 1.2
 if OUT has-session -t flok 2>/dev/null; then bad "outer still running after an explicit detach"; else ok "explicit detach closes the outer"; fi
 if IN ls >/dev/null 2>&1; then ok "inner server untouched"; else bad "inner server died"; fi
-expect "runtime.json removed" '^0$' "$(ls "$T/state" | grep -c runtime.json || true)"
+expect "runtime.json removed" '^0$' "$(ls "$T/state" | grep -cx runtime.json || true)"
 
 # reattach_on_detach = true: a detach comes straight back
 python3 - "$T/config.toml" <<'PY'

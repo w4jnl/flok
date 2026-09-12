@@ -45,16 +45,46 @@ type Runtime struct {
 func RuntimePath() string { return filepath.Join(config.StateDir(), "runtime.json") }
 func quitMarker() string  { return filepath.Join(config.StateDir(), "quit") }
 
-func WriteRuntime(r Runtime) error {
-	data, err := json.MarshalIndent(r, "", "  ")
+// writeJSONAtomic writes v to path via a uniquely named temp file and rename, so concurrent
+// writers never share a temp file.
+func writeJSONAtomic(path string, v any) error {
+	data, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		return err
 	}
-	tmp := RuntimePath() + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, RuntimePath())
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		os.Remove(tmp.Name())
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmp.Name())
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
+}
+
+// withRuntimeLock serializes runtime.json read-modify-write cycles between `flok up`, the
+// sidebar and the nav commands.
+func withRuntimeLock(fn func() error) error {
+	lock, err := os.OpenFile(RuntimePath()+".lock", os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
+		return err
+	}
+	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+	return fn()
+}
+
+func WriteRuntime(r Runtime) error {
+	return withRuntimeLock(func() error { return writeJSONAtomic(RuntimePath(), r) })
 }
 
 func ReadRuntime() (Runtime, error) {
@@ -66,14 +96,16 @@ func ReadRuntime() (Runtime, error) {
 	return r, json.Unmarshal(data, &r)
 }
 
-// UpdateRuntime applies fn to the stored runtime (if any) and writes it back.
+// UpdateRuntime applies fn to the stored runtime (if any) and writes it back, under the lock.
 func UpdateRuntime(fn func(*Runtime)) error {
-	r, err := ReadRuntime()
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	fn(&r)
-	return WriteRuntime(r)
+	return withRuntimeLock(func() error {
+		r, err := ReadRuntime()
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		fn(&r)
+		return writeJSONAtomic(RuntimePath(), r)
+	})
 }
 
 // RenderOuterConf fills the embedded template.
@@ -205,6 +237,7 @@ func StopBar() {
 func createOuter(cfg config.Config, bin, confPath string, outer *tmux.Local, sess string) error {
 	cols, rows := termSize()
 	home, _ := os.UserHomeDir()
+	_ = os.Remove(RuntimePath()) // a leftover from an earlier outer must not leak into this one
 	if _, err := outer.Run("-f", confPath, "new-session", "-d", "-s", sess, "-n", "main", "-x", strconv.Itoa(cols), "-y", strconv.Itoa(rows),
 		"-c", home, "-e", "FLOK_OUTER=1", bin+" _attach-loop"); err != nil {
 		return fmt.Errorf("create outer session: %w", err)
@@ -224,9 +257,12 @@ func createOuter(cfg config.Config, bin, confPath string, outer *tmux.Local, ses
 	_, _ = outer.Run("set-option", "-w", "-t", sess, "main-pane-width", strconv.Itoa(cfg.Sidebar.Width), ";",
 		"select-layout", "-t", sess, "main-vertical")
 	_, _ = outer.Run("select-pane", "-t", right)
-	return WriteRuntime(Runtime{OuterSocket: cfg.Outer.Socket, OuterSession: sess, SidebarPane: sidebar, RightPane: right,
-		InnerSocket: cfg.Inner.Socket, FullWidth: cfg.Sidebar.Width, RailWidth: cfg.Sidebar.RailWidth,
-		TerminalApp: os.Getenv("TERM_PROGRAM"), StartedAt: time.Now()})
+	// The sidebar pane is already running and may have recorded its pid and client tty: merge.
+	return UpdateRuntime(func(r *Runtime) {
+		r.OuterSocket, r.OuterSession, r.SidebarPane, r.RightPane = cfg.Outer.Socket, sess, sidebar, right
+		r.InnerSocket, r.FullWidth, r.RailWidth = cfg.Inner.Socket, cfg.Sidebar.Width, cfg.Sidebar.RailWidth
+		r.TerminalApp, r.StartedAt = os.Getenv("TERM_PROGRAM"), time.Now()
+	})
 }
 
 // ensureSidebar respawns a dead sidebar pane in an existing outer session.
