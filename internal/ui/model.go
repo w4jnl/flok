@@ -63,6 +63,9 @@ type Model struct {
 	errText     string
 	registry    map[string]claudereg.Entry
 	registrySeq int
+	registryAt  time.Time
+	screenSeq   int
+	screenAt    time.Time
 	changes     chan struct{}
 	help        *HelpModel
 	screen      map[string]rules.Result
@@ -457,7 +460,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.titles, m.progress = titles, progress
 		m.snap = m.tracker.Build(merge.Inputs{Tmux: msg.snap, ClientTTY: m.clientTTY, Adapters: m.d.Adapters, SessionOrder: m.d.Cfg.Sidebar.SessionOrder,
 			BranchOf: m.d.BranchOf, BranchFromSessionPath: m.d.Cfg.Sidebar.BranchSource == "session_path",
-			Hook: msg.hook, Seen: msg.seen, Registry: m.registry, RegistrySeq: m.registrySeq, Screen: m.screen, TerminalUnfocused: msg.unfocused})
+			Hook: msg.hook, Seen: msg.seen, Registry: m.registry, RegistrySeq: m.registrySeq, RegistryAt: m.registryAt,
+			Screen: m.screen, ScreenSeq: m.screenSeq, ScreenAt: m.screenAt, TerminalUnfocused: msg.unfocused})
 		if m.d.Store != nil {
 			for _, pane := range m.snap.NewlySeen {
 				_ = m.d.Store.MarkSeen(pane, time.Now())
@@ -488,12 +492,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.entries != nil {
 			m.registry = msg.entries
 			m.registrySeq++
+			m.registryAt = time.Now()
 		}
 		return m, nil
 	case screenTickMsg:
 		return m, tea.Batch(m.pollScreen(), m.screenTick())
 	case screenMsg:
 		m.screen = msg.results
+		m.screenSeq++
+		m.screenAt = time.Now()
 		return m, m.poll()
 	case tea.KeyMsg:
 		return m.onKey(msg)

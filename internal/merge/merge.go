@@ -54,7 +54,10 @@ type Inputs struct {
 	Seen                  map[string]time.Time       // pane id -> last seen
 	Registry              map[string]claudereg.Entry // pane tty -> registry entry
 	RegistrySeq           int                        // bumps on every fresh registry poll (for per-sample counting)
+	RegistryAt            time.Time                  // when that registry sample was taken
 	Screen                map[string]rules.Result    // pane id -> screen-rule result (only evaluated panes)
+	ScreenSeq             int                        // bumps on every screen poll
+	ScreenAt              time.Time                  // when that screen sample was taken
 	TerminalUnfocused     bool                       // the terminal window itself is not focused
 	SessionOrder          string                     // index | name | activity (see sortSpaces)
 	Now                   time.Time
@@ -68,9 +71,11 @@ type track struct {
 	unseen      int
 	idleTitle   int         // consecutive polls with an idle title
 	spinnerPoll int         // consecutive polls with a working title
-	screenIdle  int         // consecutive polls where screen rules saw an idle prompt while hooks said blocked
+	screenIdle  int         // consecutive screen samples showing the idle prompt box
+	screenSeq   int         // screen sample already counted
 	regSeq      int         // registry sample already counted
-	regIdle     int         // consecutive fresh registry samples saying idle
+	regIdle     int         // consecutive registry samples saying idle
+	hookSince   time.Time   // StateSince of the hook record the counters above refer to
 	lastRaw     agent.State // last raw (pre-done) state, kept across skip_state_update holds
 }
 
@@ -124,6 +129,10 @@ func ResolveFocus(s tmux.Snapshot, tty string) (Focus, string) {
 	}
 	return f, warn
 }
+
+// evidenceGrace is how much newer than a hook state a registry/screen sample must be before it
+// may overrule it; both sources lag a new turn by a moment.
+const evidenceGrace = 3 * time.Second
 
 var shells = map[string]bool{"zsh": true, "bash": true, "fish": true, "sh": true, "login": true, "nu": true, "tcsh": true, "ksh": true}
 
@@ -188,27 +197,40 @@ func (t *Tracker) Build(in Inputs) Snapshot {
 		focused := focus.PaneID == p.ID && !in.TerminalUnfocused
 		seenAt := in.Seen[p.ID]
 		scr, screened := in.Screen[p.ID]
-		// "idle prompt visible" counts only when a screen region said so; the title-based idle
-		// rule is no evidence, Claude keeps the idle glyph in the title while busy inside tmux.
-		if screened && scr.Matched && scr.State == agent.Idle && scr.Region != "osc_title" {
-			tr.screenIdle++
-		} else {
-			tr.screenIdle = 0
-		}
-		if in.RegistrySeq != tr.regSeq { // count each registry sample once
-			tr.regSeq = in.RegistrySeq
-			switch {
-			case hasReg && reg.Status == "idle":
-				tr.regIdle++
-			case hasReg:
-				tr.regIdle = 0
-			}
-		}
 
 		var a agent.Agent
 		if hasHook && h.HasHooks {
 			a = h
 			a.Source = "hook"
+			// Evidence that overrules a hook state must be newer than that state: a new prompt
+			// resets the counters, and samples taken before StateSince (plus a grace for the
+			// registry and the screen to catch up) are not counted.
+			if !h.StateSince.Equal(tr.hookSince) {
+				tr.hookSince = h.StateSince
+				tr.regIdle, tr.screenIdle = 0, 0
+			}
+			fresh := func(at time.Time) bool { return at.IsZero() || at.After(h.StateSince.Add(evidenceGrace)) }
+			if in.RegistrySeq != tr.regSeq {
+				tr.regSeq = in.RegistrySeq
+				switch {
+				case hasReg && reg.Status == "idle" && fresh(in.RegistryAt):
+					tr.regIdle++
+				case hasReg && reg.Status != "idle":
+					tr.regIdle = 0
+				}
+			}
+			if in.ScreenSeq != tr.screenSeq {
+				tr.screenSeq = in.ScreenSeq
+				// "idle prompt visible" counts only when a screen region said so; the title-based
+				// idle rule is no evidence (Claude keeps the idle glyph while busy inside tmux).
+				idleScreen := screened && scr.Matched && scr.State == agent.Idle && scr.Region != "osc_title"
+				switch {
+				case idleScreen && fresh(in.ScreenAt):
+					tr.screenIdle++
+				case screened && !idleScreen:
+					tr.screenIdle = 0
+				}
+			}
 			switch a.State {
 			case agent.Blocked:
 				// Only hook events clear a block; a permission prompt shows the idle title, so the

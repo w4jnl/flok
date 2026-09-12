@@ -140,12 +140,13 @@ func TestHookAuthorityAndSeen(t *testing.T) {
 	reg := map[string]claudereg.Entry{"/dev/ttyagent": {PID: 42, Status: "idle", Name: "job"}}
 	tm := snap("✳ job", "$2")
 	tm.Panes[0].TTY = "/dev/ttyagent"
-	s = tr.Build(Inputs{Tmux: tm, ClientTTY: "/dev/ttys9", Adapters: ads, Hook: hook, Registry: reg, RegistrySeq: 1, Now: now})
-	s = tr.Build(Inputs{Tmux: tm, ClientTTY: "/dev/ttys9", Adapters: ads, Hook: hook, Registry: reg, RegistrySeq: 1, Now: now}) // same sample: not counted twice
+	later := now.Add(10 * time.Second) // samples clearly newer than the hook state
+	s = tr.Build(Inputs{Tmux: tm, ClientTTY: "/dev/ttys9", Adapters: ads, Hook: hook, Registry: reg, RegistrySeq: 1, RegistryAt: later, Now: now})
+	s = tr.Build(Inputs{Tmux: tm, ClientTTY: "/dev/ttys9", Adapters: ads, Hook: hook, Registry: reg, RegistrySeq: 1, RegistryAt: later, Now: now}) // same sample: not counted twice
 	if a := s.Agents[0]; a.State != agent.Working {
 		t.Fatalf("one registry sample must not clear working: %+v", a)
 	}
-	s = tr.Build(Inputs{Tmux: tm, ClientTTY: "/dev/ttys9", Adapters: ads, Hook: hook, Registry: reg, RegistrySeq: 2, Now: now})
+	s = tr.Build(Inputs{Tmux: tm, ClientTTY: "/dev/ttys9", Adapters: ads, Hook: hook, Registry: reg, RegistrySeq: 2, RegistryAt: later, Now: now})
 	if a := s.Agents[0]; a.State != agent.Idle || a.CurrentTool != "" {
 		t.Fatalf("two idle registry samples should clear working: %+v", a)
 	}
@@ -186,11 +187,12 @@ func TestScreenRules(t *testing.T) {
 	if a := s.Agents[0]; a.State != agent.Done || a.Unseen != 1 {
 		t.Fatalf("idle fallback + done: %+v", a)
 	}
-	// hooks say blocked, screen shows the idle prompt box twice -> idle
+	// hooks say blocked, screen shows the idle prompt box in two fresh samples -> idle
 	hook := map[string]agent.Agent{"%1": {PaneID: "%1", Kind: "claude", State: agent.Blocked, Reason: "permission:Bash", HasHooks: true, StateSince: now}}
 	scr["%1"] = rules.Result{Matched: true, State: agent.Idle}
-	tr.Build(Inputs{Tmux: snap("✳ j", "$2"), ClientTTY: "/dev/ttys9", Adapters: ads, Hook: hook, Screen: scr, Now: now})
-	s = tr.Build(Inputs{Tmux: snap("✳ j", "$2"), ClientTTY: "/dev/ttys9", Adapters: ads, Hook: hook, Screen: scr, Now: now})
+	later := now.Add(10 * time.Second)
+	tr.Build(Inputs{Tmux: snap("✳ j", "$2"), ClientTTY: "/dev/ttys9", Adapters: ads, Hook: hook, Screen: scr, ScreenSeq: 1, ScreenAt: later, Now: now})
+	s = tr.Build(Inputs{Tmux: snap("✳ j", "$2"), ClientTTY: "/dev/ttys9", Adapters: ads, Hook: hook, Screen: scr, ScreenSeq: 2, ScreenAt: later, Now: now})
 	if a := s.Agents[0]; a.State != agent.Idle {
 		t.Fatalf("screen clears stale block: %+v", a)
 	}
@@ -200,5 +202,45 @@ func TestScreenRules(t *testing.T) {
 	s = tr.Build(Inputs{Tmux: snap("◑ j", "$2"), ClientTTY: "/dev/ttys9", Adapters: ads, Hook: hook, Screen: scr, Now: now})
 	if a := s.Agents[0]; a.State != agent.Blocked || a.Reason != "prompt" {
 		t.Fatalf("screen blocker over hook working: %+v", a)
+	}
+}
+
+// A fresh turn must show as working at once even after a long idle period full of "idle"
+// registry samples, and old samples must never overrule a newer hook state.
+func TestStaleEvidenceDoesNotHideANewTurn(t *testing.T) {
+	tr := NewTracker()
+	ads := agent.Enabled([]string{"claude"})
+	t0 := time.Now()
+	tm := snap("✳ job", "$2")
+	tm.Panes[0].TTY = "/dev/ttyagent"
+	idle := map[string]claudereg.Entry{"/dev/ttyagent": {PID: 42, Status: "idle"}}
+	hook := map[string]agent.Agent{"%1": {PaneID: "%1", Kind: "claude", State: agent.Idle, HasHooks: true, StateSince: t0.Add(-time.Hour)}}
+	for i := 1; i <= 20; i++ { // an hour of idle samples
+		tr.Build(Inputs{Tmux: tm, ClientTTY: "/dev/ttys9", Adapters: ads, Hook: hook, Registry: idle, RegistrySeq: i, RegistryAt: t0.Add(-time.Duration(20-i) * time.Minute), Now: t0})
+	}
+	// prompt submitted: the hook record turns working now
+	hook["%1"] = agent.Agent{PaneID: "%1", Kind: "claude", State: agent.Working, HasHooks: true, StateSince: t0, TurnStarted: t0}
+	s := tr.Build(Inputs{Tmux: tm, ClientTTY: "/dev/ttys9", Adapters: ads, Hook: hook, Registry: idle, RegistrySeq: 20, RegistryAt: t0.Add(-time.Minute), Now: t0})
+	if a := s.Agents[0]; a.State != agent.Working || len(s.Corrections) != 0 {
+		t.Fatalf("stale idle samples must not hide the new turn: %+v corrections=%v", a, s.Corrections)
+	}
+	// the registry still says idle for a moment after the prompt (within the grace): not evidence
+	s = tr.Build(Inputs{Tmux: tm, ClientTTY: "/dev/ttys9", Adapters: ads, Hook: hook, Registry: idle, RegistrySeq: 21, RegistryAt: t0.Add(time.Second), Now: t0.Add(time.Second)})
+	s = tr.Build(Inputs{Tmux: tm, ClientTTY: "/dev/ttys9", Adapters: ads, Hook: hook, Registry: idle, RegistrySeq: 22, RegistryAt: t0.Add(2 * time.Second), Now: t0.Add(2 * time.Second)})
+	if a := s.Agents[0]; a.State != agent.Working {
+		t.Fatalf("samples within the grace must not count: %+v", a)
+	}
+	// then Claude's registry reports busy: counters reset, still working
+	busy := map[string]claudereg.Entry{"/dev/ttyagent": {PID: 42, Status: "busy"}}
+	s = tr.Build(Inputs{Tmux: tm, ClientTTY: "/dev/ttys9", Adapters: ads, Hook: hook, Registry: busy, RegistrySeq: 23, RegistryAt: t0.Add(6 * time.Second), Now: t0.Add(6 * time.Second)})
+	if a := s.Agents[0]; a.State != agent.Working {
+		t.Fatalf("busy registry keeps working: %+v", a)
+	}
+	// a genuine interruption: two fresh idle samples well after the turn started
+	for i, at := range []time.Duration{20 * time.Second, 25 * time.Second} {
+		s = tr.Build(Inputs{Tmux: tm, ClientTTY: "/dev/ttys9", Adapters: ads, Hook: hook, Registry: idle, RegistrySeq: 24 + i, RegistryAt: t0.Add(at), Now: t0.Add(at)})
+	}
+	if a := s.Agents[0]; a.State != agent.Idle || len(s.Corrections) != 1 {
+		t.Fatalf("fresh idle samples should clear the interrupted turn: %+v", a)
 	}
 }

@@ -14,8 +14,18 @@ expect "hook round trip < 80 ms (took ${ms} ms)" '^[0-7]?[0-9]$' "$ms"
 wait_for "○ $PROJ *$" 3 || true
 expect "hooked agent shows without ~" "○ $PROJ *$" "$(capture)"
 
+# Claude's registry says idle right until a prompt is submitted (and for a moment after): that must
+# not delay or hide the working state.
+AGENT_PID=$(IN display -p -t "$AGENT" '#{pane_pid}')
+registry "[{\"pid\":$AGENT_PID,\"status\":\"idle\",\"kind\":\"interactive\",\"name\":\"fake\",\"sessionId\":\"abc\"}]"
+sleep 3.5   # several idle samples accumulate
 IN select-pane -t "$AGENT" -T "◑ fake-agent"     # a working Claude shows the spinner in its title
 hook claude '{"hook_event_name":"UserPromptSubmit","session_id":"abc"}'
+wait_for "[◐◓◑◒] $PROJ" 2 || true
+expect "working shows within 2 s of the prompt despite stale idle registry samples" "[◐◓◑◒] $PROJ" "$(capture)"
+sleep 2.5
+expect "still working while the registry catches up" "[◐◓◑◒] $PROJ" "$(capture)"
+registry "[{\"pid\":$AGENT_PID,\"status\":\"busy\",\"kind\":\"interactive\",\"name\":\"fake\",\"sessionId\":\"abc\"}]"
 hook claude '{"hook_event_name":"PreToolUse","session_id":"abc","tool_name":"Bash","tool_input":{"command":"npm test"},"tool_use_id":"t1"}'
 wait_for 'Bash 0:0' 3 || true
 snap=$(capture); echo "--- working with tool ---"; printf '%s\n' "$snap" | grep -v '^ *$' | sed -n '4,6p'
