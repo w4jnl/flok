@@ -5,7 +5,10 @@ package claudereg
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -39,11 +42,34 @@ func (e Entry) AgentState() agent.State {
 	return agent.Unknown
 }
 
+// Binary locates the claude executable: PATH first, then the usual install locations. The
+// sidebar often runs with a minimal PATH (launched from a window manager), where PATH alone fails.
+func Binary() (string, error) {
+	if p, err := exec.LookPath("claude"); err == nil {
+		return p, nil
+	}
+	home, _ := os.UserHomeDir()
+	for _, c := range []string{
+		filepath.Join(home, ".local", "bin", "claude"),
+		"/opt/homebrew/bin/claude", "/usr/local/bin/claude",
+		filepath.Join(home, ".claude", "local", "claude"),
+	} {
+		if fi, err := os.Stat(c); err == nil && !fi.IsDir() {
+			return c, nil
+		}
+	}
+	return "", errors.New("claude not found in PATH or the usual install locations")
+}
+
 // List runs `claude agents --json`.
 func List(timeout time.Duration) ([]Entry, error) {
+	bin, err := Binary()
+	if err != nil {
+		return nil, err
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "claude", "agents", "--json").Output()
+	out, err := exec.CommandContext(ctx, bin, "agents", "--json").Output()
 	if err != nil {
 		return nil, err
 	}

@@ -17,6 +17,14 @@ import (
 	"github.com/w4jnl/flok/internal/tmux"
 )
 
+// Correction says a hook record's state was overruled by other evidence.
+type Correction struct {
+	PaneID string
+	From   agent.State // the hook state that was overruled
+	Since  time.Time   // its StateSince, so a newer hook event is never overwritten
+	Reason string      // registry idle | screen idle | prompt gone
+}
+
 // Focus is where the driven inner client currently looks.
 type Focus struct {
 	ClientTTY, SessionID, SessionName, WindowID, PaneID string
@@ -30,7 +38,10 @@ type Snapshot struct {
 	Unseen    int
 	Warnings  []string
 	NewlySeen []string // panes the user is looking at whose seen mark should be persisted
-	TakenAt   time.Time
+	// Corrections are hook states the fallbacks overruled (stale working/blocked). The caller
+	// writes them back to the hook record so the correction sticks instead of flapping.
+	Corrections []Correction
+	TakenAt     time.Time
 }
 
 type Inputs struct {
@@ -204,6 +215,7 @@ func (t *Tracker) Build(in Inputs) Snapshot {
 				// title is never trusted here. Screen rules are: an idle prompt box for two polls
 				// means the prompt is gone (dismissed with Esc).
 				if tr.screenIdle >= 2 {
+					out.Corrections = append(out.Corrections, Correction{PaneID: p.ID, From: a.State, Since: a.StateSince, Reason: "prompt gone"})
 					a.State, a.Reason = agent.Idle, ""
 				}
 			case agent.Working:
@@ -212,6 +224,11 @@ func (t *Tracker) Build(in Inputs) Snapshot {
 				// (idle in two consecutive samples) or, without a registry, the screen rules
 				// showing the idle prompt box for three polls.
 				if tr.regIdle >= 2 || (!hasReg && tr.screenIdle >= 3) {
+					why := "registry idle"
+					if tr.regIdle < 2 {
+						why = "screen idle"
+					}
+					out.Corrections = append(out.Corrections, Correction{PaneID: p.ID, From: a.State, Since: a.StateSince, Reason: why})
 					a.State, a.CurrentTool, a.ToolDetail, a.TurnStarted = agent.Idle, "", "", time.Time{}
 				}
 			default: // hooks missed a prompt (resumed session): trust the spinner

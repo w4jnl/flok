@@ -74,10 +74,12 @@ func runDoctor(cfg config.Config) int {
 			add("warn", "Copilot CLI hooks missing (run `flok install --copilot`)")
 		}
 	}
-	if entries, err := claudereg.List(3 * time.Second); err != nil {
-		add("warn", "`claude agents --json` failed (%v); registry fallback disabled", err)
+	if bin, err := claudereg.Binary(); err != nil {
+		add("warn", "%v; registry fallback disabled", err)
+	} else if entries, err := claudereg.List(3 * time.Second); err != nil {
+		add("warn", "`%s agents --json` failed (%v); registry fallback disabled", bin, err)
 	} else {
-		add("ok", "`claude agents --json` works (%d sessions)", len(entries))
+		add("ok", "`claude agents --json` works via %s (%d sessions)", bin, len(entries))
 	}
 
 	// sounds

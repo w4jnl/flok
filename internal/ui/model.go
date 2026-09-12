@@ -269,6 +269,22 @@ func (m Model) pollScreen() tea.Cmd {
 	}
 }
 
+// persistCorrection writes an overruled hook state back to the record (under the record's
+// lock, and only if no newer hook event replaced it), so the fix outlives this poll.
+func (m Model) persistCorrection(c merge.Correction) {
+	now := time.Now()
+	m.debugf("correct %s %s -> idle (%s)", c.PaneID, c.From, c.Reason)
+	_, _, _ = m.d.Store.Update(c.PaneID, func(rec *agent.Agent) state.Effects {
+		if rec.State != c.From || !rec.StateSince.Equal(c.Since) {
+			return state.Effects{} // a hook event arrived meanwhile: it wins
+		}
+		rec.State, rec.StateSince, rec.Reason = agent.Idle, now, ""
+		rec.CurrentTool, rec.ToolDetail, rec.TurnStarted = "", "", time.Time{}
+		rec.LastEvent, rec.LastEventAt = "corrected:"+c.Reason, now
+		return state.Effects{}
+	})
+}
+
 // captureArgs captures the visible screen of a pane (agents redraw in place, so scrollback
 // would resurrect dismissed prompts); extra > 0 adds that many scrollback lines.
 func CaptureArgs(pane string, extra int) []string {
@@ -442,6 +458,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.d.Store != nil {
 			for _, pane := range m.snap.NewlySeen {
 				_ = m.d.Store.MarkSeen(pane, time.Now())
+			}
+			for _, c := range m.snap.Corrections {
+				m.persistCorrection(c)
 			}
 		}
 		m.soundTransitions()

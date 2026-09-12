@@ -149,6 +149,10 @@ func TestHookAuthorityAndSeen(t *testing.T) {
 	if a := s.Agents[0]; a.State != agent.Idle || a.CurrentTool != "" {
 		t.Fatalf("two idle registry samples should clear working: %+v", a)
 	}
+	if len(s.Corrections) != 1 || s.Corrections[0].PaneID != "%1" || s.Corrections[0].From != agent.Working ||
+		s.Corrections[0].Reason != "registry idle" || !s.Corrections[0].Since.Equal(hook["%1"].StateSince) {
+		t.Fatalf("correction not reported: %+v", s.Corrections)
+	}
 	// hook says idle but the spinner shows for 2 polls -> working
 	hook["%1"] = agent.Agent{PaneID: "%1", Kind: "claude", State: agent.Idle, HasHooks: true, StateSince: now}
 	s = tr.Build(Inputs{Tmux: snap("◑ job", "$2"), ClientTTY: "/dev/ttys9", Adapters: ads, Hook: hook, Now: now})

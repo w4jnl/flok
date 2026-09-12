@@ -84,7 +84,11 @@ wait_for '○ (flok|fake-agent)' 6 || true
 snap=$(capture)
 expect "registry idle x2 -> interrupted turn shows idle" '○ (flok|fake-agent)' "$snap"
 expect "interrupted turn leaves only the earlier block unseen" '^agents · 1' "$snap"
+expect "correction persisted into the hook record" '"state": "idle"' "$(cat "$T"/state/agents/*.json)"
+expect "correction reason recorded" 'corrected:registry idle' "$(cat "$T"/state/agents/*.json)"
 registry '[]'
+sleep 6   # registry gone again: a persisted correction must not flap back to working
+expect "corrected state does not flap back" '○ (flok|fake-agent)' "$(capture)"
 
 hook claude '{"hook_event_name":"SessionEnd","session_id":"abc","reason":"prompt_input_exit"}'
 wait_for "~$PROJ" 3 || true
