@@ -10,7 +10,8 @@ t0=$(python3 -c 'import time;print(time.time())')
 hook claude '{"hook_event_name":"SessionStart","source":"startup","session_id":"abc","cwd":"'"$R"'"}'
 t1=$(python3 -c 'import time;print(time.time())')
 ms=$(python3 -c "print(int(($t1-$t0)*1000))")
-expect "hook round trip < 80 ms (took ${ms} ms)" '^[0-7]?[0-9]$' "$ms"
+budget=80; [ -n "${CI:-}" ] && budget=250   # shared CI runners start processes slowly (two python3 launches sit inside the measurement)
+expect "hook round trip < ${budget} ms (took ${ms} ms)" '^ok$' "$([ "$ms" -lt "$budget" ] && echo ok || echo slow)"
 wait_for "○ $PROJ *$" 3 || true
 expect "hooked agent shows without ~" "○ $PROJ *$" "$(capture)"
 
