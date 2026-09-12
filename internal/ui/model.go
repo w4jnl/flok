@@ -194,8 +194,8 @@ func (m *Model) forwardChord(msg tea.KeyMsg) tea.Cmd {
 }
 
 // watchStore pushes a (coalesced) signal whenever a hook record or seen mark changes, or the
-// terminal-focus / sidebar-hidden markers flip. The state dir root also sees our own
-// snapshot.json writes; those are ignored by name.
+// sidebar-hidden marker flips. The state dir root also sees our own snapshot.json writes;
+// those are ignored by name.
 func watchStore(dir string, ch chan struct{}) {
 	w, err := fsnotify.NewWatcher()
 	if err != nil {
@@ -218,12 +218,13 @@ func watchStore(dir string, ch chan struct{}) {
 }
 
 // storeEventWanted filters fsnotify events: hook records and seen marks under agents/ and seen/,
-// plus the terminal-focus and sidebar-hidden markers in the root; everything else in the root
-// (our own snapshot.json temp+rename writes, events.log, pid files) is noise.
+// plus the sidebar-hidden marker in the root (un-hide must resume the spinner at once);
+// everything else in the root (our own snapshot.json temp+rename writes, terminal-focus, which
+// the next poll reads anyway, events.log, pid files) is noise.
 func storeEventWanted(root, name string) bool {
 	base := filepath.Base(name)
 	if filepath.Dir(name) == root {
-		return base == "terminal-focus" || base == "sidebar-hidden"
+		return base == "sidebar-hidden"
 	}
 	return strings.HasSuffix(base, ".json")
 }
@@ -319,8 +320,14 @@ func (m Model) needsScreen(a agent.Agent) bool {
 func (m Model) pollScreen() tea.Cmd {
 	type target struct{ pane, kind, title, progress string }
 	var targets []target
+	inMode := map[string]bool{} // copy/view mode shows scrollback: an old prompt box is no evidence
+	for _, p := range m.tmuxSnap.Panes {
+		if p.InMode {
+			inMode[p.ID] = true
+		}
+	}
 	for _, a := range m.snap.Agents {
-		if m.needsScreen(a) && m.d.Rules.Get(a.Kind) != nil {
+		if m.needsScreen(a) && !inMode[a.PaneID] && m.d.Rules.Get(a.Kind) != nil {
 			targets = append(targets, target{a.PaneID, a.Kind, m.titles[a.PaneID], m.progress[a.PaneID]})
 		}
 	}
@@ -495,11 +502,12 @@ func (m Model) tick() tea.Cmd {
 	return tea.Tick(m.pollInterval(), func(time.Time) tea.Msg { return tickMsg{} })
 }
 
-// idle reports that nobody can see the sidebar: the terminal window is unfocused (the outer's
-// client-focus hooks) or the work pane is zoomed over it (flok hide). While idle the spinner
-// pauses and the polls stretch to idle_poll_ms; hook writes still rebuild immediately, so the
-// menu bar stays current.
-func (m Model) idle() bool { return m.unfocused || m.hidden }
+// idle reports that nobody can see the sidebar: the work pane is zoomed over it (flok hide).
+// While idle the spinner pauses and the polls stretch to idle_poll_ms; hook writes still
+// rebuild immediately, so the menu bar stays current. An unfocused terminal window does not
+// count: it is usually still on screen next to whatever has focus, and a frozen spinner there
+// reads as a stall.
+func (m Model) idle() bool { return m.hidden }
 
 func (m Model) idlePollMs() int {
 	ms := m.d.Cfg.Sidebar.IdlePollMs
@@ -619,24 +627,6 @@ func (m *Model) animCmd() tea.Cmd {
 		return m.anim()
 	}
 	return nil
-}
-
-// wake runs on input or pane focus, which prove the terminal is focused. If that ends idle mode
-// the marker is corrected on disk (a terminal that never reports focus-in would otherwise keep
-// the sidebar idle) and a fresh poll restores the spinner and cadence right away.
-func (m *Model) wake() tea.Cmd {
-	if !m.unfocused {
-		return nil
-	}
-	m.unfocused = false
-	if m.d.Store != nil {
-		_ = m.d.Store.SetTerminalFocus(true)
-	}
-	m.debugf("wake: terminal focused")
-	if m.idle() { // still hidden
-		return nil
-	}
-	return m.poll()
 }
 
 // batch drops nil commands; an all-nil tea.Batch would still schedule an empty message.
@@ -801,19 +791,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.FocusMsg: // tmux forwards pane focus (focus-events on in the outer)
 		m.debugf("focus in")
 		m.focused = true
-		return m, m.wake()
+		return m, nil
 	case tea.BlurMsg:
 		m.debugf("focus out")
 		m.focused = false
 		return m, nil
 	case tea.KeyMsg:
-		wake := m.wake()
-		next, cmd := m.onKey(msg)
-		return next, batch(cmd, wake)
+		return m.onKey(msg)
 	case tea.MouseMsg:
-		wake := m.wake()
-		next, cmd := m.onMouse(msg)
-		return next, batch(cmd, wake)
+		return m.onMouse(msg)
 	}
 	return m, nil
 }

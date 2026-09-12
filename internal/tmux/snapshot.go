@@ -23,6 +23,7 @@ type Pane struct {
 	PID                                  int
 	Dead                                 bool
 	PBState, PBProgress                  string // OSC 9;4 progress bar: hidden|normal|error|indeterminate|paused, percent
+	InMode                               bool   // copy/view mode: the visible text is scrollback, not the live screen
 	Title                                string
 }
 
@@ -45,7 +46,7 @@ var (
 		"#{session_attached}", "#{session_windows}", "#{session_activity}", "#{session_created}"}, sep)
 	paneFmt = "P" + sep + strings.Join([]string{"#{pane_id}", "#{session_id}", "#{session_name}", "#{window_id}",
 		"#{window_index}", "#{pane_index}", "#{window_active}", "#{pane_active}", "#{pane_current_command}",
-		"#{pane_current_path}", "#{pane_tty}", "#{pane_pid}", "#{pane_dead}", "#{pane_pb_state}", "#{pane_pb_progress}", "#{pane_title}"}, sep)
+		"#{pane_current_path}", "#{pane_tty}", "#{pane_pid}", "#{pane_dead}", "#{pane_pb_state}", "#{pane_pb_progress}", "#{pane_in_mode}", "#{pane_title}"}, sep)
 	clientFmt = "C" + sep + strings.Join([]string{"#{client_tty}", "#{session_id}", "#{client_session}",
 		"#{client_activity}", "#{client_width}", "#{client_height}", "#{client_termname}"}, sep)
 )
@@ -83,13 +84,13 @@ func ParseSnapshot(out string) Snapshot {
 			s.Sessions = append(s.Sessions, Session{ID: f[1], Name: f[2], Path: f[3], Attached: atoi(f[4]),
 				Windows: atoi(f[5]), Activity: atoi64(f[6]), Created: atoi64(f[7])})
 		case "P":
-			if len(f) < 17 {
+			if len(f) < 18 {
 				continue
 			}
 			s.Panes = append(s.Panes, Pane{ID: f[1], SessionID: f[2], SessionName: f[3], WindowID: f[4],
 				WindowIndex: atoi(f[5]), PaneIndex: atoi(f[6]), WindowActive: f[7] == "1", Active: f[8] == "1",
 				Command: f[9], Path: f[10], TTY: f[11], PID: atoi(f[12]), Dead: f[13] == "1",
-				PBState: f[14], PBProgress: f[15], Title: strings.Join(f[16:], sep)})
+				PBState: f[14], PBProgress: f[15], InMode: f[16] == "1", Title: strings.Join(f[17:], sep)})
 		case "C":
 			if len(f) < 8 {
 				continue

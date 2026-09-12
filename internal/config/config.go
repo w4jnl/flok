@@ -31,7 +31,7 @@ type Sidebar struct {
 	ShowBranch       bool    `toml:"show_branch"`
 	BranchSource     string  `toml:"branch_source"`
 	PollMs           int     `toml:"poll_ms"`
-	IdlePollMs       int     `toml:"idle_poll_ms"` // poll interval while the terminal is unfocused or the sidebar hidden
+	IdlePollMs       int     `toml:"idle_poll_ms"` // poll interval while the sidebar is hidden (prefix B)
 	SpinnerMs        int     `toml:"spinner_ms"`
 	FPS              int     `toml:"fps"` // Bubble Tea renderer frame rate cap (1..120)
 	RegistryPollMs   int     `toml:"registry_poll_ms"`

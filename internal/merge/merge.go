@@ -245,17 +245,19 @@ func (t *Tracker) Build(in Inputs) Snapshot {
 					a.State, a.Reason = agent.Idle, ""
 				}
 			case agent.Working:
-				// An interrupted turn (Esc) emits no hook. The title is NOT a signal: Claude Code
-				// keeps the idle "✳" title while busy inside tmux. Trust Claude's own registry
-				// (idle in two consecutive samples) or, without a registry, the screen rules
-				// showing the idle prompt box for three polls.
+				// An interrupted turn (Esc), a usage-limit cut-off or an errored turn emits no hook.
+				// The title is NOT a signal: Claude Code keeps the idle "✳" title while busy inside
+				// tmux. Trust Claude's own registry (idle in two consecutive samples, ~10-20 s at
+				// the default cadence) or the screen rules showing a bare idle prompt box for three
+				// polls (~6 s; herdr's rules rank the working status line above the prompt box, and
+				// panes in copy mode are not captured). Whichever comes first wins.
 				// While paused for background tasks the registry and the prompt box both look idle
 				// by design; only a very old waiting state (stale_working) is questioned.
 				waiting := a.Reason == "waiting" && now.Sub(a.StateSince) < in.StaleWorking
-				if !waiting && (tr.regIdle >= 2 || (!hasReg && tr.screenIdle >= 3)) {
-					why := "registry idle"
-					if tr.regIdle < 2 {
-						why = "screen idle"
+				if !waiting && (tr.regIdle >= 2 || tr.screenIdle >= 3) {
+					why := "screen idle"
+					if tr.regIdle >= 2 {
+						why = "registry idle"
 					}
 					out.Corrections = append(out.Corrections, Correction{PaneID: p.ID, From: a.State, Since: a.StateSince, Reason: why})
 					a.State, a.CurrentTool, a.ToolDetail, a.TurnStarted = agent.Idle, "", "", time.Time{}

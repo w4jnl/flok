@@ -203,6 +203,37 @@ func TestScreenRules(t *testing.T) {
 	if a := s.Agents[0]; a.State != agent.Blocked || a.Reason != "prompt" {
 		t.Fatalf("screen blocker over hook working: %+v", a)
 	}
+	// hooks say working (a turn interrupted with Esc emits no Stop), the registry still says busy,
+	// but the screen shows a bare idle prompt box in three fresh samples -> idle, without waiting
+	// for two 10 s registry samples
+	tr = NewTracker()
+	hook["%1"] = agent.Agent{PaneID: "%1", Kind: "claude", State: agent.Working, CurrentTool: "Bash", HasHooks: true, StateSince: now}
+	tm := snap("✳ j", "$2")
+	tm.Panes[0].TTY = "/dev/ttyagent"
+	reg := map[string]claudereg.Entry{"/dev/ttyagent": {PID: 42, Status: "busy", Name: "j"}}
+	scr["%1"] = rules.Result{Matched: true, State: agent.Idle, RuleID: "live_prompt_box", Region: "prompt_box_body"}
+	for i := 1; i <= 2; i++ {
+		s = tr.Build(Inputs{Tmux: tm, ClientTTY: "/dev/ttys9", Adapters: ads, Hook: hook, Registry: reg, RegistrySeq: 1, RegistryAt: later, Screen: scr, ScreenSeq: i, ScreenAt: later, Now: now})
+		if a := s.Agents[0]; a.State != agent.Working {
+			t.Fatalf("sample %d: two idle screens must not clear working yet: %+v", i, a)
+		}
+	}
+	s = tr.Build(Inputs{Tmux: tm, ClientTTY: "/dev/ttys9", Adapters: ads, Hook: hook, Registry: reg, RegistrySeq: 1, RegistryAt: later, Screen: scr, ScreenSeq: 3, ScreenAt: later, Now: now})
+	if a := s.Agents[0]; a.State != agent.Idle || a.CurrentTool != "" {
+		t.Fatalf("three idle screens should clear working even with a registry: %+v", a)
+	}
+	if len(s.Corrections) != 1 || s.Corrections[0].Reason != "screen idle" {
+		t.Fatalf("screen correction not reported: %+v", s.Corrections)
+	}
+	// the title-based idle rule is no evidence
+	tr = NewTracker()
+	scr["%1"] = rules.Result{Matched: true, State: agent.Idle, RuleID: "osc_title_idle", Region: "osc_title"}
+	for i := 1; i <= 3; i++ {
+		s = tr.Build(Inputs{Tmux: tm, ClientTTY: "/dev/ttys9", Adapters: ads, Hook: hook, Registry: reg, RegistrySeq: 1, RegistryAt: later, Screen: scr, ScreenSeq: i, ScreenAt: later, Now: now})
+	}
+	if a := s.Agents[0]; a.State != agent.Working {
+		t.Fatalf("osc_title idle must not clear working: %+v", a)
+	}
 }
 
 // A fresh turn must show as working at once even after a long idle period full of "idle"

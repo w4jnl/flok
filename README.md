@@ -111,7 +111,7 @@ Four sources feed the merge, most authoritative first:
 | source | what it gives | when it is used |
 |---|---|---|
 | **Hooks** (`flok hook claude`, `flok hook copilot`) | exact transitions: prompt submitted, tool start/end with the tool name, permission request, question, stop, session end | always, for agents started after `flok install` |
-| **Claude's registry** (`claude agents --json`) | busy / idle per running session, matched to a pane through the process tty | the label, and clearing a turn interrupted with Esc, which emits no hook |
+| **Claude's registry** (`claude agents --json`) | busy / idle per running session, matched to a pane through the process tty | the label, and clearing a turn that ended without a Stop hook (Esc, usage limit, error): two idle samples, or the screen rules showing a bare prompt box three times, whichever comes first |
 | **Pane title** | Claude Code writes `✳ <name>` and a spinner glyph | the agent's own session name; a spinner counts as working. An idle glyph is *not* evidence: inside tmux Claude keeps `✳` while busy |
 | **Screen rules** | herdr's detection manifests (TOML, Apache-2.0) evaluated over the visible pane text, the title and tmux's OSC 9;4 progress state | agents without hooks, and hook-driven agents while working or blocked, to notice a prompt dismissed with Esc |
 
@@ -301,7 +301,7 @@ agent_rows = 2              # 2: project + "kind · title" line per agent; 1: si
 show_branch = true
 branch_source = "active_pane"   # or "session_path"
 poll_ms = 1000
-idle_poll_ms = 3000         # while the terminal is unfocused or the sidebar hidden; the spinner pauses too
+idle_poll_ms = 3000         # while the sidebar is hidden (prefix B); the spinner pauses too
 spinner_ms = 250            # working-spinner frame interval in the sidebar
 fps = 15                    # renderer frame-rate cap; 60 (Bubble Tea default) wakes up needlessly often
 registry_poll_ms = 10000    # `claude agents --json` costs ~0.2 s CPU: polled at this rate only while a

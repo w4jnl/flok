@@ -88,7 +88,7 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
   callback because it costs a tmux call.
 - `internal/merge/merge.go` is the authority merge. For panes with `HasHooks` the hook record
   wins, with narrow escape hatches keyed on title/screen history kept in the per-pane `track`
-  (e.g. three idle-title polls clear a stale `working`, two idle-screen polls clear a stale
+  (e.g. two idle registry samples or three idle-screen polls clear a stale `working`, two idle-screen polls clear a stale
   `blocked`). Panes without hooks fall back to title → registry → screen rules. `done` becomes
   `idle` the moment the user looks at the pane; the seen mark is persisted by the caller from
   `Snapshot.NewlySeen`. Change state semantics here and in `machine.go` together, and cover them
@@ -110,9 +110,10 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
   go in one tmux invocation (`captureAll`); the registry is only queried while a Claude
   turn/prompt is open or a pane lacks hooks (else once a minute); sidebar focus comes from
   `tea.FocusMsg`/`BlurMsg` with an outer `pane_active window_zoomed_flag` check every 5th poll as
-  fallback; **idle mode** (`terminal-focus` = 0 from the outer's client-focus hooks, or
-  `sidebar-hidden` = 1 written by `flok hide`/`toggle`) pauses the spinner and stretches polls and
-  captures to `idle_poll_ms`, with an fsnotify watch on those two markers for prompt resume; the
+  fallback; **idle mode** (`sidebar-hidden` = 1, written by `flok hide`/`toggle` and verified against
+  `window_zoomed_flag`) pauses the spinner and stretches polls and captures to `idle_poll_ms`,
+  with an fsnotify watch on that marker for prompt resume — an unfocused terminal window is
+  deliberately not idle, it is usually still visible; the
   renderer runs at `fps` (15). `FLOK_CPUPROFILE=<file>` in the sidebar's environment writes a
   30 s CPU profile after start (`tmux -L flok set-environment -g …` then `flok reload`). Sounds are played by the hook by default
   (`sounds.player = "hook"`); the sidebar only plays them for title/screen-derived transitions or

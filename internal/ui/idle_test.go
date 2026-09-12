@@ -28,13 +28,13 @@ func TestIdleIntervals(t *testing.T) {
 	if m.pollInterval() != time.Second || m.screenInterval() != 2*time.Second {
 		t.Fatalf("visible: %v %v", m.pollInterval(), m.screenInterval())
 	}
-	m.unfocused = true
-	if m.pollInterval() != 3*time.Second || m.screenInterval() != 3*time.Second {
+	m.unfocused = true // an unfocused window is still on screen: no slowdown
+	if m.pollInterval() != time.Second || m.screenInterval() != 2*time.Second {
 		t.Fatalf("unfocused: %v %v", m.pollInterval(), m.screenInterval())
 	}
 	m.unfocused, m.hidden = false, true
-	if m.pollInterval() != 3*time.Second {
-		t.Fatalf("hidden: %v", m.pollInterval())
+	if m.pollInterval() != 3*time.Second || m.screenInterval() != 3*time.Second {
+		t.Fatalf("hidden: %v %v", m.pollInterval(), m.screenInterval())
 	}
 	m.d.Cfg.Sidebar.IdlePollMs = 500 // below the floor: idle never polls faster than the normal cadence
 	if m.pollInterval() != time.Second || m.screenInterval() != 2*time.Second {
@@ -96,18 +96,18 @@ func TestRebuildReloadsStoreWithoutTmux(t *testing.T) {
 func TestSpinnerPausesWhileIdle(t *testing.T) {
 	m, _ := newTestModel(t)
 	m.snap = merge.Snapshot{Agents: []agent.Agent{{PaneID: "%1", State: agent.Working}}}
-	m.animating, m.frame, m.unfocused = true, 3, true
+	m.animating, m.frame, m.hidden = true, 3, true
 	m.vc.valid = true
 	next, cmd := m.Update(animMsg{})
 	m = next.(Model)
 	if cmd != nil || m.animating || m.frame != 3 || !m.vc.valid {
-		t.Fatalf("idle: the spinner must stop without redrawing (cmd=%v animating=%v frame=%d valid=%v)", cmd != nil, m.animating, m.frame, m.vc.valid)
+		t.Fatalf("hidden: the spinner must stop without redrawing (cmd=%v animating=%v frame=%d valid=%v)", cmd != nil, m.animating, m.frame, m.vc.valid)
 	}
-	m.hidden = true
 	if m.animCmd() != nil {
 		t.Fatal("hidden: no spinner")
 	}
-	m.unfocused, m.hidden, m.lastRaw = false, false, "raw"
+	m.unfocused = true // unfocused but visible: spins
+	m.hidden, m.lastRaw = false, "raw"
 	next, cmd = m.Update(snapshotMsg{fp: m.lastFP, raw: "raw", rebuilt: true})
 	m = next.(Model)
 	if cmd == nil || !m.animating {
@@ -118,7 +118,7 @@ func TestSpinnerPausesWhileIdle(t *testing.T) {
 func TestStoreEventWanted(t *testing.T) {
 	root := "/s"
 	for name, want := range map[string]bool{
-		"/s/agents/1.json": true, "/s/seen/1.json": true, "/s/terminal-focus": true, "/s/sidebar-hidden": true,
+		"/s/agents/1.json": true, "/s/seen/1.json": true, "/s/sidebar-hidden": true, "/s/terminal-focus": false,
 		"/s/agents/1.json.lock": false, "/s/agents/1.json.123.tmp": false,
 		"/s/snapshot.json": false, "/s/snapshot.json.42.tmp": false, "/s/runtime.json": false, "/s/events.log": false,
 	} {
