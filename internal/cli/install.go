@@ -35,6 +35,18 @@ func runInstall(cfg config.Config, args []string) int {
 	all := len(args) == 0 || want["--all"]
 	bin := binPath()
 	rc := 0
+	if all || want["--config"] {
+		p := config.ConfigFile()
+		switch written, err := config.WriteTemplate(p); {
+		case err != nil:
+			fmt.Fprintln(os.Stderr, "config:", err)
+			rc = 1
+		case written:
+			fmt.Println("config: wrote defaults to", p, "(all keys commented; edit and `flok reload`)")
+		default:
+			fmt.Println("config: keeping existing", p)
+		}
+	}
 	if all || want["--claude"] {
 		p := claudeSettingsPath()
 		changed, err := install.ClaudeSettings(p, bin)

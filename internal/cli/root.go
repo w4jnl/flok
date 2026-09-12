@@ -32,7 +32,8 @@ usage: flok <command>
   explain     show which screen-detection rules match agent panes (debugging)
   doctor      check tmux, hooks, sounds, manifests and the running outer session
   install     wire Claude Code / Copilot CLI hooks and print the tmux.conf snippet
-              (--claude, --copilot, --tmux; default: all)
+              and write a commented default config.toml if none exists
+              (--claude, --copilot, --tmux, --config; default: all)
   hook        hook receiver used by the agents (stdin JSON; never call by hand)
   completion  print a bash or zsh completion script (flok completion bash|zsh)
   version     print the version

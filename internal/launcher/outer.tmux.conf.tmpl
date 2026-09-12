@@ -29,4 +29,11 @@ set -g pane-border-indicators off
 set-environment -g COLORTERM truecolor
 set-hook -g client-focus-in  "run-shell -b '{{.Bin}} _focus 1'"
 set-hook -g client-focus-out "run-shell -b '{{.Bin}} _focus 0'"
+# tmux scales panes proportionally on every window resize, which would turn the 28-column
+# sidebar into 100 after a window manager moves the window around. The sidebar is the "main"
+# pane of a main-vertical layout, so re-applying the layout pins its width. `flok toggle`
+# changes main-pane-width for the rail. Skipped while the work pane is zoomed (sidebar hidden).
+set -g main-pane-width {{.Width}}
+set-hook -g window-resized "if-shell -F '#{window_zoomed_flag}' '' 'select-layout main-vertical'"
+set-hook -g client-attached "if-shell -F '#{window_zoomed_flag}' '' 'select-layout main-vertical'"
 source-file -q "{{.ExtraConf}}"

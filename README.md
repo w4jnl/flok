@@ -165,7 +165,8 @@ make install                       # builds bin/flok and copies it to ~/.local/b
 Then wire it up once:
 
 ```sh
-flok install                       # Claude Code hooks, Copilot hooks (if ~/.copilot exists), prints the tmux snippet
+flok install                       # Claude Code hooks, Copilot hooks (if ~/.copilot exists), a commented
+                                   # config.toml with the defaults, and it prints the tmux snippet
 ```
 
 Paste the printed snippet **below the tpm `run` line** of your tmux.conf (bindings placed above
@@ -236,7 +237,8 @@ flok completion bash|zsh
 
 ## Configuration
 
-`~/.config/flok/config.toml`; every key is optional, defaults shown.
+`~/.config/flok/config.toml`; every key is optional, defaults shown. `flok install` writes this file
+with everything commented out if it does not exist; `flok reload` applies edits.
 
 ```toml
 [inner]
@@ -251,7 +253,7 @@ session = "flok"
 extra_conf = "~/.config/flok/outer.extra.conf"   # sourced by the generated outer config
 
 [sidebar]
-width = 28
+width = 28                  # pinned: window resizes never scale the sidebar
 rail_width = 6              # rail rows: sessions as ①②…, then "<n> <status>" per agent
 rail_threshold = 12         # narrower than this renders the rail
 sessions_max_ratio = 0.4    # at most this share of the height for the sessions list

@@ -81,7 +81,7 @@ func RenderOuterConf(cfg config.Config, bin string) (string, error) {
 	}
 	var b bytes.Buffer
 	err = tmpl.Execute(&b, map[string]string{"Bin": bin, "Border": cfg.Theme.CurrentLine,
-		"ExtraConf": config.ExpandHome(cfg.Outer.ExtraConf)})
+		"ExtraConf": config.ExpandHome(cfg.Outer.ExtraConf), "Width": strconv.Itoa(cfg.Sidebar.Width)})
 	return b.String(), err
 }
 
@@ -153,6 +153,9 @@ func createOuter(cfg config.Config, bin, confPath string, outer *tmux.Local, ses
 	}
 	sidebar := strings.TrimSpace(out)
 	_, _ = outer.Run("set-option", "-p", "-t", sidebar, "remain-on-exit", "on")
+	// normalise to the pinned layout (the client attaching next may have another size)
+	_, _ = outer.Run("set-option", "-w", "-t", sess, "main-pane-width", strconv.Itoa(cfg.Sidebar.Width), ";",
+		"select-layout", "-t", sess, "main-vertical")
 	_, _ = outer.Run("select-pane", "-t", right)
 	return WriteRuntime(Runtime{OuterSocket: cfg.Outer.Socket, OuterSession: sess, SidebarPane: sidebar, RightPane: right,
 		InnerSocket: cfg.Inner.Socket, FullWidth: cfg.Sidebar.Width, RailWidth: cfg.Sidebar.RailWidth, StartedAt: time.Now()})

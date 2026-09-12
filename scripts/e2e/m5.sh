@@ -4,6 +4,22 @@
 source "$(dirname "$0")/lib.sh"
 CLIENT=$(IN list-clients -F '#{client_tty}' | head -1)
 SESS=$(IN list-clients -F '#{client_session}' | head -1)
+
+# the sidebar width is pinned: window resizes (window manager moving the terminal) must not scale it
+OUT resize-window -t flok -x 120 -y 40; sleep 0.4
+OUT resize-window -t flok -x 320 -y 80; sleep 0.4
+expect "sidebar stays 28 columns after window resizes" '^28$' "$(OUT display -p -t "$SIDEBAR" '#{pane_width}')"
+expect "sidebar is still the left pane" '^0$' "$(OUT display -p -t "$SIDEBAR" '#{pane_left}')"
+"$BIN" toggle; sleep 0.4
+OUT resize-window -t flok -x 200 -y 60; sleep 0.4
+expect "rail width is pinned too" '^6$' "$(OUT display -p -t "$SIDEBAR" '#{pane_width}')"
+"$BIN" toggle; sleep 0.4
+expect "toggle back to full" '^28$' "$(OUT display -p -t "$SIDEBAR" '#{pane_width}')"
+"$BIN" hide; sleep 0.4
+OUT resize-window -t flok -x 260 -y 70; sleep 0.4
+expect "resize while hidden keeps it hidden" '^1$' "$(OUT display -p -t "$RIGHT" '#{window_zoomed_flag}')"
+"$BIN" hide; sleep 0.4
+expect "unhide restores the pinned width" '^28$' "$(OUT display -p -t "$SIDEBAR" '#{pane_width}')"
 OTHER=Alpha; [ "$SESS" = Alpha ] && OTHER=Beta
 
 IN kill-session -t "$SESS"; sleep 1.2

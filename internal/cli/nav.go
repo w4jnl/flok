@@ -142,10 +142,14 @@ func runLayout(cfg config.Config, cmd string, args []string) int {
 		_, err = outer.Run("respawn-pane", "-k", "-t", rt.SidebarPane, "-e", "FLOK_OUTER=1",
 			"-e", "FLOK_RIGHT_PANE="+rt.RightPane, binPath()+" sidebar")
 	case "hide":
+		if zoomed == "1" { // un-hide: resizes while hidden scaled the layout underneath, re-pin it
+			_, err = outer.Run("resize-pane", "-Z", "-t", rt.RightPane, ";", "select-layout", "-t", rt.RightPane, "main-vertical")
+			break
+		}
 		_, err = outer.Run("resize-pane", "-Z", "-t", rt.RightPane)
 	case "toggle":
 		if zoomed == "1" {
-			_, err = outer.Run("resize-pane", "-Z", "-t", rt.RightPane)
+			_, err = outer.Run("resize-pane", "-Z", "-t", rt.RightPane, ";", "select-layout", "-t", rt.RightPane, "main-vertical")
 			break
 		}
 		width, _ := tmux.Display(outer, rt.SidebarPane, "#{pane_width}")
@@ -161,7 +165,9 @@ func runLayout(cfg config.Config, cmd string, args []string) int {
 		if w < cfg.Sidebar.RailThreshold {
 			target = full
 		}
-		_, err = outer.Run("resize-pane", "-t", rt.SidebarPane, "-x", fmt.Sprint(target))
+		// main-pane-width is what the outer's resize hook re-applies; set it and relayout
+		_, err = outer.Run("set-option", "-w", "-t", rt.SidebarPane, "main-pane-width", fmt.Sprint(target), ";",
+			"select-layout", "-t", rt.SidebarPane, "main-vertical")
 	}
 	return report(err)
 }
