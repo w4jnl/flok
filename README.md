@@ -1,11 +1,13 @@
 # flok
 
-A [herdr](https://herdr.dev)-like agent sidebar for tmux. One narrow pane on the left shows your
-**sessions** (with git branch and a state dot) on top and your **agents** (Claude Code and Copilot
-CLI panes, with state, current tool and unread count) at the bottom. It plays a sound
-when an agent needs input or finishes while you are looking elsewhere, collapses to a compact rail,
-hides completely, and opens a `prefix ?` keybinds help built from your live tmux bindings.
-Nothing more.
+A [herdr](https://herdr.dev)-style agent sidebar for tmux.
+
+flok adds one narrow pane to the left of your normal tmux: **sessions** on top (name, git branch,
+state dot), **agents** below (every Claude Code or Copilot CLI pane, with its state, current tool
+and unread count). It plays a sound when an agent needs your input or finishes while you are
+looking elsewhere, collapses to a six-column rail, hides completely, and opens a `prefix ?`
+keybinds help built from your live tmux bindings. Your tmux server, config, plugins and layouts
+are not touched.
 
 ```
 ┌──────────────────────────┬────────────────────────────────────────┐
@@ -25,109 +27,216 @@ Nothing more.
 └──────────────────────────┴────────────────────────────────────────┘
 ```
 
+## Scope and status
+
+flok is a personal tool. I built it for my own workflow: several Claude Code sessions in
+parallel, tmux everywhere, Ghostty on macOS, herdr's sidebar as the model of what I wanted and
+nothing beyond it. It is published because there is no reason not to, and because the approach
+(a nested outer tmux server, hook-driven agent state) may be useful to others.
+
+What that means in practice:
+
+- Features are the ones I need. Requests that do not fit my workflow will probably be declined,
+  politely.
+- macOS is the first-class platform (sounds use `afplay`); Linux works but gets less testing.
+- There is no compatibility promise between versions yet. Read the release notes before
+  `brew upgrade`.
+- Bug reports with a reproduction are welcome; support is best effort.
+
+## Features
+
+- **Sessions panel**: every tmux session with the git branch of its active pane, the current one
+  highlighted, a state dot rolled up from the agents inside it.
+- **Agents panel**: every agent pane across all sessions, sorted by attention (blocked, then done,
+  then working, then idle), two lines per agent: project and state detail, agent kind and its own
+  session title.
+- **Live states** from hooks: working with the current tool and elapsed time (`Bash 0:42`),
+  blocked (`perm:Bash`, `question`, `elicit`), done with an unread count, idle.
+- **Sounds** when an agent gets blocked or finishes in a pane you are not looking at; never for
+  the pane in front of you; debounced so ten agents finishing together beep once.
+- **Navigation**: click or `Enter` on a row to jump there; `prefix o` jumps to whatever needs you.
+- **Rail** mode at six columns, hide mode at zero, both a keystroke away.
+- **Keybinds help**: `prefix ?` opens a popup listing all live bindings of your tmux server,
+  grouped (flok, prefix, no prefix, copy-mode, plugins), with tmux's own notes as labels and `/`
+  to filter.
+- **Zero footprint** on your tmux: no plugin, no pane injected into your windows, nothing saved by
+  resurrect. Kill the outer server and everything is as before.
+
 ## How it works
 
-`flok up` starts a tiny **outer** tmux server (socket `flok`, `prefix None`, no status bar)
-with two panes: the sidebar on the left and, on the right, a plain `tmux attach` to your normal
-(**inner**) server. Every key and mouse event passes straight through to the inner tmux; your
-prefix, plugins, layouts and resurrect state are untouched. The sidebar drives the inner client
-with `switch-client`, so selecting a space or an agent just moves you there.
+### Two tmux servers
 
-Agent state comes from four sources, most authoritative first:
+```
+Ghostty (or any terminal)
+└── outer tmux server   socket "flok" · prefix None · status off · mouse on
+    └── session "flok"
+        ├── left pane   flok sidebar            (Bubble Tea program)
+        └── right pane  tmux attach ───────────► inner tmux server   (your normal server)
+                                                 ├── session Claude   ├─ window 1 ─ pane: claude
+                                                 ├── session Hugo     │            ─ pane: zsh
+                                                 └── session ...      └─ ...
+```
 
-1. **Hooks** – Claude Code and Copilot CLI call `flok hook` on every event (prompt, tool
-   start/end, permission request, question, stop, session end). This gives precise
-   working / blocked / done / idle transitions, the current tool, and the sounds.
-2. **Claude's registry** – `claude agents --json`, matched to panes through the process tty.
-3. **Pane title** – Claude Code shows a spinner while working and `✳` when idle.
-4. **Screen rules** – herdr's Apache-2.0 detection manifests evaluated over `capture-pane`, the
-   pane title and tmux's OSC 9;4 progress state, used
-   for agents without hooks (e.g. Copilot before `install --copilot`, sessions started before the
-   hooks were installed). Rules live in `internal/rules/manifests/` and can be overridden per
-   agent in `~/.config/flok/agents/<id>.toml`.
+`flok up` starts the outer server from a generated config and attaches your terminal to it. The
+outer server has no prefix key and no status bar, so every keystroke and mouse event reaches the
+inner tmux exactly as before; it merely frames your session with a sidebar. The right pane runs an
+attach loop: a killed session re-attaches elsewhere, a deliberate detach (`prefix d`) tears the
+outer down and returns you to the shell.
 
-States: **working** (cyan spinner), **blocked** (orange: `perm:Bash`, `question`, `elicit`,
-`prompt`), **done** (green, finished while not being viewed, cleared when you look at it),
-**idle**, **unknown**. Agents are sorted blocked > done > working > idle. An agent row shows the
-project (base name of the agent's working directory, like herdr's workspace) with the state
-detail on the right, and below it the agent kind plus the agent's own session title. A `~`
-before the name means that agent has no hook data (restart it after `install --claude`).
+The sidebar never modifies the inner server. It reads it (`list-sessions`, `list-panes`,
+`list-clients`, `capture-pane`, `list-keys`) and drives your client with `switch-client`,
+`select-window` and `select-pane`. The `prefix` bindings you paste into your tmux.conf are plain
+`run-shell` calls to `flok jump|next|prev|toggle|hide|focus` and a `display-popup` for the help.
+
+### Where agent state comes from
+
+```
+ Claude Code / Copilot CLI ──hooks──► flok hook ──► ~/.local/state/flok/agents/<pane>.json
+                                                  (per-pane record, flock + atomic write, plays the sound)
+                                                              │ fsnotify
+ tmux snapshot (1 s) ──────────────────────────────────────┐  │
+ claude agents --json (5 s, pid → tty → pane) ─────────────┤  ▼
+ capture-pane + title + OSC 9;4 progress (2 s, rule engine)┴► merge.Build ──► sidebar view
+                                                               │
+                                                               └─ seen marks (done → idle once you look)
+```
+
+Four sources feed the merge, most authoritative first:
+
+| source | what it gives | when it is used |
+|---|---|---|
+| **Hooks** (`flok hook claude`, `flok hook copilot`) | exact transitions: prompt submitted, tool start/end with the tool name, permission request, question, stop, session end | always, for agents started after `flok install` |
+| **Claude's registry** (`claude agents --json`) | busy / idle per running session, matched to a pane through the process tty | the label, and clearing a turn interrupted with Esc, which emits no hook |
+| **Pane title** | Claude Code writes `✳ <name>` and a spinner glyph | the agent's own session name; a spinner counts as working. An idle glyph is *not* evidence: inside tmux Claude keeps `✳` while busy |
+| **Screen rules** | herdr's detection manifests (TOML, Apache-2.0) evaluated over the visible pane text, the title and tmux's OSC 9;4 progress state | agents without hooks, and hook-driven agents while working or blocked, to notice a prompt dismissed with Esc |
+
+The hook record is the source of truth for hook-driven agents. The other sources only refine it
+in two narrow cases: two consecutive registry samples saying idle (or, without a registry, the
+idle prompt box visible for three polls) end a *working* state that no hook closed; the idle
+prompt box visible for two polls clears a *blocked* state whose dialog is gone. A `~` before an
+agent's name means no hook data has arrived for that pane (restart the agent after `flok install`).
+
+### States
+
+| state | glyph | colour | entered by | left by |
+|---|---|---|---|---|
+| working | `◐◓◑◒` | cyan | prompt submitted, tool start/end | stop, block, interrupted turn |
+| blocked | `●` | orange | permission request, `AskUserQuestion`, elicitation dialog, a visible prompt the hooks missed | tool end, next prompt, stop, dialog gone |
+| done | `●` | green | stop while the pane is not the one you look at | looking at it (or jumping there) |
+| idle | `○` | grey | session start, stop while you watch, done once seen | prompt |
+| unknown | `◌` | grey | agent present, no signal yet | any signal |
+
+A *done* agent keeps an unread counter (`done · 2` = one block plus one completion you did not
+see). Looking at the pane, `Enter`, a click or `prefix o` marks it seen. Sounds: blocked and done
+play their own sound, error a third; nothing plays for the pane that is currently in front of
+you, and repeats within 750 ms are dropped.
+
+### The help popup
+
+`prefix ?` runs `flok keys` in a tmux popup. It reads `list-keys` for the prefix, root and
+copy-mode tables of the inner server, keeps tmux's own notes as labels for stock bindings,
+translates common commands for the rest (`select-pane -L` becomes "pane left"), groups plugin
+bindings by the plugin directory in their `run-shell` path, and hides mouse bindings unless asked.
+Nothing is hand-maintained: what the popup shows is what your server has bound right now.
+
+## Requirements
+
+- tmux 3.3 or newer (3.7 tested), macOS or Linux.
+- Claude Code and/or GitHub Copilot CLI for hook-driven state. Other agents get title and
+  screen-rule detection only (manifests exist for Codex, Gemini and OpenCode).
+- macOS for sounds (`afplay`); on Linux sounds are silently skipped.
+- Go 1.27 only if you build from source.
 
 ## Install
 
-Homebrew (macOS and Linux), from the `w4jnl/tap` tap:
+Homebrew, from the `w4jnl/tap` tap:
 
 ```sh
 brew install w4jnl/tap/flok
-flok install                       # Claude Code hooks + Copilot hooks (if ~/.copilot exists) + prints the tmux snippet
 ```
 
-Or from source (Go 1.27+):
+Or from source:
 
 ```sh
 git clone git@github.com:w4jnl/flok.git && cd flok
 make install                       # builds bin/flok and copies it to ~/.local/bin
-flok install
 ```
 
-Paste the printed snippet **below the tpm `run` line** of your tmux.conf and reload it. Restart
-running Claude Code sessions so they pick up the hooks. Then, from a plain terminal (not inside
-tmux):
+Then wire it up once:
+
+```sh
+flok install                       # Claude Code hooks, Copilot hooks (if ~/.copilot exists), prints the tmux snippet
+```
+
+Paste the printed snippet **below the tpm `run` line** of your tmux.conf (bindings placed above
+it get overwritten by plugins), reload tmux, and restart running agent sessions so they load the
+hooks. Start flok from a plain terminal, not from inside tmux:
 
 ```sh
 flok up
 ```
 
-`flok doctor` checks tmux version, hooks, sounds, manifests and the running outer session.
-
-Shell completion (commands, flags, pane ids for `explain`, client ttys for `--client`):
+`flok doctor` checks tmux, hooks, sounds, manifests and the running outer session. Shell
+completion (commands, flags, pane ids for `explain`, client ttys for `--client`):
 
 ```sh
 echo 'eval "$(flok completion bash)"' >> ~/.bashrc
 echo 'eval "$(flok completion zsh)"'  >> ~/.zshrc     # after compinit; or: flok completion zsh > ~/.zfunc/_flok
 ```
 
+Launching from a window manager or a terminal binding: `flok up` exits 0 after a detach or
+`flok down`, so a command like `flok up || tmux attach || tmux new-session` falls back to plain
+tmux only when flok cannot start. `flok up` starts the inner tmux server itself when needed.
+
 ## Keys
 
-Inside the inner tmux (your prefix, `C-a` by default in the snippet):
+In tmux (your prefix; the snippet assumes `C-a`):
 
 | key | action |
 |---|---|
-| `prefix b` | toggle sidebar between full width and the compact rail |
+| `prefix b` | toggle the sidebar between full width and the rail |
 | `prefix B` | hide / show the sidebar (zooms the work pane) |
-| `prefix g` | put the keyboard in the sidebar (j/k, Enter, Esc back) |
+| `prefix g` | move the keyboard into the sidebar, or back to the work pane |
 | `prefix o` | jump to the newest agent needing input, else the newest finished one |
-| `prefix a` / `prefix A` | next / previous agent pane (sidebar order) |
-| `prefix ?` | keybinds help popup: all live bindings, grouped, filter with `/` (`?` in the sidebar opens the same popup) |
+| `prefix a` / `prefix A` | next / previous agent pane, in sidebar order |
+| `prefix ?` | keybinds help popup (`?` inside the sidebar opens the same) |
 
-In the sidebar pane (`prefix g`, a click, or `flok focus`): `j/k` move, `Enter` open and hand
-the keyboard to the work pane, `Tab` switch panel, `1-9` open agent N, `!@#$%^&*(` open session
-N, `?` help, `Esc`/`q` back to the work pane. Mouse: a click opens the row and keeps the keyboard
-in the sidebar; wheel scrolls. The footer says where the keyboard is.
-`prefix g` toggles keyboard focus between the sidebar and the work pane. While the sidebar has
-focus, any `prefix <key>` chord is replayed into the work pane, so all your tmux bindings keep
-working; only `prefix b` (collapse/expand) keeps the cursor in the sidebar. Set `FLOK_DEBUG=1`
-in the sidebar's environment to log received keys to `sidebar.log` in the state dir.
+Inside the sidebar (`prefix g`, a click, or `flok focus`):
+
+| key | action |
+|---|---|
+| `j` `k` / arrows / wheel | move the cursor |
+| `Tab` | switch between the sessions and agents panels |
+| `Enter` | open the selected row and hand the keyboard to the work pane |
+| `1`-`9` | open agent N; `!` `@` `#` … open session N |
+| `g` / `G` | first / last row |
+| `?` | keybinds help |
+| `Esc` / `q` | keyboard back to the work pane |
+
+A click opens the row but keeps the keyboard in the sidebar. The footer says where the keyboard
+is; in rail mode the `›` cursor is pink while the sidebar has it. Any `prefix <key>` chord typed
+while the sidebar has focus is replayed into the work pane, so all your bindings keep working;
+only `prefix b` keeps the cursor in the sidebar so you can collapse it and continue.
 
 ## Commands
 
 ```
-flok up [--detach]   start or re-attach the outer session (your server keeps running)
-flok down            stop the outer session
-flok status [--json] one-shot dump of sessions and agents
-flok jump|next|prev  navigation (used by the bindings; --client <tty> optional)
-flok toggle|hide|focus
-flok reload                restart the sidebar pane after editing config.toml
-flok completion bash|zsh   print a shell completion script
-flok keys [--print [--filter q]]
-flok explain [pane]  which screen rules match (debug detection)
+flok up [--detach]          start or re-attach the outer session (your server keeps running)
+flok down                   stop the outer session
+flok status [--json]        one-shot dump of sessions and agents
+flok jump | next | prev     navigation, used by the bindings           [--client <tty>]
+flok toggle | hide | focus  sidebar layout and keyboard focus
+flok reload                 restart the sidebar pane after editing config.toml
+flok keys [--print [--filter q]]   keybinds help; --print dumps it as text
+flok explain [pane ...]     which screen-detection rules match agent panes
 flok install [--claude] [--copilot] [--tmux]
 flok doctor
+flok completion bash|zsh
 ```
 
 ## Configuration
 
-`~/.config/flok/config.toml`, every key optional (defaults shown):
+`~/.config/flok/config.toml`; every key is optional, defaults shown.
 
 ```toml
 [inner]
@@ -157,9 +266,9 @@ capture_lines = 0           # extra scrollback lines for screen rules (0 = visib
 
 [agents]
 enabled = ["claude", "copilot"]
-manifest_dir = "~/.config/flok/agents"
+manifest_dir = "~/.config/flok/agents"   # per-agent TOML overrides of the bundled manifests
 use_herdr_cache = false     # also read herdr's own manifest cache when herdr is installed
-screen_rules = "auto"       # auto (hook-less agents only) | always | never
+screen_rules = "auto"       # auto | always | never
 
 [keys]
 show_mouse = false
@@ -173,8 +282,8 @@ player = "hook"             # hook | sidebar | none
 volume = 0.6
 min_interval_ms = 750
 when_focused = false
-done = ""                   # empty = herdr's bundled done.mp3; or e.g. "/System/Library/Sounds/Glass.aiff"
-blocked = ""                # empty = herdr's bundled request.mp3 (also used for error)
+done = ""                   # empty = bundled done.mp3; or e.g. "/System/Library/Sounds/Glass.aiff"
+blocked = ""                # empty = bundled request.mp3 (also used for error)
 error = ""
 
 [theme]                     # Dracula by default; state tokens may name a colour or a hex value
@@ -184,47 +293,77 @@ done = "green"
 idle = "comment"
 ```
 
-State lives in `~/.local/state/flok/`: `agents/` (hook records), `seen/`, `events.log`,
-`hook.log`, `runtime.json`, the rendered `outer.conf`.
+## Files
 
-## Releasing
+| path | content |
+|---|---|
+| `~/.config/flok/config.toml` | configuration |
+| `~/.config/flok/agents/*.toml` | your overrides of the detection manifests |
+| `~/.local/state/flok/agents/` | one JSON record per agent pane, written by the hook |
+| `~/.local/state/flok/seen/` | when you last looked at each agent pane |
+| `~/.local/state/flok/events.log` | every hook event with the resulting state (JSON lines) |
+| `~/.local/state/flok/runtime.json` | the running outer session: panes, sockets, client tty |
+| `~/.local/state/flok/outer.conf` | the generated outer tmux config |
+| `~/.claude/settings.json` | the hook entries `flok install --claude` adds (a backup is written) |
+| `~/.copilot/hooks/flok.json` | the Copilot CLI hook file |
 
-```sh
-scripts/release.sh 0.1.1     # tags v0.1.1, pushes it, bumps url+sha256 in ../homebrew-tap, creates the GitHub release
-brew update && brew upgrade flok
-```
+`FLOK_CONFIG` and `FLOK_STATE` override the two locations.
 
-The version is a build-time variable (`internal/cli.Version`, set via `-ldflags`), so `make build`
-stamps `git describe` and the formula stamps its tag.
+## Troubleshooting
+
+- `flok doctor` first. It reports the binary path the hooks use, missing hooks, the tmux snippet,
+  the manifests and whether the outer is running.
+- `flok status` shows what the sidebar sees, with the source of each state (`hook`, `registry`,
+  `title`, `screen`). `flok explain <pane>` lists the screen rules matching a pane.
+- `tail -f ~/.local/state/flok/events.log` while an agent works shows the hook events arriving.
+  No events for a pane usually means the agent was started before `flok install`; restart it.
+- `FLOK_DEBUG=1 flok up` logs every key the sidebar receives to `sidebar.log` in the state dir.
+- If you moved the binary (for example from `make install` to Homebrew), run `flok install` again;
+  it rewrites the hook commands to the new absolute path.
 
 ## Development
 
 ```sh
+make build             # bin/flok with the version stamped from git describe
 make test              # unit tests
-scripts/e2e/m1.sh      # headless end-to-end suites on isolated tmux servers (m1..m4)
+scripts/e2e/m1.sh      # headless end-to-end suites on isolated tmux servers, m1..m5
 scripts/spike/m0-outer.sh check   # nested-outer passthrough checks
-scripts/spike/m0-outer.sh up      # interactive checklist (CHECKLIST.md) against your real server
+scripts/spike/m0-outer.sh up      # interactive checklist against your real server
 ```
 
-Layout: `internal/tmux` (exec client + one-call snapshot), `internal/agent` (model + adapters),
-`internal/state` (hook state machine + file store), `internal/rules` (manifest engine),
-`internal/merge` (authority merge), `internal/ui` (Bubble Tea sidebar + help), `internal/launcher`
-(outer server), `internal/nav`, `internal/keys`, `internal/install`, `internal/cli`.
+The end-to-end suites start their own tmux servers (`e2e-inner`, `e2e-outer`) with a private
+state and config directory, run a fake agent binary named `claude` that paints scripted screens,
+replay hook payloads against it, and assert on `capture-pane` output of the sidebar. Your real
+tmux server is never touched.
 
-## Notes and limitations
+```
+cmd/flok               entry point
+internal/cli           subcommands (up, sidebar, hook, nav, keys, install, doctor, ...)
+internal/launcher      outer server: config template, create/attach, attach loop, runtime.json
+internal/ui            Bubble Tea sidebar, rail, help overlay
+internal/merge         authority merge of all state sources into one snapshot
+internal/state         hook state machine and the file store (flock, atomic writes)
+internal/agent         model, events, adapters (claude, copilot)
+internal/rules         herdr manifest engine (regions, matchers), bundled manifests
+internal/claudereg     `claude agents --json` reader, pid → tty → pane
+internal/tmux          exec-based tmux client, one-call snapshot
+internal/keys          list-keys collector and labels for the help
+internal/nav           switch-client / select-window / select-pane
+internal/notify        sounds (afplay), debounce
+internal/install       settings.json / Copilot hook writers, tmux snippet
+internal/config        config.toml, XDG paths
+```
 
-- macOS first: sounds use `afplay`. Everything else is plain tmux and works on Linux; a remote
-  mode (sidebar on a Linux box, sound on the Mac) is left for later.
-- The outer server is disposable: killing it never touches your sessions.
-- `flok up` exits 0 when you detach (`prefix d`) or run `flok down`, so a launcher can chain
-  `flok up || tmux attach || tmux new-session` and the fallback only runs when flok itself cannot
-  start. Do not start tmux first: `flok up` starts the inner server when needed and refuses to run
-  inside tmux.
-- Detection manifests follow the agents' UIs; when Claude Code or Copilot change their screens,
-  update `internal/rules/manifests/` (or drop herdr's newer file into the override dir).
-- Screen rules evaluate the visible pane only; dismissed prompts in scrollback are ignored.
+Releases: `scripts/release.sh <version>` runs the tests, tags, pushes, bumps the formula in
+[w4jnl/homebrew-tap](https://github.com/w4jnl/homebrew-tap) and creates the GitHub release.
 
-## License
+## Credits and license
 
-MIT (see `LICENSE`). The detection manifests are copied from herdr under the Apache License 2.0;
-see `NOTICE` and `LICENSE-APACHE`.
+flok is MIT licensed (see `LICENSE`).
+
+The agent-detection manifests in `internal/rules/manifests/` and the two notification sounds in
+`internal/notify/sounds/` are copied unchanged from [herdr](https://github.com/herdrdev/herdr),
+Apache License 2.0; see `NOTICE` and `LICENSE-APACHE`. herdr also set the bar for what an agent
+sidebar should feel like. The terminal UI uses
+[Bubble Tea](https://github.com/charmbracelet/bubbletea) and
+[Lip Gloss](https://github.com/charmbracelet/lipgloss).
