@@ -51,6 +51,9 @@ IN send-keys -t "$AGENT" "exec $FAKE/claude" Enter
 IN select-window -t Alpha:0
 sleep 0.5
 INNER_SOCK=$(IN display -p '#{socket_path}')
+# the branch the sidebar shows for a session whose active pane sits in this repo: the checked-out
+# branch, or the short commit id when HEAD is detached (CI runs on tags)
+REPO_BRANCH=$(git -C "$R" symbolic-ref --short -q HEAD || git -C "$R" rev-parse HEAD | cut -c1-7)
 
 "$BIN" up --detach
 sleep 1.5
