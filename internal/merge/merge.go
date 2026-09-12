@@ -59,6 +59,7 @@ type Inputs struct {
 	ScreenSeq             int                        // bumps on every screen poll
 	ScreenAt              time.Time                  // when that screen sample was taken
 	TerminalUnfocused     bool                       // the terminal window itself is not focused
+	StaleWorking          time.Duration              // a "waiting" state older than this may be overruled again (0 = 30 min)
 	SessionOrder          string                     // index | name | activity (see sortSpaces)
 	Now                   time.Time
 }
@@ -141,6 +142,9 @@ func (t *Tracker) Build(in Inputs) Snapshot {
 	now := in.Now
 	if now.IsZero() {
 		now = time.Now()
+	}
+	if in.StaleWorking <= 0 {
+		in.StaleWorking = 30 * time.Minute
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -245,7 +249,10 @@ func (t *Tracker) Build(in Inputs) Snapshot {
 				// keeps the idle "✳" title while busy inside tmux. Trust Claude's own registry
 				// (idle in two consecutive samples) or, without a registry, the screen rules
 				// showing the idle prompt box for three polls.
-				if tr.regIdle >= 2 || (!hasReg && tr.screenIdle >= 3) {
+				// While paused for background tasks the registry and the prompt box both look idle
+				// by design; only a very old waiting state (stale_working) is questioned.
+				waiting := a.Reason == "waiting" && now.Sub(a.StateSince) < in.StaleWorking
+				if !waiting && (tr.regIdle >= 2 || (!hasReg && tr.screenIdle >= 3)) {
 					why := "registry idle"
 					if tr.regIdle < 2 {
 						why = "screen idle"

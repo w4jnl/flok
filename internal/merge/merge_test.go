@@ -244,3 +244,28 @@ func TestStaleEvidenceDoesNotHideANewTurn(t *testing.T) {
 		t.Fatalf("fresh idle samples should clear the interrupted turn: %+v", a)
 	}
 }
+
+// A paused turn ("waiting" for background tasks) looks idle to the registry and the screen; the
+// interrupted-turn fallback must leave it alone until it is older than StaleWorking.
+func TestWaitingIsNotAnInterruptedTurn(t *testing.T) {
+	tr := NewTracker()
+	ads := agent.Enabled([]string{"claude"})
+	now := time.Now()
+	tm := snap("✳ job", "$2")
+	tm.Panes[0].TTY = "/dev/ttyagent"
+	idle := map[string]claudereg.Entry{"/dev/ttyagent": {PID: 42, Status: "idle"}}
+	hook := map[string]agent.Agent{"%1": {PaneID: "%1", Kind: "claude", State: agent.Working, Reason: "waiting", CurrentTool: "2 agents", HasHooks: true, StateSince: now.Add(-time.Minute)}}
+	var s Snapshot
+	for i := 1; i <= 4; i++ {
+		s = tr.Build(Inputs{Tmux: tm, ClientTTY: "/dev/ttys9", Adapters: ads, Hook: hook, Registry: idle, RegistrySeq: i, RegistryAt: now.Add(time.Duration(i) * 10 * time.Second), Now: now.Add(time.Duration(i) * 10 * time.Second)})
+	}
+	if a := s.Agents[0]; a.State != agent.Working || a.CurrentTool != "2 agents" || len(s.Corrections) != 0 {
+		t.Fatalf("waiting must survive idle registry samples: %+v", a)
+	}
+	// older than StaleWorking: the fallback applies again
+	old := now.Add(2 * time.Hour)
+	s = tr.Build(Inputs{Tmux: tm, ClientTTY: "/dev/ttys9", Adapters: ads, Hook: hook, Registry: idle, RegistrySeq: 5, RegistryAt: old, Now: old, StaleWorking: time.Hour})
+	if a := s.Agents[0]; a.State != agent.Idle {
+		t.Fatalf("stale waiting should be overruled: %+v", a)
+	}
+}

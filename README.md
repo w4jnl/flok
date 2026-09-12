@@ -125,7 +125,7 @@ agent's name means no hook data has arrived for that pane (restart the agent aft
 
 | state | glyph | colour | entered by | left by |
 |---|---|---|---|---|
-| working | `◐◓◑◒` | cyan | prompt submitted, tool start/end | stop, block, interrupted turn |
+| working | `◐◓◑◒` | cyan | prompt submitted, tool start/end; a Stop while background subagents or shells are in flight keeps it working ("2 agents") | stop with nothing in flight, block, interrupted turn |
 | blocked | `●` | orange | permission request, `AskUserQuestion`, elicitation dialog, a visible prompt the hooks missed | tool end, next prompt, stop, dialog gone |
 | done | `●` | green | stop while the pane is not the one you look at | looking at it (or jumping there) |
 | idle | `○` | grey | session start, stop while you watch, done once seen | prompt |

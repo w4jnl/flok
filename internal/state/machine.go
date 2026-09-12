@@ -70,8 +70,16 @@ func Apply(a *agent.Agent, ev agent.Event, focused func() bool, now time.Time) E
 			}
 		}
 	case agent.EvNudge:
-		if a.State == agent.Working {
+		if a.State == agent.Working && a.Reason != "waiting" { // idle_prompt also fires while paused
 			fx = stop(a, "", focused, now)
+		}
+	case agent.EvWaiting:
+		// The main turn ended but background tasks will wake the agent: keep it working, show
+		// what it waits for, no sound and nothing unseen until the real end of the work.
+		set(agent.Working)
+		a.Reason, a.CurrentTool, a.ToolDetail = "waiting", ev.Detail, ""
+		if a.TurnStarted.IsZero() {
+			a.TurnStarted = now
 		}
 	case agent.EvStop:
 		switch a.State {

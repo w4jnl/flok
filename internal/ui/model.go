@@ -461,7 +461,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.snap = m.tracker.Build(merge.Inputs{Tmux: msg.snap, ClientTTY: m.clientTTY, Adapters: m.d.Adapters, SessionOrder: m.d.Cfg.Sidebar.SessionOrder,
 			BranchOf: m.d.BranchOf, BranchFromSessionPath: m.d.Cfg.Sidebar.BranchSource == "session_path",
 			Hook: msg.hook, Seen: msg.seen, Registry: m.registry, RegistrySeq: m.registrySeq, RegistryAt: m.registryAt,
-			Screen: m.screen, ScreenSeq: m.screenSeq, ScreenAt: m.screenAt, TerminalUnfocused: msg.unfocused})
+			Screen: m.screen, ScreenSeq: m.screenSeq, ScreenAt: m.screenAt, TerminalUnfocused: msg.unfocused,
+			StaleWorking: time.Duration(m.d.Cfg.Sidebar.StaleWorkingMin) * time.Minute})
 		if m.d.Store != nil {
 			for _, pane := range m.snap.NewlySeen {
 				_ = m.d.Store.MarkSeen(pane, time.Now())

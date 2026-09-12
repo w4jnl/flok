@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"fmt"
 	"net/url"
 	"path/filepath"
 	"regexp"
@@ -20,6 +21,7 @@ const (
 	EvBlocked        EventKind = "blocked"
 	EvNudge          EventKind = "nudge"
 	EvStop           EventKind = "stop"
+	EvWaiting        EventKind = "waiting" // turn ended, but background tasks will wake the agent again
 	EvSessionEnd     EventKind = "session_end"
 )
 
@@ -112,4 +114,41 @@ func toolFromMessage(msg string) string {
 		return m[1]
 	}
 	return ""
+}
+
+// BackgroundTasks summarises a Stop payload's in-flight tasks ("2 agents", "agent + shell");
+// "" when nothing is in flight.
+func BackgroundTasks(raw map[string]any) string {
+	list, _ := raw["background_tasks"].([]any)
+	if len(list) == 0 {
+		return ""
+	}
+	counts := map[string]int{}
+	var order []string
+	for _, item := range list {
+		m, _ := item.(map[string]any)
+		t := str(m, "type")
+		switch t {
+		case "subagent", "":
+			t = "agent"
+		case "cloud session":
+			t = "session"
+		case "MCP task":
+			t = "mcp task"
+		}
+		if counts[t] == 0 {
+			order = append(order, t)
+		}
+		counts[t]++
+	}
+	var parts []string
+	for _, t := range order {
+		n := counts[t]
+		if n == 1 {
+			parts = append(parts, t)
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%d %ss", n, t))
+	}
+	return strings.Join(parts, " + ")
 }

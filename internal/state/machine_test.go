@@ -108,3 +108,27 @@ func TestStoreRoundTrip(t *testing.T) {
 		t.Fatal("delete should remove both files")
 	}
 }
+
+// A Stop while background subagents run is a pause, not the end: the agent stays working
+// ("waiting"), idle_prompt does not end it, and the Stop after the wake-up turn does.
+func TestWaitingForBackgroundTasks(t *testing.T) {
+	unfocused := func() bool { return false }
+	now := time.Now()
+	a := agent.Agent{State: agent.Working, TurnStarted: now, HasHooks: true}
+	fx := Apply(&a, agent.Event{Kind: agent.EvWaiting, Name: "Stop", Reason: "waiting", Detail: "2 agents"}, unfocused, now.Add(time.Second))
+	if fx.Sound != "" || a.State != agent.Working || a.Reason != "waiting" || a.CurrentTool != "2 agents" || len(a.Notifications) != 0 {
+		t.Fatalf("waiting: %+v %+v", a, fx)
+	}
+	if fx := Apply(&a, agent.Event{Kind: agent.EvNudge}, unfocused, now.Add(70*time.Second)); fx.Sound != "" || a.State != agent.Working {
+		t.Fatalf("idle_prompt must not end a paused turn: %+v %+v", a, fx)
+	}
+	// a subagent reports back: the wake-up turn runs a tool, then ends for good
+	Apply(&a, agent.Event{Kind: agent.EvToolStart, Tool: "Read", Detail: "x.go"}, unfocused, now.Add(80*time.Second))
+	if a.Reason != "" || a.CurrentTool != "Read" {
+		t.Fatalf("tool start clears waiting: %+v", a)
+	}
+	fx = Apply(&a, agent.Event{Kind: agent.EvStop, Name: "Stop"}, unfocused, now.Add(90*time.Second))
+	if a.State != agent.Done || fx.Sound != "done" || len(a.Notifications) != 1 {
+		t.Fatalf("final stop: %+v %+v", a, fx)
+	}
+}

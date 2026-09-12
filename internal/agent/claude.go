@@ -70,16 +70,22 @@ func (Claude) MapHook(raw map[string]any) (Event, bool) {
 		switch str(raw, "notification_type") {
 		case "permission_prompt":
 			ev.Kind, ev.Reason, ev.Tool = EvBlocked, "permission", toolFromMessage(str(raw, "message"))
-		case "elicitation_dialog", "elicitation_url_dialog", "agent_needs_input":
+		case "elicitation_dialog", "elicitation_url_dialog":
 			ev.Kind, ev.Reason = EvBlocked, "elicitation"
 		case "idle_prompt":
 			ev.Kind = EvNudge
-		case "agent_completed":
-			ev.Kind = EvStop
 		default:
+			// agent_completed / agent_needs_input describe background *sessions* (agent view),
+			// not this pane; auth and quota notices carry no state.
 			return Event{}, false
 		}
 	case "Stop":
+		// Claude lists in-flight background work (subagents, shells, workflows) on Stop so a hook
+		// can tell "done" from "paused until a background task wakes me": that is a waiting state.
+		if tasks := BackgroundTasks(raw); tasks != "" {
+			ev.Kind, ev.Reason, ev.Detail = EvWaiting, "waiting", tasks
+			break
+		}
 		ev.Kind = EvStop
 	case "StopFailure":
 		ev.Kind, ev.Reason = EvStop, "error"
