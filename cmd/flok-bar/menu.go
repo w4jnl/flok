@@ -35,8 +35,8 @@ type menuBar struct {
 	dir  string
 	flok string // the flok CLI used for clicks
 
-	header, show, quit *systray.MenuItem
-	slots              []*slot
+	header, show, edit, reload, quit *systray.MenuItem
+	slots                            []*slot
 
 	mu        sync.Mutex
 	snap      snapshot.Snapshot
@@ -87,6 +87,9 @@ func (b *menuBar) onReady() {
 	}
 	systray.AddSeparator()
 	b.show = systray.AddMenuItem("Show flok", "bring the flok terminal window to the front")
+	b.edit = systray.AddMenuItem("Edit config…", "open ~/.config/flok/config.toml; the bar re-reads it, the sidebar needs Reload")
+	b.reload = systray.AddMenuItem("Reload sidebar", "restart the sidebar pane to apply config.toml changes")
+	systray.AddSeparator()
 	b.quit = systray.AddMenuItem("Quit flok-bar", "flok itself keeps running")
 	go b.staticClicks()
 	go b.watch()
@@ -243,6 +246,10 @@ func (b *menuBar) staticClicks() {
 		select {
 		case <-b.show.ClickedCh:
 			b.goto_("")
+		case <-b.edit.ClickedCh:
+			b.run("edit-config")
+		case <-b.reload.ClickedCh:
+			b.run("reload")
 		case <-b.quit.ClickedCh:
 			systray.Quit()
 			return
@@ -250,15 +257,20 @@ func (b *menuBar) staticClicks() {
 	}
 }
 
-// goto_ runs `flok goto [pane]` detached; the CLI switches the client and focuses the terminal.
-func (b *menuBar) goto_(pane string) {
-	args := []string{"goto"}
-	if pane != "" {
-		args = append(args, pane)
-	}
+// run executes a flok subcommand detached from the bar.
+func (b *menuBar) run(args ...string) {
 	cmd := exec.Command(b.flok, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err == nil {
 		go func() { _ = cmd.Wait() }()
 	}
+}
+
+// goto_ runs `flok goto [pane]` detached; the CLI switches the client and focuses the terminal.
+func (b *menuBar) goto_(pane string) {
+	if pane != "" {
+		b.run("goto", pane)
+		return
+	}
+	b.run("goto")
 }

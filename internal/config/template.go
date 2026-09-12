@@ -65,6 +65,8 @@ const Template = `# flok configuration - https://github.com/w4jnl/flok
 # focus = "auto"              # click-to-return: auto | aerospace | applescript | none | "shell command"
 # app = ""                    # terminal to focus; empty = the one flok up ran in (TERM_PROGRAM)
 # max_rows = 16
+# editor = ""                 # "Edit config" in the bar: "nvim" opens it in a new tmux window of your
+                              # server; empty opens the file with the macOS default app
 
 [theme]                       # Dracula; state tokens may name a colour or a hex value
 # working = "cyan"

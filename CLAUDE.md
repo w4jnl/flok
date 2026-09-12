@@ -111,7 +111,8 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
 under `internal/` cgo-free. The bar reads `snapshot.json`, which `internal/ui` publishes through
 `internal/snapshot.Publisher` after every merge (changed content or a 5 s heartbeat), renders it
 with the pure functions in `internal/bar`, and forwards clicks to `flok goto <pane>`
-(`internal/cli/goto.go` → `nav.Go`, `Store.MarkSeen`, `internal/focus.Terminal`). `flok up`
+(`internal/cli/goto.go` → `nav.Go`, `Store.MarkSeen`, `internal/focus.Terminal`). The bar's "Edit config…" runs `flok edit-config` (new tmux window with `[bar] editor`, else
+`open`) and "Reload sidebar" runs `flok reload`. `flok up`
 spawns it when `[bar] enabled` (`launcher.StartBar`, pid in `flok-bar.pid`), `flok down` and the
 attach-loop teardown stop it, and it quits by itself 30 s after `runtime.json`/the snapshot
 vanish (`FLOK_BAR_GONE_AFTER` shortens that for tests). systray gotchas: menus cannot grow (slots

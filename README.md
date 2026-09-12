@@ -235,7 +235,9 @@ In tmux (your prefix; the snippet assumes `C-a`):
 | `prefix ?` | keybinds help popup (`?` inside the sidebar opens the same) |
 
 Menu bar (when enabled): click an agent row to return to it, "Show flok" to bring the terminal
-window to the front, "Quit flok-bar" to remove the item (flok keeps running).
+window to the front, "Edit config…" to open `config.toml` (in a new tmux window with `[bar] editor`
+set, else with the default app), "Reload sidebar" to apply it, "Quit flok-bar" to remove the item
+(flok keeps running).
 
 Inside the sidebar (`prefix g`, a click, or `flok focus`):
 
@@ -263,6 +265,7 @@ flok status [--json]        one-shot dump of sessions and agents
 flok jump | next | prev     navigation, used by the bindings           [--client <tty>]
 flok toggle | hide | focus  sidebar layout and keyboard focus
 flok goto [pane-id] [--no-focus]   switch to an agent pane and bring the terminal window to the front
+flok edit-config [--no-focus]      open config.toml (new tmux window with [bar] editor, else default app)
 flok reload                 restart the sidebar pane after editing config.toml
 flok keys [--print [--filter q]]   keybinds help; --print dumps it as text
 flok explain [pane ...]     which screen-detection rules match agent panes
@@ -331,6 +334,7 @@ badge = true                # "● N" for agents waiting for you (icon gains a d
 focus = "auto"              # click-to-return: auto | aerospace | applescript | none | "shell command"
 app = ""                    # terminal to focus; empty = the one `flok up` ran in (TERM_PROGRAM)
 max_rows = 16
+editor = ""                 # "Edit config…" in the bar: "nvim" opens it in a new tmux window; "" = `open`
 
 [theme]                     # Dracula by default; state tokens may name a colour or a hex value
 working = "cyan"

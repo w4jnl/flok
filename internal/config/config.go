@@ -69,6 +69,7 @@ type Bar struct {
 	Focus   string `toml:"focus"` // auto | aerospace | applescript | none | custom command
 	App     string `toml:"app"`   // overrides the terminal recorded by `flok up` (TERM_PROGRAM value)
 	MaxRows int    `toml:"max_rows"`
+	Editor  string `toml:"editor"` // "nvim": Edit config opens it in a new tmux window; "" = macOS `open`
 }
 
 type Theme struct {
