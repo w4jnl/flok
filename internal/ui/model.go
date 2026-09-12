@@ -21,6 +21,7 @@ import (
 	"github.com/w4jnl/flok/internal/nav"
 	"github.com/w4jnl/flok/internal/notify"
 	"github.com/w4jnl/flok/internal/rules"
+	"github.com/w4jnl/flok/internal/snapshot"
 	"github.com/w4jnl/flok/internal/state"
 	"github.com/w4jnl/flok/internal/tmux"
 )
@@ -70,6 +71,7 @@ type Model struct {
 	prevState   map[string]agent.State
 	sounder     notify.Sounder
 	started     time.Time
+	publisher   *snapshot.Publisher
 	focused     bool // the outer's active pane is the sidebar: keys arrive here
 	// Inner tmux prefix, so chords typed while the sidebar has focus are replayed into the work
 	// pane instead of being swallowed (prefixTmux "C-a", prefixKey "ctrl+a").
@@ -113,6 +115,7 @@ func New(d Deps) Model {
 	}
 	if d.Store != nil {
 		go watchStore(d.Store.Dir, m.changes)
+		m.publisher = &snapshot.Publisher{Dir: d.Store.Dir}
 	}
 	m.debug = os.Getenv("FLOK_DEBUG") != ""
 	m.readPrefix()
@@ -462,6 +465,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			for _, c := range m.snap.Corrections {
 				m.persistCorrection(c)
 			}
+		}
+		if m.publisher != nil { // for flok-bar and other out-of-process readers
+			_, _ = m.publisher.Publish(snapshot.FromMerge(m.snap), time.Now())
 		}
 		m.soundTransitions()
 		m.clamp()

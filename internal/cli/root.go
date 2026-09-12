@@ -26,6 +26,8 @@ usage: flok <command>
   jump        switch the inner client to the newest agent needing input (else newest done)
   next, prev  cycle through agent panes in sidebar order        [--client <tty>]
   toggle      sidebar full width <-> rail;  hide: zoom the work area (sidebar takes no space)
+  goto        [pane-id] [--no-focus]: switch to an agent pane and bring the terminal window
+              to the front (used by the menu bar app flok-bar)
   reload      restart the sidebar pane after editing config.toml (work pane untouched)
   focus       move the outer cursor into the sidebar pane
   keys        keybinds help (tmux popup); --print [--filter q] dumps it as text
@@ -66,6 +68,8 @@ func Main(args []string) int {
 		return runHook(cfg, args[1:])
 	case "keys":
 		return runKeys(cfg, args[1:])
+	case "goto":
+		return runGoto(cfg, args[1:])
 	case "explain":
 		return runExplain(cfg, args[1:])
 	case "doctor":

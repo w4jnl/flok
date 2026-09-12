@@ -61,6 +61,16 @@ type Sounds struct {
 	Error         string  `toml:"error"`
 }
 
+// Bar configures the optional macOS menu bar companion (flok-bar).
+type Bar struct {
+	Enabled bool   `toml:"enabled"`
+	Animate bool   `toml:"animate"`
+	Badge   bool   `toml:"badge"`
+	Focus   string `toml:"focus"` // auto | aerospace | applescript | none | custom command
+	App     string `toml:"app"`   // overrides the terminal recorded by `flok up` (TERM_PROGRAM value)
+	MaxRows int    `toml:"max_rows"`
+}
+
 type Theme struct {
 	BG          string `toml:"bg"`
 	CurrentLine string `toml:"current_line"`
@@ -86,6 +96,7 @@ type Config struct {
 	Agents  Agents  `toml:"agents"`
 	Keys    Keys    `toml:"keys"`
 	Sounds  Sounds  `toml:"sounds"`
+	Bar     Bar     `toml:"bar"`
 	Theme   Theme   `toml:"theme"`
 }
 
@@ -99,6 +110,7 @@ func Default() Config {
 		Keys:    Keys{Tables: []string{"prefix", "root", "copy-mode-vi"}},
 		Sounds: Sounds{Enabled: true, Player: "hook", Volume: 0.6, MinIntervalMs: 750,
 			Done: "", Blocked: "", Error: ""}, // empty = the bundled herdr sounds (done.mp3 / request.mp3)
+		Bar: Bar{Enabled: false, Animate: true, Badge: true, Focus: "auto", MaxRows: 16},
 		Theme: Theme{BG: "#282a36", CurrentLine: "#44475a", FG: "#f8f8f2", Comment: "#6272a4", Cyan: "#8be9fd", Green: "#50fa7b",
 			Orange: "#ffb86c", Pink: "#ff79c6", Purple: "#bd93f9", Red: "#ff5555", Yellow: "#f1fa8c",
 			Working: "cyan", Blocked: "orange", Done: "green", Idle: "comment"},

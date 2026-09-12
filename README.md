@@ -1,5 +1,7 @@
 # flok
 
+[![ci](https://github.com/w4jnl/flok/actions/workflows/ci.yml/badge.svg)](https://github.com/w4jnl/flok/actions/workflows/ci.yml)
+
 A [herdr](https://herdr.dev)-style agent sidebar for tmux.
 
 flok adds one narrow pane to the left of your normal tmux: **sessions** on top (name, git branch,
@@ -59,6 +61,9 @@ What that means in practice:
 - **Keybinds help**: `prefix ?` opens a popup listing all live bindings of your tmux server,
   grouped (flok, prefix, no prefix, copy-mode, plugins), with tmux's own notes as labels and `/`
   to filter.
+- **Menu bar companion** (macOS, opt-in): a flok icon in the menu bar that spins while agents
+  work, a badge for agents waiting for you, and a dropdown of agents; a click brings the terminal
+  window to the front and puts you on that agent's pane.
 - **Zero footprint** on your tmux: no plugin, no pane injected into your windows, nothing saved by
   resurrect. Kill the outer server and everything is as before.
 
@@ -131,6 +136,33 @@ see). Looking at the pane, `Enter`, a click or `prefix o` marks it seen. Sounds:
 play their own sound, error a third; nothing plays for the pane that is currently in front of
 you, and repeats within 750 ms are dropped.
 
+### The menu bar companion (macOS)
+
+```
+sidebar ──publishes──► ~/.local/state/flok/snapshot.json ──fsnotify──► flok-bar   [ ⩓ ◑ ● 2 ]
+                                                                            │ click on an agent row
+                                                                            ▼
+                                                                   flok goto <pane-id>
+                                                       (switch the inner client, mark seen,
+                                                        focus the terminal window)
+```
+
+`flok-bar` is a second binary, the only one that needs cgo (`fyne.io/systray`), built on macOS
+only. It never talks to tmux itself: the sidebar publishes its merged view as a JSON snapshot
+(rewritten on change and every 5 s as a heartbeat), the bar renders it and forwards clicks to
+`flok goto`. The title text is `○` when everything is idle, an animated `◐◓◑◒` while an agent
+works, and `● N` when N agents are waiting for you (the icon gains a dot as well). The dropdown
+lists agents in the sidebar's order with the same state detail. With `[bar] enabled = true`,
+`flok up` starts the bar (single instance) and `flok down` or a detach ends it; the bar also quits
+by itself 30 s after flok disappears.
+
+Click-to-return uses AeroSpace when it is installed (`aerospace focus --window-id` on the window
+titled `TMUX…`, which also switches workspace) and AppleScript otherwise: it activates the terminal
+app that ran `flok up` (recorded from `TERM_PROGRAM`: Ghostty, iTerm2, Terminal, WezTerm, kitty) and,
+best effort, raises the `TMUX…` window. Raising a specific window goes through System Events and
+needs Accessibility permission for `osascript`; without it the app comes to the front with its
+last-used window, which is usually the right one anyway.
+
 ### The help popup
 
 `prefix ?` runs `flok keys` in a tmux popup. It reads `list-keys` for the prefix, root and
@@ -202,6 +234,9 @@ In tmux (your prefix; the snippet assumes `C-a`):
 | `prefix a` / `prefix A` | next / previous agent pane, in sidebar order |
 | `prefix ?` | keybinds help popup (`?` inside the sidebar opens the same) |
 
+Menu bar (when enabled): click an agent row to return to it, "Show flok" to bring the terminal
+window to the front, "Quit flok-bar" to remove the item (flok keeps running).
+
 Inside the sidebar (`prefix g`, a click, or `flok focus`):
 
 | key | action |
@@ -227,6 +262,7 @@ flok down                   stop the outer session
 flok status [--json]        one-shot dump of sessions and agents
 flok jump | next | prev     navigation, used by the bindings           [--client <tty>]
 flok toggle | hide | focus  sidebar layout and keyboard focus
+flok goto [pane-id] [--no-focus]   switch to an agent pane and bring the terminal window to the front
 flok reload                 restart the sidebar pane after editing config.toml
 flok keys [--print [--filter q]]   keybinds help; --print dumps it as text
 flok explain [pane ...]     which screen-detection rules match agent panes
@@ -288,6 +324,14 @@ done = ""                   # empty = bundled done.mp3; or e.g. "/System/Library
 blocked = ""                # empty = bundled request.mp3 (also used for error)
 error = ""
 
+[bar]                       # macOS menu bar companion, started by `flok up`
+enabled = false
+animate = true              # spin ◐◓◑◒ in the menu bar while an agent works
+badge = true                # "● N" for agents waiting for you (icon gains a dot too)
+focus = "auto"              # click-to-return: auto | aerospace | applescript | none | "shell command"
+app = ""                    # terminal to focus; empty = the one `flok up` ran in (TERM_PROGRAM)
+max_rows = 16
+
 [theme]                     # Dracula by default; state tokens may name a colour or a hex value
 working = "cyan"
 blocked = "orange"
@@ -304,7 +348,9 @@ idle = "comment"
 | `~/.local/state/flok/agents/` | one JSON record per agent pane, written by the hook |
 | `~/.local/state/flok/seen/` | when you last looked at each agent pane |
 | `~/.local/state/flok/events.log` | every hook event with the resulting state (JSON lines) |
-| `~/.local/state/flok/runtime.json` | the running outer session: panes, sockets, client tty |
+| `~/.local/state/flok/runtime.json` | the running outer session: panes, sockets, client tty, terminal app |
+| `~/.local/state/flok/snapshot.json` | the sidebar's merged view, read by flok-bar |
+| `~/.local/state/flok/flok-bar.pid` | the menu bar process started by `flok up` |
 | `~/.local/state/flok/outer.conf` | the generated outer tmux config |
 | `~/.claude/settings.json` | the hook entries `flok install --claude` adds (a backup is written) |
 | `~/.copilot/hooks/flok.json` | the Copilot CLI hook file |
@@ -328,7 +374,8 @@ idle = "comment"
 ```sh
 make build             # bin/flok with the version stamped from git describe
 make test              # unit tests
-scripts/e2e/m1.sh      # headless end-to-end suites on isolated tmux servers, m1..m5
+scripts/e2e/m1.sh      # headless end-to-end suites on isolated tmux servers, m1..m6
+make icons             # regenerate the menu bar template icons (assets/icons/gen)
 scripts/spike/m0-outer.sh check   # nested-outer passthrough checks
 scripts/spike/m0-outer.sh up      # interactive checklist against your real server
 ```
@@ -340,9 +387,13 @@ tmux server is never touched.
 
 ```
 cmd/flok               entry point
+cmd/flok-bar           macOS menu bar companion (cgo, fyne.io/systray); everything else is cgo-free
 internal/cli           subcommands (up, sidebar, hook, nav, keys, install, doctor, ...)
 internal/launcher      outer server: config template, create/attach, attach loop, runtime.json
 internal/ui            Bubble Tea sidebar, rail, help overlay
+internal/snapshot      snapshot.json the sidebar publishes for flok-bar
+internal/bar           menu bar title/rows logic (pure, tested)
+internal/focus         bring the terminal window to the front (aerospace, applescript)
 internal/merge         authority merge of all state sources into one snapshot
 internal/state         hook state machine and the file store (flock, atomic writes)
 internal/agent         model, events, adapters (claude, copilot)
@@ -368,4 +419,6 @@ The agent-detection manifests in `internal/rules/manifests/` and the two notific
 Apache License 2.0; see `NOTICE` and `LICENSE-APACHE`. herdr also set the bar for what an agent
 sidebar should feel like. The terminal UI uses
 [Bubble Tea](https://github.com/charmbracelet/bubbletea) and
-[Lip Gloss](https://github.com/charmbracelet/lipgloss).
+[Lip Gloss](https://github.com/charmbracelet/lipgloss); the menu bar companion uses
+[fyne.io/systray](https://github.com/fyne-io/systray). The menu bar icon (a flock of monoline
+chevrons) is generated by `assets/icons/gen` in the style of the W4J mark.

@@ -105,6 +105,20 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
   (`sounds.player = "hook"`); the sidebar only plays them for title/screen-derived transitions or
   when `player = "sidebar"`.
 
+### Menu bar companion (flok-bar)
+
+`cmd/flok-bar` (build tag darwin) is the only cgo package: `fyne.io/systray`. Keep everything
+under `internal/` cgo-free. The bar reads `snapshot.json`, which `internal/ui` publishes through
+`internal/snapshot.Publisher` after every merge (changed content or a 5 s heartbeat), renders it
+with the pure functions in `internal/bar`, and forwards clicks to `flok goto <pane>`
+(`internal/cli/goto.go` → `nav.Go`, `Store.MarkSeen`, `internal/focus.Terminal`). `flok up`
+spawns it when `[bar] enabled` (`launcher.StartBar`, pid in `flok-bar.pid`), `flok down` and the
+attach-loop teardown stop it, and it quits by itself 30 s after `runtime.json`/the snapshot
+vanish (`FLOK_BAR_GONE_AFTER` shortens that for tests). systray gotchas: menus cannot grow (slots
+are pre-created and hidden), an icon can be swapped but never removed, `systray.Run` owns the
+main thread. Icons come from `assets/icons/gen` (`make icons`). e2e coverage: `scripts/e2e/m6.sh`
+(set `FLOK_E2E_BAR=1` to also exercise the process; it shows a menu bar item briefly).
+
 ### Conventions worth knowing
 
 - tmux is always driven by exec (`internal/tmux.Client`); there is no library binding. Prefer

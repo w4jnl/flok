@@ -13,12 +13,14 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"text/template"
 	"time"
 
 	"golang.org/x/term"
 
 	"github.com/w4jnl/flok/internal/config"
+	"github.com/w4jnl/flok/internal/snapshot"
 	"github.com/w4jnl/flok/internal/tmux"
 )
 
@@ -36,6 +38,7 @@ type Runtime struct {
 	InnerClientTTY string    `json:"inner_client_tty"`
 	FullWidth      int       `json:"full_width"`
 	RailWidth      int       `json:"rail_width"`
+	TerminalApp    string    `json:"terminal_app,omitempty"` // TERM_PROGRAM of the terminal that ran `flok up`
 	StartedAt      time.Time `json:"started_at"`
 }
 
@@ -129,10 +132,74 @@ func Up(cfg config.Config, bin string, detach bool) error {
 	} else if err := ensureSidebar(cfg, bin, outer); err != nil {
 		return err
 	}
+	if cfg.Bar.Enabled {
+		if err := StartBar(cfg, bin); err != nil {
+			fmt.Fprintln(os.Stderr, "flok: menu bar:", err)
+		}
+	}
 	if detach {
 		return nil
 	}
 	return runAttach(outer, sess)
+}
+
+func barPIDFile() string { return filepath.Join(config.StateDir(), "flok-bar.pid") }
+
+// BarBinary finds flok-bar next to the flok binary, else on PATH.
+func BarBinary(bin string) (string, error) {
+	if p := filepath.Join(filepath.Dir(bin), "flok-bar"); fileExists(p) {
+		return p, nil
+	}
+	return exec.LookPath("flok-bar")
+}
+
+func fileExists(p string) bool { _, err := os.Stat(p); return err == nil }
+
+// BarRunning reports the pid from the pid file when that process is alive.
+func BarRunning() (int, bool) {
+	data, err := os.ReadFile(barPIDFile())
+	if err != nil {
+		return 0, false
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil || pid <= 0 {
+		return 0, false
+	}
+	if err := syscall.Kill(pid, 0); err != nil {
+		return pid, false
+	}
+	return pid, true
+}
+
+// StartBar launches flok-bar detached (single instance: a duplicate exits on its own flock).
+func StartBar(cfg config.Config, bin string) error {
+	if _, running := BarRunning(); running {
+		return nil
+	}
+	path, err := BarBinary(bin)
+	if err != nil {
+		return errors.New("flok-bar not found next to flok or on PATH ([bar] enabled = true)")
+	}
+	cmd := exec.Command(path)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	null, _ := os.OpenFile(os.DevNull, os.O_RDWR, 0)
+	if null != nil {
+		cmd.Stdin, cmd.Stdout, cmd.Stderr = null, null, null
+	}
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	pid := cmd.Process.Pid
+	_ = cmd.Process.Release()
+	return os.WriteFile(barPIDFile(), []byte(strconv.Itoa(pid)), 0o644)
+}
+
+// StopBar terminates flok-bar if the pid file names a live process.
+func StopBar() {
+	if pid, running := BarRunning(); running {
+		_ = syscall.Kill(pid, syscall.SIGTERM)
+	}
+	_ = os.Remove(barPIDFile())
 }
 
 func createOuter(cfg config.Config, bin, confPath string, outer *tmux.Local, sess string) error {
@@ -158,7 +225,8 @@ func createOuter(cfg config.Config, bin, confPath string, outer *tmux.Local, ses
 		"select-layout", "-t", sess, "main-vertical")
 	_, _ = outer.Run("select-pane", "-t", right)
 	return WriteRuntime(Runtime{OuterSocket: cfg.Outer.Socket, OuterSession: sess, SidebarPane: sidebar, RightPane: right,
-		InnerSocket: cfg.Inner.Socket, FullWidth: cfg.Sidebar.Width, RailWidth: cfg.Sidebar.RailWidth, StartedAt: time.Now()})
+		InnerSocket: cfg.Inner.Socket, FullWidth: cfg.Sidebar.Width, RailWidth: cfg.Sidebar.RailWidth,
+		TerminalApp: os.Getenv("TERM_PROGRAM"), StartedAt: time.Now()})
 }
 
 // ensureSidebar respawns a dead sidebar pane in an existing outer session.
@@ -270,6 +338,8 @@ func AttachLoop(cfg config.Config) error {
 		time.Sleep(200 * time.Millisecond)
 	}
 	_ = os.Remove(RuntimePath())
+	snapshot.Remove(config.StateDir())
+	StopBar()
 	if outer != nil {
 		_, _ = outer.Run("kill-server")
 	}
@@ -283,6 +353,8 @@ func Down(cfg config.Config) error {
 	_, err := outer.Run("kill-server")
 	_ = os.Remove(quitMarker())
 	_ = os.Remove(RuntimePath())
+	snapshot.Remove(config.StateDir())
+	StopBar()
 	if err != nil && strings.Contains(err.Error(), "no server running") {
 		return nil
 	}

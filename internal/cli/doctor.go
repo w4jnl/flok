@@ -150,6 +150,22 @@ func runDoctor(cfg config.Config) int {
 		}
 	}
 
+	// menu bar companion
+	if cfg.Bar.Enabled {
+		if path, err := launcher.BarBinary(bin); err != nil {
+			add("warn", "[bar] enabled but flok-bar not found next to %s or on PATH", bin)
+		} else if pid, running := launcher.BarRunning(); running {
+			add("ok", "menu bar: flok-bar running (pid %d, %s)", pid, path)
+		} else {
+			add("ok", "menu bar: flok-bar at %s (starts with `flok up`)", path)
+		}
+		if rt, err := launcher.ReadRuntime(); err == nil && rt.TerminalApp != "" {
+			add("ok", "menu bar: click-to-return targets %s via %s", rt.TerminalApp, cfg.Bar.Focus)
+		}
+	} else {
+		add("ok", "menu bar disabled ([bar] enabled = false)")
+	}
+
 	rc := 0
 	for _, c := range out {
 		mark := map[string]string{"ok": "ok  ", "warn": "warn", "fail": "FAIL"}[c.level]

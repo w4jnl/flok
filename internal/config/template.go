@@ -58,6 +58,14 @@ const Template = `# flok configuration - https://github.com/w4jnl/flok
 # blocked = ""
 # error = ""
 
+[bar]                         # macOS menu bar companion (flok-bar), started by flok up
+# enabled = false
+# animate = true              # spin ◐◓◑◒ in the menu bar while an agent works
+# badge = true                # show "● N" for agents waiting for you
+# focus = "auto"              # click-to-return: auto | aerospace | applescript | none | "shell command"
+# app = ""                    # terminal to focus; empty = the one flok up ran in (TERM_PROGRAM)
+# max_rows = 16
+
 [theme]                       # Dracula; state tokens may name a colour or a hex value
 # working = "cyan"
 # blocked = "orange"
