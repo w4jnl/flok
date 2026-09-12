@@ -31,6 +31,8 @@ type Sidebar struct {
 	ShowBranch       bool    `toml:"show_branch"`
 	BranchSource     string  `toml:"branch_source"`
 	PollMs           int     `toml:"poll_ms"`
+	SpinnerMs        int     `toml:"spinner_ms"`
+	FPS              int     `toml:"fps"` // Bubble Tea renderer frame rate cap (1..120)
 	RegistryPollMs   int     `toml:"registry_poll_ms"`
 	ScreenPollMs     int     `toml:"screen_poll_ms"`
 	CaptureLines     int     `toml:"capture_lines"`
@@ -63,13 +65,14 @@ type Sounds struct {
 
 // Bar configures the optional macOS menu bar companion (flok-bar).
 type Bar struct {
-	Enabled bool   `toml:"enabled"`
-	Animate bool   `toml:"animate"`
-	Badge   bool   `toml:"badge"`
-	Focus   string `toml:"focus"` // auto | aerospace | applescript | none | custom command
-	App     string `toml:"app"`   // overrides the terminal recorded by `flok up` (TERM_PROGRAM value)
-	MaxRows int    `toml:"max_rows"`
-	Editor  string `toml:"editor"` // "nvim": Edit config opens it in a new tmux window; "" = macOS `open`
+	Enabled   bool   `toml:"enabled"`
+	Animate   bool   `toml:"animate"`
+	Badge     bool   `toml:"badge"`
+	Focus     string `toml:"focus"` // auto | aerospace | applescript | none | custom command
+	App       string `toml:"app"`   // overrides the terminal recorded by `flok up` (TERM_PROGRAM value)
+	MaxRows   int    `toml:"max_rows"`
+	Editor    string `toml:"editor"`     // "nvim": Edit config opens it in a new tmux window; "" = macOS `open`
+	AnimateMs int    `toml:"animate_ms"` // spinner frame interval; every frame redraws the status item
 }
 
 type Theme struct {
@@ -106,12 +109,12 @@ func Default() Config {
 	return Config{
 		Inner:   Inner{Socket: "default", ReattachOnDetach: false},
 		Outer:   Outer{Socket: "flok", Session: "flok", ExtraConf: "~/.config/flok/outer.extra.conf"},
-		Sidebar: Sidebar{Width: 28, RailWidth: 6, RailThreshold: 12, SessionsMaxRatio: 0.4, AgentRows: 2, SessionOrder: "index", ShowBranch: true, BranchSource: "active_pane", PollMs: 1000, RegistryPollMs: 5000, ScreenPollMs: 2000, CaptureLines: 0, StaleWorkingMin: 30},
+		Sidebar: Sidebar{Width: 28, RailWidth: 6, RailThreshold: 12, SessionsMaxRatio: 0.4, AgentRows: 2, SessionOrder: "index", ShowBranch: true, BranchSource: "active_pane", PollMs: 1000, SpinnerMs: 250, FPS: 15, RegistryPollMs: 10000, ScreenPollMs: 2000, CaptureLines: 0, StaleWorkingMin: 30},
 		Agents:  Agents{Enabled: []string{"claude", "copilot"}, ManifestDir: "~/.config/flok/agents", ScreenRules: "auto"},
 		Keys:    Keys{Tables: []string{"prefix", "root", "copy-mode-vi"}},
 		Sounds: Sounds{Enabled: true, Player: "hook", Volume: 0.6, MinIntervalMs: 750,
 			Done: "", Blocked: "", Error: ""}, // empty = the bundled herdr sounds (done.mp3 / request.mp3)
-		Bar: Bar{Enabled: false, Animate: true, Badge: true, Focus: "auto", MaxRows: 16},
+		Bar: Bar{Enabled: false, Animate: true, Badge: true, Focus: "auto", MaxRows: 16, AnimateMs: 500},
 		Theme: Theme{BG: "#282a36", CurrentLine: "#44475a", FG: "#f8f8f2", Comment: "#6272a4", Cyan: "#8be9fd", Green: "#50fa7b",
 			Orange: "#ffb86c", Pink: "#ff79c6", Purple: "#bd93f9", Red: "#ff5555", Yellow: "#f1fa8c",
 			Working: "cyan", Blocked: "orange", Done: "green", Idle: "comment"},

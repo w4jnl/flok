@@ -101,7 +101,14 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
   `Manifest.Explain` on live panes for debugging.
 - `internal/ui/model.go` drives three independent poll cadences from config (`poll_ms` for the
   tmux snapshot, `registry_poll_ms`, `screen_poll_ms`) plus an fsnotify watch on the store so
-  hook writes re-render immediately. Sounds are played by the hook by default
+  hook writes re-render immediately. CPU rules that are easy to undo by accident: an unchanged
+  poll (fingerprint of the raw tmux output + hook records) skips the merge and keeps the cached
+  frame; all screen captures go in one tmux invocation (`captureAll`); the registry is only
+  queried while a Claude turn/prompt is open or a pane lacks hooks (else once a minute); sidebar
+  focus comes from `tea.FocusMsg`/`BlurMsg` with an outer `pane_active` check every 5th poll as
+  fallback; the renderer runs at `fps` (15). `FLOK_CPUPROFILE=<file>` in the sidebar's
+  environment writes a 30 s CPU profile after start (`tmux -L flok set-environment -g …` then
+  `flok reload`). Sounds are played by the hook by default
   (`sounds.player = "hook"`); the sidebar only plays them for title/screen-derived transitions or
   when `player = "sidebar"`.
 

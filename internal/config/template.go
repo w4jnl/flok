@@ -32,7 +32,10 @@ const Template = `# flok configuration - https://github.com/w4jnl/flok
 # show_branch = true
 # branch_source = "active_pane"   # or "session_path"
 # poll_ms = 1000
-# registry_poll_ms = 5000
+# spinner_ms = 250            # working-spinner frame interval in the sidebar
+# fps = 15                    # renderer frame-rate cap (Bubble Tea default 60 wakes up far more often)
+# registry_poll_ms = 10000    # "claude agents --json" costs ~0.2 s CPU: polled at this rate only while
+#                             # a Claude turn/prompt is open or a pane lacks hooks, else once a minute
 # screen_poll_ms = 2000
 # capture_lines = 0           # extra scrollback lines for screen rules (0 = visible screen only)
 
@@ -61,6 +64,7 @@ const Template = `# flok configuration - https://github.com/w4jnl/flok
 [bar]                         # macOS menu bar companion (flok-bar), started by flok up
 # enabled = false
 # animate = true              # spin ◐◓◑◒ in the menu bar while an agent works
+# animate_ms = 500            # frame interval; each frame redraws the status item (CPU)
 # badge = true                # show "● N" for agents waiting for you
 # focus = "auto"              # click-to-return: auto | aerospace | applescript | none | "shell command"
 # app = ""                    # terminal to focus; empty = the one flok up ran in (TERM_PROGRAM)

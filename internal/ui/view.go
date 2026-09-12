@@ -114,10 +114,19 @@ func (m Model) View() string {
 	if m.help != nil {
 		return m.help.View()
 	}
-	if m.isRail() {
-		return m.viewRail()
+	if m.vc != nil && m.vc.valid {
+		return m.vc.s
 	}
-	return m.viewFull()
+	var out string
+	if m.isRail() {
+		out = m.viewRail()
+	} else {
+		out = m.viewFull()
+	}
+	if m.vc != nil {
+		m.vc.s, m.vc.valid = out, true
+	}
+	return out
 }
 
 func pad(s string, w int, base lipgloss.Style) string {

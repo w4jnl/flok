@@ -100,7 +100,7 @@ The sidebar never modifies the inner server. It reads it (`list-sessions`, `list
                                                   (per-pane record, flock + atomic write, plays the sound)
                                                               │ fsnotify
  tmux snapshot (1 s) ──────────────────────────────────────┐  │
- claude agents --json (5 s, pid → tty → pane) ─────────────┤  ▼
+ claude agents --json (10 s, pid → tty → pane) ────────────┤  ▼
  capture-pane + title + OSC 9;4 progress (2 s, rule engine)┴► merge.Build ──► sidebar view
                                                                │
                                                                └─ seen marks (done → idle once you look)
@@ -301,7 +301,10 @@ agent_rows = 2              # 2: project + "kind · title" line per agent; 1: si
 show_branch = true
 branch_source = "active_pane"   # or "session_path"
 poll_ms = 1000
-registry_poll_ms = 5000
+spinner_ms = 250            # working-spinner frame interval in the sidebar
+fps = 15                    # renderer frame-rate cap; 60 (Bubble Tea default) wakes up needlessly often
+registry_poll_ms = 10000    # `claude agents --json` costs ~0.2 s CPU: polled at this rate only while a
+                            # Claude turn/prompt is open or a pane lacks hooks, otherwise once a minute
 screen_poll_ms = 2000
 capture_lines = 0           # extra scrollback lines for screen rules (0 = visible screen only)
 
@@ -330,6 +333,7 @@ error = ""
 [bar]                       # macOS menu bar companion, started by `flok up`
 enabled = false
 animate = true              # spin ◐◓◑◒ in the menu bar while an agent works
+animate_ms = 500            # frame interval; every frame redraws the status item, so 2 fps by default
 badge = true                # "● N" for agents waiting for you (icon gains a dot too)
 focus = "auto"              # click-to-return: auto | aerospace | applescript | none | "shell command"
 app = ""                    # terminal to focus; empty = the one `flok up` ran in (TERM_PROGRAM)

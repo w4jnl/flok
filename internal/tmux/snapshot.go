@@ -52,13 +52,19 @@ var (
 
 // TakeSnapshot lists sessions, panes and clients in a single tmux invocation.
 func TakeSnapshot(c Client) (Snapshot, error) {
+	s, _, err := TakeSnapshotRaw(c)
+	return s, err
+}
+
+// TakeSnapshotRaw also returns tmux's raw output, a cheap fingerprint for "nothing changed".
+func TakeSnapshotRaw(c Client) (Snapshot, string, error) {
 	out, err := c.Run("list-sessions", "-F", sessionFmt, ";", "list-panes", "-a", "-F", paneFmt, ";", "list-clients", "-F", clientFmt)
 	if err != nil {
-		return Snapshot{}, err
+		return Snapshot{}, "", err
 	}
 	snap := ParseSnapshot(out)
 	snap.TakenAt = time.Now()
-	return snap, nil
+	return snap, out, nil
 }
 
 // ParseSnapshot parses the combined output of TakeSnapshot.

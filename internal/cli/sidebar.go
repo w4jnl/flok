@@ -3,6 +3,8 @@ package cli
 import (
 	"fmt"
 	"os"
+	"runtime/pprof"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -42,6 +44,12 @@ func sidebarDeps(cfg config.Config) ui.Deps {
 }
 
 func runSidebar(cfg config.Config) int {
+	// FLOK_CPUPROFILE=<file>: write a 30 s CPU profile after start (go tool pprof -top <file>).
+	if p := os.Getenv("FLOK_CPUPROFILE"); p != "" {
+		if f, err := os.Create(p); err == nil && pprof.StartCPUProfile(f) == nil {
+			time.AfterFunc(30*time.Second, func() { pprof.StopCPUProfile(); f.Close() })
+		}
+	}
 	m := ui.New(sidebarDeps(cfg))
 	_ = launcher.UpdateRuntime(func(r *launcher.Runtime) {
 		r.SidebarPID = os.Getpid()
@@ -49,7 +57,13 @@ func runSidebar(cfg config.Config) int {
 			r.InnerClientTTY = tty
 		}
 	})
-	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	fps := cfg.Sidebar.FPS
+	if fps < 1 || fps > 120 {
+		fps = 15
+	}
+	// The renderer wakes fps times per second to compare the frame buffer; 60 (Bubble Tea's
+	// default) is far more than a sidebar animating at 4 Hz needs and costs idle wakeups.
+	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion(), tea.WithFPS(fps), tea.WithReportFocus())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "flok sidebar:", err)
 		return 1

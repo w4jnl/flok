@@ -25,9 +25,11 @@ import (
 var goneAfter = 30 * time.Second
 
 type slot struct {
-	item *systray.MenuItem
-	mu   sync.Mutex
-	pane string
+	item  *systray.MenuItem
+	mu    sync.Mutex
+	pane  string
+	last  string // last title pushed to AppKit
+	shown bool
 }
 
 type menuBar struct {
@@ -45,6 +47,9 @@ type menuBar struct {
 	dotIcon   bool
 	goneSince time.Time
 	lastTitle string
+	lastHead  string
+	showOn    bool
+	cfgMtime  time.Time
 }
 
 func newBar(cfg config.Config, dir string) *menuBar {
@@ -130,8 +135,10 @@ func (b *menuBar) watch() {
 func (b *menuBar) refresh() {
 	now := time.Now()
 	s, f := snapshot.Load(b.dir, now)
-	if cfg, err := config.Load(""); err == nil { // hot edits of [bar]
-		b.cfg = cfg
+	if fi, err := os.Stat(config.ConfigFile()); err == nil && !fi.ModTime().Equal(b.cfgMtime) { // hot edits of [bar]
+		if cfg, err := config.Load(""); err == nil {
+			b.cfg, b.cfgMtime = cfg, fi.ModTime()
+		}
 	}
 	b.mu.Lock()
 	b.snap, b.fresh = s, f
@@ -159,7 +166,10 @@ func (b *menuBar) render(now time.Time) {
 	s, f, frame := b.snap, b.fresh, b.frame
 	b.mu.Unlock()
 	b.setTitle(bar.Title(s, f, frame, b.options()))
-	b.header.SetTitle(bar.Header(s, f))
+	if head := bar.Header(s, f); head != b.lastHead { // every AppKit call below is diffed: most
+		b.header.SetTitle(head) // refreshes change nothing and must cost nothing
+		b.lastHead = head
+	}
 	wantDot := f == snapshot.Fresh && bar.Pending(s) > 0
 	b.mu.Lock()
 	swap := wantDot != b.dotIcon
@@ -181,7 +191,10 @@ func (b *menuBar) render(now time.Time) {
 			sl.mu.Lock()
 			sl.pane = ""
 			sl.mu.Unlock()
-			sl.item.Hide()
+			if sl.shown {
+				sl.item.Hide()
+				sl.shown, sl.last = false, ""
+			}
 			continue
 		}
 		r := rows[i]
@@ -192,13 +205,23 @@ func (b *menuBar) render(now time.Time) {
 		sl.mu.Lock()
 		sl.pane = r.PaneID
 		sl.mu.Unlock()
-		sl.item.SetTitle(mark + r.Label + "    " + r.Detail)
-		sl.item.Show()
+		title := mark + r.Label + "    " + r.Detail
+		if title != sl.last {
+			sl.item.SetTitle(title)
+			sl.last = title
+		}
+		if !sl.shown {
+			sl.item.Show()
+			sl.shown = true
+		}
 	}
-	if f == snapshot.Fresh {
-		b.show.Enable()
-	} else {
-		b.show.Disable()
+	if on := f == snapshot.Fresh; on != b.showOn || b.lastHead == "" {
+		if on {
+			b.show.Enable()
+		} else {
+			b.show.Disable()
+		}
+		b.showOn = on
 	}
 }
 
@@ -212,9 +235,14 @@ func (b *menuBar) setTitle(t string) {
 	}
 }
 
-// animate advances the spinner while an agent is working.
+// animate advances the spinner while an agent is working. Every frame redraws the status item
+// (AppKit lays the menu bar out again), so the default is 2 fps; [bar] animate_ms tunes it.
 func (b *menuBar) animate() {
-	tick := time.NewTicker(250 * time.Millisecond)
+	ms := b.cfg.Bar.AnimateMs
+	if ms < 100 {
+		ms = 500
+	}
+	tick := time.NewTicker(time.Duration(ms) * time.Millisecond)
 	defer tick.Stop()
 	for range tick.C {
 		b.mu.Lock()
