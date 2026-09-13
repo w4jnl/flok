@@ -54,7 +54,9 @@ const Template = `# flok configuration - https://github.com/w4jnl/flok
 
 [sounds]
 # enabled = true
-# player = "hook"             # hook | sidebar | none
+# player = "hook"             # hook | sidebar | none (who plays: the hook process or the sidebar)
+# command = ""                # "" = first on PATH of afplay, pw-play, paplay, mpv, ffplay, play;
+                              # or your own, e.g. "paplay --volume=40000 {file}" ({file}, {volume} expand)
 # volume = 0.6
 # min_interval_ms = 750
 # when_focused = false

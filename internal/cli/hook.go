@@ -79,7 +79,7 @@ func runHook(cfg config.Config, args []string) (code int) {
 	var sounder notify.Sounder = notify.Noop{}
 	plays := cfg.Sounds.Enabled && cfg.Sounds.Player == "hook"
 	if plays {
-		sounder = notify.Afplay{Files: notify.Resolve(st.Dir, map[string]string{"done": cfg.Sounds.Done, "blocked": cfg.Sounds.Blocked, "error": cfg.Sounds.Error}), Volume: cfg.Sounds.Volume}
+		sounder = notify.Player{Files: notify.Resolve(st.Dir, map[string]string{"done": cfg.Sounds.Done, "blocked": cfg.Sounds.Blocked, "error": cfg.Sounds.Error}), Volume: cfg.Sounds.Volume, Command: cfg.Sounds.Command}
 	}
 	a, fx, err := st.Update(pane, func(a *agent.Agent) state.Effects {
 		fx := state.Apply(a, ev, focused, now)

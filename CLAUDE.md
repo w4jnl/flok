@@ -24,7 +24,8 @@ scripts/e2e/m1.sh          # headless end-to-end suites, m1..m5 (see below)
 scripts/spike/m0-outer.sh check   # nested-outer passthrough checks on isolated servers
 ```
 
-`go.mod` says Go 1.27. There is no linter config beyond `go vet`.
+`go.mod` says Go 1.27. There is no linter config beyond `go vet`. CI runs gofmt, vet, unit tests
+and a build on macOS and ubuntu, and the e2e suites on both as well.
 
 Releases: `scripts/release.sh <version>` tags `v<version>`, pushes, then bumps `url`/`sha256` in
 `Formula/flok.rb` of the tap clone (`$FLOK_TAP_DIR`, default `../homebrew-tap`, repo
@@ -149,4 +150,12 @@ main thread. Icons come from `assets/icons/gen` (`make icons`). e2e coverage: `s
 - Claude Code's title convention (spinner glyph ranges while working, `✳` idle) is duplicated in
   `agent/claude.go` and in the `osc_title_working` rule of `manifests/claude.toml`; keep them in
   step when Claude changes its spinner.
-- macOS first: sounds use `afplay` (`internal/notify`). Everything else is plain tmux.
+- Platforms: macOS first, Linux as a pure terminal interface (no flok-bar). Sounds go through
+  `notify.Player`, which picks the first of afplay, pw-play, paplay, mpv, ffplay, play on PATH or
+  runs `[sounds] command`; `focus.Strategy` "auto" is "none" off macOS; `[bar] enabled` is
+  ignored off macOS with a message. Everything else is plain tmux.
+- tmux output differs by version: 3.4 (Debian/Ubuntu) escapes non-printable bytes in `list-*`
+  output as vis(3) octal, so the `\x1f` field separator arrives as the text `\037`. Always parse
+  format output through `tmux.ParseSnapshot` or `tmux.Unescape`, never split on the raw byte.
+  The e2e suites run on ubuntu in CI for exactly this class of bug; keep scripts POSIX/GNU-safe
+  (no BSD `sed -i ''`, use `sed -i.bak … && rm`).

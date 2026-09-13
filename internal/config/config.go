@@ -56,6 +56,7 @@ type Keys struct {
 type Sounds struct {
 	Enabled       bool    `toml:"enabled"`
 	Player        string  `toml:"player"`
+	Command       string  `toml:"command"` // custom player command; "" = first of afplay, pw-play, paplay, mpv, ffplay, play on PATH
 	Volume        float64 `toml:"volume"`
 	MinIntervalMs int     `toml:"min_interval_ms"`
 	WhenFocused   bool    `toml:"when_focused"`

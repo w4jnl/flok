@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -84,8 +85,13 @@ func runDoctor(cfg config.Config) int {
 
 	// sounds
 	if cfg.Sounds.Enabled {
-		if _, err := os.Stat("/usr/bin/afplay"); err != nil {
-			add("warn", "afplay not found; sounds will not play")
+		switch player := notify.Detect(nil); {
+		case cfg.Sounds.Command != "":
+			add("ok", "sound player: [sounds] command = %q", cfg.Sounds.Command)
+		case player != "":
+			add("ok", "sound player: %s", player)
+		default:
+			add("warn", "no sound player found (afplay, pw-play, paplay, mpv, ffplay, play); set [sounds] command or sounds will not play")
 		}
 		files := notify.Resolve(config.StateDir(), map[string]string{"done": cfg.Sounds.Done, "blocked": cfg.Sounds.Blocked, "error": cfg.Sounds.Error})
 		for kind, f := range files {
@@ -131,10 +137,10 @@ func runDoctor(cfg config.Config) int {
 			add("ok", "outer %s running, sidebar pane %s", outer.Label(), rt.SidebarPane)
 		}
 		if tty, err := tmux.Display(outer, rt.RightPane, "#{pane_tty}"); err == nil {
-			feats, _ := inner.Run("list-clients", "-F", "#{client_tty}\x1f#{client_termfeatures}")
+			feats, _ := inner.Run("list-clients", "-F", "#{client_tty}"+tmux.Sep+"#{client_termfeatures}")
 			found := false
-			for _, line := range strings.Split(feats, "\n") {
-				f := strings.Split(line, "\x1f")
+			for _, line := range strings.Split(tmux.Unescape(feats), "\n") {
+				f := strings.Split(line, tmux.Sep)
 				if len(f) == 2 && f[0] == tty {
 					found = true
 					if strings.Contains(f[1], "RGB") {
@@ -151,7 +157,9 @@ func runDoctor(cfg config.Config) int {
 	}
 
 	// menu bar companion
-	if cfg.Bar.Enabled {
+	if cfg.Bar.Enabled && runtime.GOOS != "darwin" {
+		add("warn", "[bar] enabled is ignored: the menu bar companion is macOS only (flok is the sidebar alone here)")
+	} else if cfg.Bar.Enabled {
 		if path, err := launcher.BarBinary(bin); err != nil {
 			add("warn", "[bar] enabled but flok-bar not found next to %s or on PATH", bin)
 		} else if pid, running := launcher.BarRunning(); running {

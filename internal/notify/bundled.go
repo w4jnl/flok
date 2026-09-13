@@ -14,7 +14,7 @@ var bundled embed.FS
 var bundledByKind = map[string]string{"done": "done.mp3", "blocked": "request.mp3", "error": "request.mp3"}
 
 // BundledFiles returns kind -> path for the sounds shipped in the binary, written under
-// <stateDir>/sounds/bundled/ when missing or stale (afplay needs a file on disk).
+// <stateDir>/sounds/bundled/ when missing or stale (the players need a file on disk).
 func BundledFiles(stateDir string) map[string]string {
 	dir := filepath.Join(stateDir, "sounds", "bundled")
 	_ = os.MkdirAll(dir, 0o755)

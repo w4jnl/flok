@@ -132,8 +132,8 @@ func New(d Deps) Model {
 	m := Model{d: d, theme: NewTheme(d.Cfg.Theme), tracker: merge.NewTracker(), clientTTY: d.ClientTTY, changes: make(chan struct{}, 1), vc: &viewCache{},
 		prevState: map[string]agent.State{}, sounder: notify.Noop{}, started: time.Now()}
 	if d.Cfg.Sounds.Enabled && d.Cfg.Sounds.Player != "none" {
-		m.sounder = notify.Afplay{Files: notify.Resolve(config.StateDir(), map[string]string{"done": d.Cfg.Sounds.Done, "blocked": d.Cfg.Sounds.Blocked, "error": d.Cfg.Sounds.Error}),
-			Volume: d.Cfg.Sounds.Volume}
+		m.sounder = notify.Player{Files: notify.Resolve(config.StateDir(), map[string]string{"done": d.Cfg.Sounds.Done, "blocked": d.Cfg.Sounds.Blocked, "error": d.Cfg.Sounds.Error}),
+			Volume: d.Cfg.Sounds.Volume, Command: d.Cfg.Sounds.Command}
 	}
 	if m.clientTTY == "" && d.Outer != nil && d.RightPane != "" {
 		if tty, err := tmux.Display(d.Outer, d.RightPane, "#{pane_tty}"); err == nil {

@@ -90,3 +90,19 @@ func TestParseAndLabel(t *testing.T) {
 		t.Error("modifier keys are not mouse keys")
 	}
 }
+
+// tmux 3.4 has no notes for its < and > menu bindings; their display-menu commands must not be
+// shown raw (they mention Split, Kill and more, which also confuses the help filter).
+func TestLabelDisplayMenu(t *testing.T) {
+	win := `display-menu -T "#[align=centre]#{window_index}:#{window_name}" -x W -y W "Swap Left" l { swap-window -t :-1 } '' Kill X { kill-window }`
+	pane := `display-menu -T "#[align=centre]#{pane_index} (#{pane_id})" -x P -y P "Horizontal Split" h { split-window -h } '' Kill X { kill-pane }`
+	if l := Label(Binding{Command: win}, nil); l != "window menu" {
+		t.Fatalf("window menu label: %q", l)
+	}
+	if l := Label(Binding{Command: pane}, nil); l != "pane menu" {
+		t.Fatalf("pane menu label: %q", l)
+	}
+	if l := Label(Binding{Command: `display-menu -T "x" "Item" i { list-keys }`}, nil); l != "menu" {
+		t.Fatalf("generic menu label: %q", l)
+	}
+}

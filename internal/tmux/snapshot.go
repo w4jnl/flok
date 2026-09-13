@@ -68,9 +68,21 @@ func TakeSnapshotRaw(c Client) (Snapshot, string, error) {
 	return snap, out, nil
 }
 
+// Sep is the field separator flok puts in its -F formats: tmux never emits it in names,
+// paths or titles.
+const Sep = sep
+
+// Unescape turns the vis(3) form of the separator (`\037`) back into the byte, see ParseSnapshot.
+func Unescape(out string) string { return strings.ReplaceAll(out, `\037`, sep) }
+
 // ParseSnapshot parses the combined output of TakeSnapshot.
+//
+// Some tmux builds (3.4 on Linux, for one) escape non-printable bytes in list-* output with
+// vis(3) octal notation, so the separator arrives as the four characters `\037` instead of the
+// byte itself; others (3.5+ on macOS) emit the raw byte. Both forms are accepted.
 func ParseSnapshot(out string) Snapshot {
 	var s Snapshot
+	out = Unescape(out)
 	for _, line := range strings.Split(out, "\n") {
 		if line == "" {
 			continue

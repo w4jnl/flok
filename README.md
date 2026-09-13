@@ -40,7 +40,9 @@ What that means in practice:
 
 - Features are the ones I need. Requests that do not fit my workflow will probably be declined,
   politely.
-- macOS is the first-class platform (sounds use `afplay`); Linux works but gets less testing.
+- macOS is the first-class platform; on Linux flok is the terminal sidebar alone (no menu bar
+  companion), sounds go through whichever player is installed, and the end-to-end suites run on
+  both in CI.
 - There is no compatibility promise between versions yet. Read the release notes before
   `brew upgrade`.
 - Bug reports with a reproduction are welcome; support is best effort.
@@ -176,7 +178,9 @@ Nothing is hand-maintained: what the popup shows is what your server has bound r
 - tmux 3.3 or newer (3.7 tested), macOS or Linux.
 - Claude Code and/or GitHub Copilot CLI for hook-driven state. Other agents get title and
   screen-rule detection only (manifests exist for Codex, Gemini and OpenCode).
-- macOS for sounds (`afplay`); on Linux sounds are silently skipped.
+- A sound player for the notification sounds: `afplay` on macOS; on Linux the first of `pw-play`,
+  `paplay`, `mpv`, `ffplay`, `play` (sox) found on PATH, or any command via `[sounds] command`.
+  Without one, sounds are skipped and `flok doctor` says so.
 - Go 1.27 only if you build from source.
 
 ## Install
@@ -323,7 +327,9 @@ tables = ["prefix", "root", "copy-mode-vi"]
 
 [sounds]
 enabled = true
-player = "hook"             # hook | sidebar | none
+player = "hook"             # hook | sidebar | none (who plays: the hook process or the sidebar)
+command = ""                # "" = first on PATH of afplay, pw-play, paplay, mpv, ffplay, play;
+                            # or your own, e.g. "paplay --volume=40000 {file}" ({file}, {volume} expand)
 volume = 0.6
 min_interval_ms = 750
 when_focused = false
@@ -331,7 +337,7 @@ done = ""                   # empty = bundled done.mp3; or e.g. "/System/Library
 blocked = ""                # empty = bundled request.mp3 (also used for error)
 error = ""
 
-[bar]                       # macOS menu bar companion, started by `flok up`
+[bar]                       # macOS menu bar companion, started by `flok up` (ignored on Linux)
 enabled = false
 animate = true              # spin ◐◓◑◒ in the menu bar while an agent works
 animate_ms = 500            # frame interval; every frame redraws the status item, so 2 fps by default
@@ -411,7 +417,7 @@ internal/claudereg     `claude agents --json` reader, pid → tty → pane
 internal/tmux          exec-based tmux client, one-call snapshot
 internal/keys          list-keys collector and labels for the help
 internal/nav           switch-client / select-window / select-pane
-internal/notify        sounds (afplay), debounce
+internal/notify        sounds (afplay, pw-play, paplay, mpv, ffplay, play or a custom command), debounce
 internal/install       settings.json / Copilot hook writers, tmux snippet
 internal/config        config.toml, XDG paths
 ```

@@ -49,7 +49,7 @@ if OUT has-session -t flok 2>/dev/null; then bad "down left the outer running"; 
 # must exit 0 after a deliberate detach and after `flok down`, so launcher fallbacks stay quiet.
 TTY() { tmux -L e2e-tty "$@"; }
 TTY kill-server 2>/dev/null || true
-sed -i '' '/reattach_on_detach = true/d' "$T/config.toml"   # back to the default: detach tears the outer down
+sed -i.bak '/reattach_on_detach = true/d' "$T/config.toml" && rm -f "$T/config.toml.bak"   # back to the default: detach tears the outer down (-i.bak: BSD and GNU sed)
 TTY -f /dev/null new-session -d -s t -x 120 -y 40 "env -u TMUX -u TMUX_PANE FLOK_CONFIG=$FLOK_CONFIG FLOK_STATE=$FLOK_STATE $BIN up; echo UP_EXIT=\$?; sleep 20"
 for _ in $(seq 1 30); do OUT has-session -t flok 2>/dev/null && break; sleep 0.2; done
 sleep 0.8

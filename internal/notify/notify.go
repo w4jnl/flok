@@ -2,6 +2,7 @@
 package notify
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -15,22 +16,83 @@ type Sounder interface {
 	Play(kind string) error
 }
 
-// Afplay plays .aiff/.mp3 files with macOS afplay, detached from the caller.
-type Afplay struct {
-	Files  map[string]string // kind -> file
-	Volume float64
+// players lists the command-line players flok knows, in detection order: afplay is macOS's
+// own; on Linux pw-play (PipeWire) and paplay (PulseAudio) come with the desktop, mpv, ffplay
+// and play (sox) are common installs. All of them decode mp3 on a current desktop
+// (pw-play/paplay through libsndfile 1.1+); anything else goes through [sounds] command.
+var players = []string{"afplay", "pw-play", "paplay", "mpv", "ffplay", "play"}
+
+// playerArgs builds the argv for a known player: volume in [0,1] mapped to the player's scale.
+func playerArgs(name, file string, vol float64) []string {
+	switch name {
+	case "afplay":
+		return []string{name, "-v", fmt.Sprintf("%.2f", vol), file}
+	case "pw-play":
+		return []string{name, fmt.Sprintf("--volume=%.2f", vol), file}
+	case "paplay":
+		return []string{name, fmt.Sprintf("--volume=%d", int(vol*65536)), file}
+	case "mpv":
+		return []string{name, "--no-video", "--really-quiet", fmt.Sprintf("--volume=%d", int(vol*100)), file}
+	case "ffplay":
+		return []string{name, "-nodisp", "-autoexit", "-loglevel", "quiet", "-volume", fmt.Sprintf("%d", int(vol*100)), file}
+	case "play":
+		return []string{name, "-q", "-v", fmt.Sprintf("%.2f", vol), file}
+	}
+	return nil
 }
 
-func (a Afplay) Play(kind string) error {
-	file := a.Files[kind]
-	if file == "" {
-		return fmt.Errorf("no sound configured for %q", kind)
+// Detect returns the first known player found on PATH ("" when none). look is exec.LookPath
+// unless a test injects one.
+func Detect(look func(string) (string, error)) string {
+	if look == nil {
+		look = exec.LookPath
 	}
-	vol := a.Volume
+	for _, name := range players {
+		if _, err := look(name); err == nil {
+			return name
+		}
+	}
+	return ""
+}
+
+// Player plays sound files with an external command, detached from the caller (the hook
+// process is short-lived). Command is an optional shell command with {file} and {volume}
+// placeholders; empty means the first player Detect finds.
+type Player struct {
+	Files   map[string]string // kind -> file
+	Volume  float64
+	Command string
+	look    func(string) (string, error)
+}
+
+// argv resolves the command line for one file (nil when no player is available).
+func (p Player) argv(file string) []string {
+	vol := p.Volume
 	if vol <= 0 || vol > 1 {
 		vol = 0.6
 	}
-	cmd := exec.Command("/usr/bin/afplay", "-v", fmt.Sprintf("%.2f", vol), file)
+	if cmd := strings.TrimSpace(p.Command); cmd != "" {
+		cmd = strings.NewReplacer("{file}", shellQuote(file), "{volume}", fmt.Sprintf("%.2f", vol)).Replace(cmd)
+		return []string{"/bin/sh", "-c", cmd}
+	}
+	if name := Detect(p.look); name != "" {
+		return playerArgs(name, file, vol)
+	}
+	return nil
+}
+
+func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
+
+func (p Player) Play(kind string) error {
+	file := p.Files[kind]
+	if file == "" {
+		return fmt.Errorf("no sound configured for %q", kind)
+	}
+	argv := p.argv(file)
+	if argv == nil {
+		return errors.New("no sound player found (afplay, pw-play, paplay, mpv, ffplay, play) and [sounds] command is empty")
+	}
+	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	null, _ := os.OpenFile(os.DevNull, os.O_RDWR, 0)
 	if null != nil {

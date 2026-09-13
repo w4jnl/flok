@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -166,7 +167,9 @@ func Up(cfg config.Config, bin string, detach bool) error {
 		return err
 	}
 	if cfg.Bar.Enabled {
-		if err := StartBar(cfg, bin); err != nil {
+		if runtime.GOOS != "darwin" {
+			fmt.Fprintln(os.Stderr, "flok: [bar] enabled is ignored: the menu bar companion is macOS only")
+		} else if err := StartBar(cfg, bin); err != nil {
 			fmt.Fprintln(os.Stderr, "flok: menu bar:", err)
 		}
 	}

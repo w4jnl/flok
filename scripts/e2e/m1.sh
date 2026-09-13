@@ -5,7 +5,7 @@ source "$(dirname "$0")/lib.sh"
 snap=$(capture)
 echo "--- sidebar (idle) ---"; printf '%s\n' "$snap" | grep -v '^ *$' | head -8
 expect "spaces header"            '^sessions'              "$snap"
-expect "both sessions listed"     "Alpha.*$REPO_BRANCH"  "$snap"
+expect "both sessions listed"     "Alpha.*${REPO_BRANCH:0:6}"  "$snap"   # long branch names are truncated with …
 expect "second session listed"    'Beta'                 "$snap"
 expect "agents header"            '^agents'              "$snap"
 expect "fake claude agent idle (~ = no hooks)" "○ ~$PROJ *$" "$snap"

@@ -33,7 +33,7 @@ CSESS=$(IN list-clients -F '#{client_session}' | head -1)
 expect "edit-config opened a flok-config window in the client's session" 'flok-config' "$(IN list-windows -t "$CSESS" -F '#{window_name}')"
 expect "the editor runs on config.toml" 'tail' "$(IN display -p -t "$CSESS:flok-config" '#{pane_current_command}')"
 IN kill-window -t "$CSESS:flok-config"
-sed -i '' -e '/^\[bar\]$/d' -e '/^editor = "tail -f"$/d' "$T/config.toml"
+sed -i.bak -e '/^\[bar\]$/d' -e '/^editor = "tail -f"$/d' "$T/config.toml" && rm -f "$T/config.toml.bak"   # -i.bak: BSD and GNU sed
 
 if [ -n "${FLOK_E2E_BAR:-}" ]; then
   python3 - "$T/config.toml" <<'PY'

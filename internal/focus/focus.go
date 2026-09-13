@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"runtime"
 	"strings"
 )
 
@@ -31,6 +32,7 @@ type Options struct {
 	Pane        string // for custom commands
 	Run         Runner
 	Look        LookPath
+	GOOS        string // runtime.GOOS unless a test sets it
 }
 
 func defaultRun(name string, args ...string) (string, error) {
@@ -40,14 +42,22 @@ func defaultRun(name string, args ...string) (string, error) {
 
 func defaultLook(name string) bool { _, err := exec.LookPath(name); return err == nil }
 
-// Strategy resolves "auto" to what is available on this machine.
+// Strategy resolves "auto" to what is available on this machine. Both built-in strategies
+// are macOS tools, so auto means "none" elsewhere; a custom command still works anywhere.
 func Strategy(o Options) string {
 	look := o.Look
 	if look == nil {
 		look = defaultLook
 	}
+	goos := o.GOOS
+	if goos == "" {
+		goos = runtime.GOOS
+	}
 	switch o.Strategy {
 	case "", "auto":
+		if goos != "darwin" {
+			return "none"
+		}
 		if look("aerospace") {
 			return "aerospace"
 		}
