@@ -1,4 +1,4 @@
-# flok
+<p align="center"><img src="assets/brand/flok-hero.png" alt="flok — a herdr-style agent sidebar for tmux" width="800"></p>
 
 [![ci](https://github.com/w4jnl/flok/actions/workflows/ci.yml/badge.svg)](https://github.com/w4jnl/flok/actions/workflows/ci.yml)
 
