@@ -61,5 +61,18 @@ SIDEBAR=$(python3 -c "import json;print(json.load(open('$T/state/runtime.json'))
 RIGHT=$(python3 -c "import json;print(json.load(open('$T/state/runtime.json'))['right_pane'])")
 wait_for 'fake-agent' 5 || true
 
+# tmux version of this host: suites skip what older servers cannot do (RHEL 8 ships 2.7, RHEL 9 3.2a)
+TMUX_VER=$(tmux -V | sed -E 's/^tmux //')
+TMUX_MAJOR=$(printf '%s' "$TMUX_VER" | sed -nE 's/^[^0-9]*([0-9]+)\.([0-9]+).*/\1/p')
+TMUX_MINOR=$(printf '%s' "$TMUX_VER" | sed -nE 's/^[^0-9]*([0-9]+)\.([0-9]+).*/\2/p')
+: "${TMUX_MAJOR:=99}" "${TMUX_MINOR:=0}"
+tmux_at_least() { [ "$TMUX_MAJOR" -gt "$1" ] || { [ "$TMUX_MAJOR" -eq "$1" ] && [ "$TMUX_MINOR" -ge "$2" ]; }; }
+# The outer config must load cleanly on this version: tmux does not abort on an unknown option,
+# it shows the errors in a view-mode overlay on the work pane, which no client would ever see here.
+in_mode=$(OUT display -p -t "$RIGHT" '#{pane_in_mode}')
+expect "outer config loaded without errors on tmux $TMUX_VER" '^0$' "$in_mode"
+[ "$in_mode" = "0" ] || OUT capture-pane -p -t "$RIGHT" | grep -v '^ *$' | head -12 | sed 's/^/      | /'
+expect "runtime.json records the tmux version" "^$TMUX_MAJOR\\.$TMUX_MINOR" "$(python3 -c "import json;print(json.load(open('$T/state/runtime.json')).get('tmux_version',''))")"
+
 # hook <agent> <json>  — replays a hook payload as if the agent in $AGENT had emitted it.
 hook() { printf '%s' "$2" | TMUX="$INNER_SOCK,0,0" TMUX_PANE="$AGENT" "$BIN" hook "$1"; }

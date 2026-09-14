@@ -23,16 +23,20 @@ func TestParseSnapshot(t *testing.T) {
 	}
 }
 
-// tmux 3.4 on Linux prints the 0x1f separator as the vis(3) escape `\037`.
+// tmux 3.4+ prints the 0x1f separator as the vis(3) escape `\037`; TakeSnapshotRaw decodes it
+// when the client reports that version.
 func TestParseSnapshotEscapedSeparator(t *testing.T) {
 	out := `S\037$0\037Alpha\037/home/user/flok\0370\0372\0371789335588\0371789335588` + "\n" +
-		`P\037%2\037$0\037Alpha\037@1\0371\0370\0370\0371\037claude\037/home/user/flok\037/dev/pts/2\03715300\0370\037\037\0370\037✳ fake-agent` + "\n" +
+		`P\037%2\037$0\037Alpha\037@1\0371\0370\0370\0371\037claude\037/home/user/flok\037/dev/pts/2\03715300\0370\037\0370\0370\037✳ fake-agent` + "\n" +
 		`C\037/dev/pts/3\037$1\037Beta\0371789335548\037200\03750\037tmux-256color` + "\n"
-	s := ParseSnapshot(out)
+	if raw := ParseSnapshot(out); len(raw.Panes) != 0 {
+		t.Fatalf("undecoded output must not parse into panes: %+v", raw.Panes)
+	}
+	s := ParseSnapshot(Decode(out, true))
 	if len(s.Sessions) != 1 || s.Sessions[0].Name != "Alpha" || s.Sessions[0].Windows != 2 {
 		t.Fatalf("sessions: %+v", s.Sessions)
 	}
-	if len(s.Panes) != 1 || s.Panes[0].ID != "%2" || s.Panes[0].Command != "claude" || s.Panes[0].PBState != "" || s.Panes[0].Title != "✳ fake-agent" {
+	if len(s.Panes) != 1 || s.Panes[0].ID != "%2" || s.Panes[0].Command != "claude" || s.Panes[0].PBState != "" || s.Panes[0].PBProgress != "0" || s.Panes[0].InMode || s.Panes[0].Title != "✳ fake-agent" {
 		t.Fatalf("panes: %+v", s.Panes)
 	}
 	if len(s.Clients) != 1 || s.Clients[0].TTY != "/dev/pts/3" || s.Clients[0].SessionName != "Beta" {

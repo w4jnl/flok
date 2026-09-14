@@ -42,6 +42,7 @@ type Deps struct {
 	Registry    bool                // poll `claude agents --json`
 	Rules       *rules.Set          // screen-rule manifests; nil disables capture-pane detection
 	OnSwitch    func(paneID string) // called after switching to an agent pane
+	Feat        tmux.Features       // what the tmux both servers run on can do (popups, …)
 }
 
 const (
@@ -131,14 +132,16 @@ func New(d Deps) Model {
 	lipgloss.SetColorProfile(termenv.TrueColor)
 	m := Model{d: d, theme: NewTheme(d.Cfg.Theme), tracker: merge.NewTracker(), clientTTY: d.ClientTTY, changes: make(chan struct{}, 1), vc: &viewCache{},
 		prevState: map[string]agent.State{}, sounder: notify.Noop{}, started: time.Now()}
-	if d.Cfg.Sounds.Enabled && d.Cfg.Sounds.Player != "none" {
-		m.sounder = notify.Player{Files: notify.Resolve(config.StateDir(), map[string]string{"done": d.Cfg.Sounds.Done, "blocked": d.Cfg.Sounds.Blocked, "error": d.Cfg.Sounds.Error}),
-			Volume: d.Cfg.Sounds.Volume, Command: d.Cfg.Sounds.Command}
-	}
 	if m.clientTTY == "" && d.Outer != nil && d.RightPane != "" {
 		if tty, err := tmux.Display(d.Outer, d.RightPane, "#{pane_tty}"); err == nil {
 			m.clientTTY = tty
 		}
+	}
+	if d.Cfg.Sounds.Enabled && d.Cfg.Sounds.Player != "none" {
+		player := notify.Player{Files: notify.Resolve(config.StateDir(), map[string]string{"done": d.Cfg.Sounds.Done, "blocked": d.Cfg.Sounds.Blocked, "error": d.Cfg.Sounds.Error}),
+			Volume: d.Cfg.Sounds.Volume, Command: d.Cfg.Sounds.Command}
+		tty := m.clientTTY // the outer's work pane: the bell travels through the outer server to the terminal
+		m.sounder = notify.Compose(player, notify.Bell{Resolve: func() string { return tty }}, d.Cfg.Sounds.Bell)
 	}
 	if d.Store != nil {
 		go watchStore(d.Store.Dir, m.changes)
@@ -935,14 +938,14 @@ type helpPopupFailedMsg struct{ err error }
 func (m *Model) openHelp() tea.Cmd {
 	outer := m.d.Outer
 	exe, err := os.Executable()
-	if outer == nil || err != nil {
+	// FLOK_OUTER makes `flok keys` read the inner server's bindings, not the outer's
+	args := keys.PopupArgs(m.d.Feat, "", "env FLOK_OUTER=1 '"+exe+"' keys")
+	if outer == nil || err != nil || args == nil { // headless, or a tmux without popups (< 3.2)
 		m.openHelpInline()
 		return nil
 	}
 	return func() tea.Msg {
-		_, err := outer.Run("display-popup", "-E", "-w", "80%", "-h", "85%", "-b", "rounded", "-T", " keybinds ",
-			"-e", "FLOK_OUTER=1", "'"+exe+"' keys")
-		if err != nil {
+		if _, err := outer.Run(args...); err != nil {
 			return helpPopupFailedMsg{err}
 		}
 		return nil

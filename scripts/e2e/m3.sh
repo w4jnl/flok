@@ -78,7 +78,8 @@ dump=$("$BIN" keys --print)
 expect "keys dump has prefix section"   '^prefix C-b'          "$dump"
 expect "keys dump has no-prefix section" '^no prefix'          "$dump"
 expect "keys dump has copy-mode-vi"      '^copy-mode-vi'       "$dump"
-expect "keys dump uses tmux notes"       'Split window'        "$dump"
+notepat='Split window'; tmux_at_least 3 1 || notepat='[Ss]plit'   # bind-key notes exist from tmux 3.1; older dumps show flok's own labels
+expect "keys dump uses tmux notes"       "$notepat"            "$dump"
 expect "keys dump hides mouse rows"      '^0$' "$(printf '%s\n' "$dump" | grep -c Mouse || true)"
 dumpf=$("$BIN" keys --print --filter split)
 expect "filter narrows to split"         '[Ss]plit'            "$dumpf"
@@ -91,7 +92,7 @@ KP=$(IN display -p -t Beta:keysui '#{pane_id}')
 ui=$(IN capture-pane -p -t "$KP")
 expect "keys UI title + badge"     'keybinds.*esc close' "$ui"
 expect "keys UI hint line"         'press / to filter'   "$ui"
-expect "keys UI shows a binding"   'Split window'        "$ui"
+expect "keys UI shows a binding"   "$notepat"            "$ui"
 IN send-keys -t "$KP" /kill   # one chunk on purpose: multi-rune input must still work
 sleep 0.5
 ui=$(IN capture-pane -p -t "$KP")

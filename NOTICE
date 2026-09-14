@@ -6,6 +6,7 @@ codex.toml, gemini.toml, opencode.toml) are copied from herdr
 (https://github.com/herdrdev/herdr, https://herdr.dev), licensed under the Apache License,
 Version 2.0. They are redistributed unchanged apart from an attribution header.
 
-The notification sounds under internal/notify/sounds/ (done.mp3, request.mp3) are copied
-unchanged from herdr's assets/sounds/, under the same Apache License, Version 2.0.
+The notification sounds under internal/notify/sounds/ (done.wav, request.wav) are herdr's
+assets/sounds/done.mp3 and request.mp3, under the same Apache License, Version 2.0,
+transcoded to 22.05 kHz mono WAV (afconvert) and otherwise unchanged.
 The full text of the Apache License 2.0 is in LICENSE-APACHE.

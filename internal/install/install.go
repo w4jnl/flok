@@ -153,7 +153,7 @@ bind o run-shell -b "%[1]s jump --client '#{client_tty}'"   # replaces select-pa
 bind b run-shell -b "%[1]s toggle"
 bind B run-shell -b "%[1]s hide"
 bind g run-shell -b "%[1]s focus"                        # keyboard into the sidebar: j/k, enter, esc back
-bind ? display-popup -E -w 80%% -h 85%% -b rounded -T ' keybinds ' "%[1]s keys"
+bind ? run-shell -b "%[1]s keys --open --client '#{client_tty}'"   # popup on tmux 3.2+, a window before
 # <<< flok <<<
 `, bin)
 }

@@ -56,7 +56,8 @@ type Keys struct {
 type Sounds struct {
 	Enabled       bool    `toml:"enabled"`
 	Player        string  `toml:"player"`
-	Command       string  `toml:"command"` // custom player command; "" = first of afplay, pw-play, paplay, mpv, ffplay, play on PATH
+	Command       string  `toml:"command"` // custom player command; "" = first known player on PATH (see notify.players)
+	Bell          string  `toml:"bell"`    // auto (ring the terminal bell when no player exists) | always | never
 	Volume        float64 `toml:"volume"`
 	MinIntervalMs int     `toml:"min_interval_ms"`
 	WhenFocused   bool    `toml:"when_focused"`
@@ -114,8 +115,8 @@ func Default() Config {
 		Sidebar: Sidebar{Width: 28, RailWidth: 6, RailThreshold: 12, SessionsMaxRatio: 0.4, AgentRows: 2, SessionOrder: "index", ShowBranch: true, BranchSource: "active_pane", PollMs: 1000, IdlePollMs: 3000, SpinnerMs: 250, FPS: 15, RegistryPollMs: 10000, ScreenPollMs: 2000, CaptureLines: 0, StaleWorkingMin: 30},
 		Agents:  Agents{Enabled: []string{"claude", "copilot"}, ManifestDir: "~/.config/flok/agents", ScreenRules: "auto"},
 		Keys:    Keys{Tables: []string{"prefix", "root", "copy-mode-vi"}},
-		Sounds: Sounds{Enabled: true, Player: "hook", Volume: 0.6, MinIntervalMs: 750,
-			Done: "", Blocked: "", Error: ""}, // empty = the bundled herdr sounds (done.mp3 / request.mp3)
+		Sounds: Sounds{Enabled: true, Player: "hook", Bell: "auto", Volume: 0.6, MinIntervalMs: 750,
+			Done: "", Blocked: "", Error: ""}, // empty = the bundled herdr sounds (done.wav / request.wav)
 		Bar: Bar{Enabled: false, Animate: true, Badge: true, Focus: "auto", MaxRows: 16, AnimateMs: 500},
 		Theme: Theme{BG: "#282a36", CurrentLine: "#44475a", FG: "#f8f8f2", Comment: "#6272a4", Cyan: "#8be9fd", Green: "#50fa7b",
 			Orange: "#ffb86c", Pink: "#ff79c6", Purple: "#bd93f9", Red: "#ff5555", Yellow: "#f1fa8c",

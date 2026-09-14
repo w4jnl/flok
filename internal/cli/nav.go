@@ -125,7 +125,8 @@ func runLayout(cfg config.Config, cmd string, args []string) int {
 		message(inner, clientArg(args), "sidebar not running (flok up)")
 		return 0
 	}
-	outer := tmux.NewLocal(rt.OuterSocket)
+	inner.SetVersion(rt.Version())
+	outer := tmux.NewLocal(rt.OuterSocket).SetVersion(rt.Version())
 	if _, err := tmux.Display(outer, rt.SidebarPane, "#{pane_id}"); err != nil {
 		message(inner, clientArg(args), "sidebar not running (flok up)")
 		return 0
@@ -139,8 +140,7 @@ func runLayout(cfg config.Config, cmd string, args []string) int {
 			_, err = outer.Run("select-pane", "-t", rt.SidebarPane)
 		}
 	case "reload": // restart only the sidebar pane (re-reads config.toml); the work pane is untouched
-		_, err = outer.Run("respawn-pane", "-k", "-t", rt.SidebarPane, "-e", "FLOK_OUTER=1",
-			"-e", "FLOK_RIGHT_PANE="+rt.RightPane, binPath()+" sidebar")
+		_, err = outer.Run("respawn-pane", "-k", "-t", rt.SidebarPane, launcher.SidebarCommand(binPath(), rt.RightPane))
 	case "hide":
 		if zoomed == "1" { // un-hide: resizes while hidden scaled the layout underneath, re-pin it
 			_, err = outer.Run("resize-pane", "-Z", "-t", rt.RightPane, ";", "select-layout", "-t", rt.RightPane, "main-vertical")

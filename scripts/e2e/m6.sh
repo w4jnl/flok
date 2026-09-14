@@ -16,7 +16,7 @@ hook claude '{"hook_event_name":"PermissionRequest","session_id":"abc","tool_nam
 for _ in $(seq 1 30); do grep -q '"blocked"' "$SNAP" 2>/dev/null && break; sleep 0.1; done
 expect "snapshot state blocked" '^blocked permission:Bash 1$' "$(py 'a=s["agents"][0]; print(a["state"], a["reason"], a["unseen"])')"
 expect "status agrees with the snapshot" 'blocked' "$("$BIN" status | grep "$AGENT")"
-expect "snapshot is fresh (updated_at recent)" '^ok$' "$(py 'import datetime; d=datetime.datetime.now(datetime.timezone.utc)-datetime.datetime.fromisoformat(s["updated_at"]); print("ok" if d.total_seconds()<10 else d)')"
+expect "snapshot is fresh (written recently)" '^ok$' "$(python3 -c "import os,time; d=time.time()-os.path.getmtime('$SNAP'); print('ok' if d<10 else d)")"
 
 # goto: switch the inner client to the agent pane (no window focus in tests) and mark it seen
 IN select-window -t Alpha:0

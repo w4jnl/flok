@@ -6,12 +6,14 @@ import (
 	"path/filepath"
 )
 
-// The two notification sounds herdr ships (assets/sounds, Apache-2.0); see NOTICE.
+// The two notification sounds herdr ships (assets/sounds, Apache-2.0; see NOTICE), transcoded
+// to 22.05 kHz mono WAV so that every player decodes them — PulseAudio's paplay/pw-play only
+// play mp3 through libsndfile 1.1+, which RHEL 9 does not have.
 //
-//go:embed sounds/done.mp3 sounds/request.mp3
+//go:embed sounds/done.wav sounds/request.wav
 var bundled embed.FS
 
-var bundledByKind = map[string]string{"done": "done.mp3", "blocked": "request.mp3", "error": "request.mp3"}
+var bundledByKind = map[string]string{"done": "done.wav", "blocked": "request.wav", "error": "request.wav"}
 
 // BundledFiles returns kind -> path for the sounds shipped in the binary, written under
 // <stateDir>/sounds/bundled/ when missing or stale (the players need a file on disk).

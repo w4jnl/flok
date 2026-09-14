@@ -17,10 +17,11 @@ type Sounder interface {
 }
 
 // players lists the command-line players flok knows, in detection order: afplay is macOS's
-// own; on Linux pw-play (PipeWire) and paplay (PulseAudio) come with the desktop, mpv, ffplay
-// and play (sox) are common installs. All of them decode mp3 on a current desktop
-// (pw-play/paplay through libsndfile 1.1+); anything else goes through [sounds] command.
-var players = []string{"afplay", "pw-play", "paplay", "mpv", "ffplay", "play"}
+// own; on Linux mpv and ffplay decode anything, pw-play (PipeWire) and paplay (PulseAudio)
+// come with the desktop but only decode mp3 through libsndfile 1.1+ (RHEL 9 ships 1.0.31,
+// which is why the bundled sounds are WAV), play is sox. Anything else goes through
+// [sounds] command; with no player at all the bell mode rings the terminal instead.
+var players = []string{"afplay", "mpv", "ffplay", "pw-play", "paplay", "play"}
 
 // playerArgs builds the argv for a known player: volume in [0,1] mapped to the player's scale.
 func playerArgs(name, file string, vol float64) []string {
@@ -32,7 +33,7 @@ func playerArgs(name, file string, vol float64) []string {
 	case "paplay":
 		return []string{name, fmt.Sprintf("--volume=%d", int(vol*65536)), file}
 	case "mpv":
-		return []string{name, "--no-video", "--really-quiet", fmt.Sprintf("--volume=%d", int(vol*100)), file}
+		return []string{name, "--no-config", "--no-video", "--really-quiet", fmt.Sprintf("--volume=%d", int(vol*100)), file}
 	case "ffplay":
 		return []string{name, "-nodisp", "-autoexit", "-loglevel", "quiet", "-volume", fmt.Sprintf("%d", int(vol*100)), file}
 	case "play":

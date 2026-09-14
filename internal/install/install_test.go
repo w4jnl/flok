@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -52,5 +53,14 @@ func TestClaudeSettingsIdempotentAndPreserving(t *testing.T) {
 	}
 	if _, err := os.Stat(legacy); err == nil {
 		t.Fatalf("legacy tmux-herdr.json must be removed")
+	}
+}
+
+// The snippet lives in the user's inner tmux.conf, which must load on every tmux flok supports:
+// the help binding goes through `flok keys --open`, which picks a popup or a window itself.
+func TestTmuxSnippetIsVersionIndependent(t *testing.T) {
+	snip := TmuxSnippet("/usr/local/bin/flok")
+	if strings.Contains(snip, "display-popup") || !strings.Contains(snip, `keys --open --client '#{client_tty}'`) {
+		t.Fatalf("snippet: %s", snip)
 	}
 }

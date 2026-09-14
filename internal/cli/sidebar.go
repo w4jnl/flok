@@ -19,8 +19,12 @@ import (
 )
 
 func sidebarDeps(cfg config.Config) ui.Deps {
-	d := ui.Deps{Cfg: cfg, Inner: tmux.NewLocal(cfg.Inner.Socket), Adapters: agent.Enabled(cfg.Agents.Enabled), BranchOf: git.Branch,
-		Store: state.New(config.StateDir())}
+	ver := tmux.DetectVersion("")
+	if rt, err := launcher.ReadRuntime(); err == nil && rt.TmuxVersion != "" {
+		ver = tmux.ParseVersion(rt.TmuxVersion) // recorded by `flok up`: same binary, no fork
+	}
+	d := ui.Deps{Cfg: cfg, Inner: tmux.NewLocal(cfg.Inner.Socket).SetVersion(ver), Feat: tmux.FeaturesFor(ver),
+		Adapters: agent.Enabled(cfg.Agents.Enabled), BranchOf: git.Branch, Store: state.New(config.StateDir())}
 	for _, id := range cfg.Agents.Enabled {
 		if id == "claude" {
 			d.Registry = true
@@ -30,7 +34,7 @@ func sidebarDeps(cfg config.Config) ui.Deps {
 		d.Rules = rules.Load(cfg.Agents.ManifestDir, cfg.Agents.UseHerdrCache)
 	}
 	if o := tmux.FromEnv(); o != nil && os.Getenv("FLOK_OUTER") != "" {
-		d.Outer = o
+		d.Outer = o.SetVersion(ver)
 	}
 	d.SidebarPane = os.Getenv("TMUX_PANE") // set by the outer server
 	d.RightPane = os.Getenv("FLOK_RIGHT_PANE")
