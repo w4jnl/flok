@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -44,7 +45,8 @@ type menuBar struct {
 	snap      snapshot.Snapshot
 	fresh     snapshot.Freshness
 	frame     int
-	dotIcon   bool
+	solidIcon bool // the solid (waiting) icon is on screen
+	blink     int  // blink phase, advanced by the blink loop while something waits
 	goneSince time.Time
 	lastTitle string
 	lastHead  string
@@ -99,6 +101,7 @@ func (b *menuBar) onReady() {
 	go b.staticClicks()
 	go b.watch()
 	go b.animate()
+	go b.blinkLoop()
 	b.refresh()
 }
 
@@ -170,18 +173,10 @@ func (b *menuBar) render(now time.Time) {
 		b.header.SetTitle(head) // refreshes change nothing and must cost nothing
 		b.lastHead = head
 	}
-	wantDot := f == snapshot.Fresh && bar.Pending(s) > 0
 	b.mu.Lock()
-	swap := wantDot != b.dotIcon
-	b.dotIcon = wantDot
+	phase := b.blink
 	b.mu.Unlock()
-	if swap { // an icon can be set but never removed, so only switch between the two variants
-		if wantDot {
-			setTemplateIcon(icons.FlokDot, b.cfg.Bar.IconSize)
-		} else {
-			setTemplateIcon(icons.Flok, b.cfg.Bar.IconSize)
-		}
-	}
+	b.showIcon(bar.Solid(f == snapshot.Fresh && bar.Pending(s) > 0, b.cfg.Bar.Blink, b.terminalFocused(), phase))
 	rows := []bar.Row{}
 	if f == snapshot.Fresh {
 		rows = bar.Rows(s, now, len(b.slots))
@@ -243,6 +238,48 @@ func (b *menuBar) setTitle(runs []bar.Run) {
 		setColoredTitle(runs)
 	} else {
 		systray.SetTitle(bar.Join(runs))
+	}
+}
+
+// showIcon switches between the outline and the solid icon, once per change (an icon can be
+// set but never removed, and every set is an AppKit redraw).
+func (b *menuBar) showIcon(solid bool) {
+	b.mu.Lock()
+	swap := solid != b.solidIcon
+	b.solidIcon = solid
+	b.mu.Unlock()
+	if !swap {
+		return
+	}
+	if solid {
+		setTemplateIcon(icons.FlokDot, b.cfg.Bar.IconSize)
+	} else {
+		setTemplateIcon(icons.Flok, b.cfg.Bar.IconSize)
+	}
+}
+
+// terminalFocused reads the marker the outer tmux's client-focus hooks write (missing = focused).
+func (b *menuBar) terminalFocused() bool {
+	data, err := os.ReadFile(filepath.Join(b.dir, "terminal-focus"))
+	return err != nil || strings.TrimSpace(string(data)) != "0"
+}
+
+// blinkLoop alternates the two icons every 1150 ms while an agent waits and the terminal is
+// unfocused (see bar.Solid); render() shows the static icon in every other situation.
+func (b *menuBar) blinkLoop() {
+	tick := time.NewTicker(1150 * time.Millisecond)
+	defer tick.Stop()
+	for range tick.C {
+		b.mu.Lock()
+		pending := b.fresh == snapshot.Fresh && bar.Pending(b.snap) > 0
+		if pending {
+			b.blink++
+		}
+		phase := b.blink
+		b.mu.Unlock()
+		if pending && b.cfg.Bar.Blink {
+			b.showIcon(bar.Solid(true, true, b.terminalFocused(), phase))
+		}
 	}
 }
 

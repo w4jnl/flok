@@ -74,3 +74,15 @@ func TestTitleRunsColours(t *testing.T) {
 		}
 	}
 }
+
+func TestSolidBlink(t *testing.T) {
+	if Solid(false, true, false, 0) || Solid(false, true, false, 1) {
+		t.Fatal("nothing pending: outline")
+	}
+	if !Solid(true, false, false, 1) || !Solid(true, true, true, 1) {
+		t.Fatal("pending without blink, or with the terminal focused: solid, no motion")
+	}
+	if !Solid(true, true, false, 0) || Solid(true, true, false, 1) {
+		t.Fatal("pending, unfocused, blink: alternate by phase")
+	}
+}

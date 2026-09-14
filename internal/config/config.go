@@ -74,10 +74,11 @@ type Bar struct {
 	Focus     string `toml:"focus"` // auto | aerospace | applescript | none | custom command
 	App       string `toml:"app"`   // overrides the terminal recorded by `flok up` (TERM_PROGRAM value)
 	MaxRows   int    `toml:"max_rows"`
-	Editor    string `toml:"editor"` // "nvim": Edit config opens it in a new tmux window; "" = macOS `open`
-	AnimateMs int    `toml:"animate_ms"`
-	Color     bool   `toml:"color"`     // colour the spinner and badge in the menu bar (state palette) // spinner frame interval; every frame redraws the status item
-	IconSize  int    `toml:"icon_size"` // menu bar icon height in points (systray's default is 16)
+	Editor    string `toml:"editor"`     // "nvim": Edit config opens it in a new tmux window; "" = macOS `open`
+	AnimateMs int    `toml:"animate_ms"` // spinner frame interval; every frame redraws the status item
+	Color     bool   `toml:"color"`      // colour the spinner and badge in the menu bar (state palette)
+	IconSize  int    `toml:"icon_size"`  // menu bar icon height in points (systray's default is 16)
+	Blink     bool   `toml:"blink"`      // alternate outline and solid icon every ~1.15 s while an agent waits, until the terminal is focused
 }
 
 type Theme struct {
@@ -119,7 +120,7 @@ func Default() Config {
 		Keys:    Keys{Tables: []string{"prefix", "root", "copy-mode-vi"}},
 		Sounds: Sounds{Enabled: true, Player: "hook", Bell: "auto", Volume: 0.6, MinIntervalMs: 750,
 			Done: "", Blocked: "", Error: ""}, // empty = the bundled herdr sounds (done.wav / request.wav)
-		Bar: Bar{Enabled: false, Animate: true, Badge: true, Focus: "auto", MaxRows: 16, AnimateMs: 500, Color: true, IconSize: 18},
+		Bar: Bar{Enabled: false, Animate: true, Badge: true, Focus: "auto", MaxRows: 16, AnimateMs: 500, Color: true, IconSize: 18, Blink: true},
 		Theme: Theme{BG: "#282a36", CurrentLine: "#44475a", FG: "#f8f8f2", Comment: "#6272a4", Cyan: "#8be9fd", Green: "#50fa7b",
 			Orange: "#ffb86c", Pink: "#ff79c6", Purple: "#bd93f9", Red: "#ff5555", Yellow: "#f1fa8c",
 			Working: "cyan", Blocked: "orange", Done: "green", Idle: "comment"},

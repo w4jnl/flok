@@ -2,13 +2,14 @@
 // per appearance) from the S3 mark: a terminal bracket holding one chevron and a cursor. The
 // bracket is the tmux server, the chevron is the flock, the cursor is what an agent is waiting
 // on. A thin frame (2.9) against a heavy bird (5.3) makes the bracket read as a container, not
-// a second subject. flok.png and flok-dot.png differ only in the cursor: a bar at rest, the
-// "4" dot from w4j when an agent is blocked or finished unseen — a shape change, which is what
-// survives monochrome rendering at 16px.
+// a second subject. The waiting icon (flok-dot.png, the name is historical) is a solid
+// inversion: one filled tile with the mark knocked out in negative. At menu bar size the eye
+// reliably catches value, not detail, so the state lives in the whole icon rather than in a
+// cursor swap (ink coverage x3, nothing thinner than 2.3px).
 //
 // Geometry is on a 44px box (22pt @2x) and scaled for the 1x (22px) and 3x (66px) files. The
-// committed PNGs come from this renderer (`make icons`); it follows the designer's master
-// (assets/brand/flok-mark.svg) except for the thicker cursor bar noted below.
+// committed PNGs come from this renderer (`make icons`), which follows the designer's masters
+// (assets/brand/flok-mark.svg, flok-mark-dot.svg).
 //
 //	go run ./assets/icons/gen assets/icons
 package main
@@ -113,31 +114,47 @@ func (c canvas) bar(x, y, w, h float64) {
 	c.segment(x+h/2, y+h/2, x+w-h/2, y+h/2, h)
 }
 
-func (c canvas) dot(cx, cy, r float64) {
-	cx, cy, r = cx*c.s, cy*c.s, r*c.s
-	for y := int(cy - r - 1); y <= int(cy+r+1); y++ {
-		for x := int(cx - r - 1); x <= int(cx+r+1); x++ {
-			d := math.Hypot(float64(x)+0.5-cx, float64(y)+0.5-cy)
-			c.paint(x, y, math.Max(0, math.Min(1, r+0.5-d)))
+// roundRect fills a rounded rectangle (anti-aliased through its signed distance).
+func (c canvas) roundRect(x, y, w, h, r float64) {
+	x, y, w, h, r = x*c.s, y*c.s, w*c.s, h*c.s, r*c.s
+	cx, cy, hw, hh := x+w/2, y+h/2, w/2-r, h/2-r
+	for py := int(math.Floor(y - 1)); py <= int(math.Ceil(y+h+1)); py++ {
+		for px := int(math.Floor(x - 1)); px <= int(math.Ceil(x+w+1)); px++ {
+			qx, qy := math.Abs(float64(px)+0.5-cx)-hw, math.Abs(float64(py)+0.5-cy)-hh
+			d := math.Hypot(math.Max(qx, 0), math.Max(qy, 0)) + math.Min(math.Max(qx, qy), 0) - r
+			c.paint(px, py, math.Max(0, math.Min(1, 0.5-d)))
 		}
 	}
 }
 
-// mark renders the S3 mark at px pixels per side; waiting swaps the cursor bar for the dot.
+// erase knocks a mask out of the canvas: coverage becomes coverage x (1 - mask).
+func (c canvas) erase(mask canvas) {
+	for y := 0; y < c.n; y++ {
+		for x := 0; x < c.n; x++ {
+			if m := mask.NRGBAAt(x, y).A; m > 0 {
+				old := c.NRGBAAt(x, y)
+				c.SetNRGBA(x, y, color.NRGBA{0, 0, 0, uint8(math.Round(float64(old.A) * (1 - float64(m)/255)))})
+			}
+		}
+	}
+}
+
+// mark renders the S3 mark at px pixels per side: the outline at rest, the solid inversion
+// while an agent waits on the user.
 func mark(px int, waiting bool) canvas {
 	c := newCanvas(px)
+	if waiting {
+		c.roundRect(4.8, 4.0, 34.4, 35.9, 9.5) // one filled tile in place of the brackets
+		knock := newCanvas(px)
+		knock.chevron(22, 15.6, 8.6, 8.3, 5.7) // the bird and the cursor, in negative
+		knock.bar(17.6, 30.1, 8.8, 4.2)
+		c.erase(knock)
+		return c
+	}
 	c.bracket(6.97, 14.67, 5.9, 38.1, frameR, wFrame)  // [
 	c.bracket(37.03, 29.33, 5.9, 38.1, frameR, wFrame) // ]
 	c.chevron(22, 14.7, 8.6, 8.3, wBird)               // the bird, centred on x=22
-	if waiting {
-		c.dot(22, 31.7, 4.1) // the "4" dot
-	} else {
-		// cursor at rest. The master (assets/brand/flok-mark.svg) draws it 8.8 x 4.0; at menu bar
-		// sizes (16-18pt) that is under 2pt tall and vanishes, and merely thickening it turned the
-		// short pill into a blob that read as the dot. A dash needs width: 13.2 x 4.4 on the same
-		// centre line (3:1) stays a bar against the dot's 8.2 disc.
-		c.bar(15.4, 29.5, 13.2, 4.4)
-	}
+	c.bar(17.6, 29.7, 8.8, 4.0)                        // cursor at rest
 	return c
 }
 

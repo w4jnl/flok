@@ -71,7 +71,9 @@ const Template = `# flok configuration - https://github.com/w4jnl/flok
 # animate = true              # spin ◐◓◑◒ in the menu bar while an agent works
 # animate_ms = 500            # frame interval; each frame redraws the status item (CPU)
 # color = true                # spinner in the working colour, badge in the attention colour (no extra CPU)
-# icon_size = 18              # icon height in points (16 = the usual systray size, 18 keeps the cursor readable)
+# icon_size = 18              # icon height in points (16 = the usual systray size)
+# blink = true                # while an agent waits on you the icon blinks (outline/solid, ~1.15 s) until
+                              # the terminal window is focused
 # badge = true                # show "● N" for agents waiting for you
 # focus = "auto"              # click-to-return: auto | aerospace | applescript | none | "shell command"
 # app = ""                    # terminal to focus; empty = the one flok up ran in (TERM_PROGRAM)

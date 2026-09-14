@@ -49,3 +49,17 @@ func Join(runs []Run) string {
 	}
 	return out
 }
+
+// Solid says which icon to show: the outline at rest, the solid inversion while an agent waits.
+// With blink on and the terminal unfocused the two alternate by phase (~1150 ms per step):
+// motion outranks any static difference at menu bar size, and the mark contains a terminal
+// cursor, so blinking is the one animation it has a right to. Focus stops it.
+func Solid(pending, blink, terminalFocused bool, phase int) bool {
+	if !pending {
+		return false
+	}
+	if !blink || terminalFocused {
+		return true
+	}
+	return phase%2 == 0
+}

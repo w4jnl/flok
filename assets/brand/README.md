@@ -8,12 +8,18 @@ Thin frame (2.9), heavy bird (5.3) — the frame is a container, not a subject.
 ## The two icons
 | file | cursor | meaning |
 | --- | --- | --- |
-| `flok.png` | bar | at rest — nothing is waiting on you |
-| `flok-dot.png` | dot | waiting — an agent is blocked or finished unseen |
+| `flok.png` | outline | at rest — nothing is waiting on you |
+| `flok-dot.png` | solid, mark knocked out | waiting — an agent is blocked or finished unseen |
 
-The flock never moves; only the cursor changes. A wide thin bar vs a compact
-solid disc is a shape change, which is what survives monochrome template
-rendering at 16px. The dot is the "4" from `w4j`.
+At 22px the menu bar only reliably shows **value**, not detail: the waiting
+state fills the frame solid and knocks the mark out in negative, tripling ink
+coverage. An interior cursor swap — a bar becoming a dot — is invisible below
+about 32px, so the state lives in the whole icon rather than one part of it.
+
+Optional and worth it: alternate the two images every ~1150 ms while anything
+waits, and stop on focus. Motion outranks any static difference at this size,
+and since the mark contains a terminal cursor, blinking is the one animation
+it has a right to.
 
 ## Files
 | file | use |
