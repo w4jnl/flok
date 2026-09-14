@@ -99,6 +99,8 @@ func (b *menuBar) onReady() {
 	b.reload = systray.AddMenuItem("Reload sidebar", "restart the sidebar pane to apply config.toml changes")
 	systray.AddSeparator()
 	b.quit = systray.AddMenuItem("Quit flok-bar", "flok itself keeps running")
+	systray.AddSeparator()
+	systray.AddMenuItem("flok-bar "+strings.TrimPrefix(version, "v"), "installed version").Disable()
 	go b.staticClicks()
 	go b.watch()
 	go b.animate()
