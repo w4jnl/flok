@@ -6,7 +6,7 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
-- Menu bar: the version row at the bottom of the menu opens these release notes on GitHub.
+- Menu bar: a "flok <version>" row at the bottom of the menu opens these release notes on GitHub.
 
 ## 0.3.4 (2026-09-14)
 

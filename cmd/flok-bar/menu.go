@@ -101,7 +101,7 @@ func (b *menuBar) onReady() {
 	systray.AddSeparator()
 	b.quit = systray.AddMenuItem("Quit flok-bar", "flok itself keeps running")
 	systray.AddSeparator()
-	b.about = systray.AddMenuItem("flok-bar "+strings.TrimPrefix(version, "v"), "release notes on GitHub")
+	b.about = systray.AddMenuItem("flok "+strings.TrimPrefix(version, "v"), "release notes on GitHub")
 	go b.staticClicks()
 	go b.watch()
 	go b.animate()
