@@ -76,7 +76,8 @@ type Bar struct {
 	MaxRows   int    `toml:"max_rows"`
 	Editor    string `toml:"editor"` // "nvim": Edit config opens it in a new tmux window; "" = macOS `open`
 	AnimateMs int    `toml:"animate_ms"`
-	Color     bool   `toml:"color"` // colour the spinner and badge in the menu bar (state palette) // spinner frame interval; every frame redraws the status item
+	Color     bool   `toml:"color"`     // colour the spinner and badge in the menu bar (state palette) // spinner frame interval; every frame redraws the status item
+	IconSize  int    `toml:"icon_size"` // menu bar icon height in points (systray's default is 16)
 }
 
 type Theme struct {
@@ -118,7 +119,7 @@ func Default() Config {
 		Keys:    Keys{Tables: []string{"prefix", "root", "copy-mode-vi"}},
 		Sounds: Sounds{Enabled: true, Player: "hook", Bell: "auto", Volume: 0.6, MinIntervalMs: 750,
 			Done: "", Blocked: "", Error: ""}, // empty = the bundled herdr sounds (done.wav / request.wav)
-		Bar: Bar{Enabled: false, Animate: true, Badge: true, Focus: "auto", MaxRows: 16, AnimateMs: 500, Color: true},
+		Bar: Bar{Enabled: false, Animate: true, Badge: true, Focus: "auto", MaxRows: 16, AnimateMs: 500, Color: true, IconSize: 18},
 		Theme: Theme{BG: "#282a36", CurrentLine: "#44475a", FG: "#f8f8f2", Comment: "#6272a4", Cyan: "#8be9fd", Green: "#50fa7b",
 			Orange: "#ffb86c", Pink: "#ff79c6", Purple: "#bd93f9", Red: "#ff5555", Yellow: "#f1fa8c",
 			Working: "cyan", Blocked: "orange", Done: "green", Idle: "comment"},

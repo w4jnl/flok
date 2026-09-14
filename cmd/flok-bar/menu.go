@@ -79,7 +79,7 @@ func (b *menuBar) maxRows() int {
 }
 
 func (b *menuBar) onReady() {
-	systray.SetTemplateIcon(icons.Flok, icons.Flok)
+	setTemplateIcon(icons.Flok, b.cfg.Bar.IconSize)
 	systray.SetTitle("–")
 	systray.SetTooltip("flok")
 	b.header = systray.AddMenuItem("flok", "")
@@ -177,9 +177,9 @@ func (b *menuBar) render(now time.Time) {
 	b.mu.Unlock()
 	if swap { // an icon can be set but never removed, so only switch between the two variants
 		if wantDot {
-			systray.SetTemplateIcon(icons.FlokDot, icons.FlokDot)
+			setTemplateIcon(icons.FlokDot, b.cfg.Bar.IconSize)
 		} else {
-			systray.SetTemplateIcon(icons.Flok, icons.Flok)
+			setTemplateIcon(icons.Flok, b.cfg.Bar.IconSize)
 		}
 	}
 	rows := []bar.Row{}

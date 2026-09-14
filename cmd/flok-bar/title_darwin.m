@@ -25,3 +25,21 @@ void setTitleRuns(const char **texts, const double *rgb, int n) {
     item.button.imagePosition = s.length ? NSImageLeft : NSImageOnly;
   });
 }
+
+// setTemplateIconSized installs a template image at the given point size. systray pins every
+// icon to 16pt, which is 27% smaller than the mark's 22pt design box; at 18pt the cursor bar
+// and the frame stay readable while the ink height (the mark has a 12.5% optical margin)
+// still matches a standard 16pt menu bar icon.
+void setTemplateIconSized(const void *bytes, int length, double points) {
+  NSData *data = [NSData dataWithBytes:bytes length:length];
+  NSImage *image = [[NSImage alloc] initWithData:data];
+  [image setTemplate:YES];
+  [image setSize:NSMakeSize(points, points)];
+  dispatch_async(dispatch_get_main_queue(), ^{
+    id owner = [NSApp delegate];
+    NSStatusItem *item = [owner valueForKey:@"statusItem"];
+    if (item == nil) return;
+    item.button.image = image;
+    item.button.imagePosition = item.button.title.length ? NSImageLeft : NSImageOnly;
+  });
+}

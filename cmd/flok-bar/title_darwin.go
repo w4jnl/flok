@@ -7,6 +7,7 @@ package main
 #cgo LDFLAGS: -framework Cocoa
 #include <stdlib.h>
 void setTitleRuns(const char **texts, const double *rgb, int n);
+void setTemplateIconSized(const void *bytes, int length, double points);
 */
 import "C"
 
@@ -15,6 +16,14 @@ import (
 
 	"github.com/w4jnl/flok/internal/bar"
 )
+
+// setTemplateIcon installs a template PNG at pts points (see title_darwin.m).
+func setTemplateIcon(png []byte, pts int) {
+	if pts < 12 || pts > 22 {
+		pts = 18
+	}
+	C.setTemplateIconSized(unsafe.Pointer(&png[0]), C.int(len(png)), C.double(pts))
+}
 
 // setColoredTitle pushes the title as coloured runs (see title_darwin.m); a run whose colour
 // token is unknown or empty uses the system label colour.

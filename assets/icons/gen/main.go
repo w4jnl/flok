@@ -7,9 +7,8 @@
 // survives monochrome rendering at 16px.
 //
 // Geometry is on a 44px box (22pt @2x) and scaled for the 1x (22px) and 3x (66px) files. The
-// committed PNGs are the designer's export of the same geometry (assets/brand/flok-mark.svg);
-// this renderer reproduces them to within anti-aliasing, so `make icons` is for tweaking the
-// geometry, not something the build needs.
+// committed PNGs come from this renderer (`make icons`); it follows the designer's master
+// (assets/brand/flok-mark.svg) except for the thicker cursor bar noted below.
 //
 //	go run ./assets/icons/gen assets/icons
 package main
@@ -133,7 +132,10 @@ func mark(px int, waiting bool) canvas {
 	if waiting {
 		c.dot(22, 31.7, 4.1) // the "4" dot
 	} else {
-		c.bar(17.6, 29.7, 8.8, 4.0) // cursor at rest
+		// cursor at rest. The master (assets/brand/flok-mark.svg) draws it 4.0 high; at menu bar
+		// sizes (16-18pt) that is under 2pt and vanishes, so the icons render it 5.5 high on the
+		// same centre line — still a wide pill against the dot's compact disc.
+		c.bar(17.6, 28.95, 8.8, 5.5)
 	}
 	return c
 }
