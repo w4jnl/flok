@@ -11,6 +11,10 @@ cd "$R"
 [ -z "$(git status --porcelain)" ] || { echo "release.sh: working tree not clean" >&2; exit 1; }
 git fetch -q origin
 [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] || { echo "release.sh: main is not pushed" >&2; exit 1; }
+# release notes come from CHANGELOG.md: the "## <ver> (date)" section must exist before tagging
+notes=$(awk -v v="$ver" '/^## /{p = ($2 == v)} p && !/^## /' CHANGELOG.md | sed '/./,$!d')
+[ -n "$notes" ] || { echo "release.sh: CHANGELOG.md has no \"## $ver (YYYY-MM-DD)\" section; write the release notes first (move the Unreleased items)" >&2; exit 1; }
+grep -qE "^## $ver \([0-9]{4}-[0-9]{2}-[0-9]{2}\)" CHANGELOG.md || { echo "release.sh: the CHANGELOG.md heading must be \"## $ver (YYYY-MM-DD)\"" >&2; exit 1; }
 go vet ./... && go test ./... >/dev/null && echo "tests ok"
 
 git tag -a "v$ver" -m "flok v$ver"
@@ -37,7 +41,7 @@ git -C "$TAP" push -q
 echo "tap bumped: $f"
 
 if command -v gh >/dev/null 2>&1; then
-  gh release create "v$ver" --title "flok v$ver" --generate-notes >/dev/null && echo "GitHub release v$ver created"
+  printf '%s\n' "$notes" | gh release create "v$ver" --title "flok v$ver" --notes-file - >/dev/null && echo "GitHub release v$ver created (notes from CHANGELOG.md)"
   echo "linux tarballs: built by the release workflow, appear at https://github.com/w4jnl/flok/releases/tag/v$ver"
 fi
 echo "CI:  https://github.com/w4jnl/flok/actions  and  https://github.com/w4jnl/homebrew-tap/actions"

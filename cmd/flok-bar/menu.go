@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -38,8 +39,8 @@ type menuBar struct {
 	dir  string
 	flok string // the flok CLI used for clicks
 
-	header, show, edit, reload, quit *systray.MenuItem
-	slots                            []*slot
+	header, show, edit, reload, quit, about *systray.MenuItem
+	slots                                   []*slot
 
 	mu        sync.Mutex
 	snap      snapshot.Snapshot
@@ -100,7 +101,7 @@ func (b *menuBar) onReady() {
 	systray.AddSeparator()
 	b.quit = systray.AddMenuItem("Quit flok-bar", "flok itself keeps running")
 	systray.AddSeparator()
-	systray.AddMenuItem("flok-bar "+strings.TrimPrefix(version, "v"), "installed version").Disable()
+	b.about = systray.AddMenuItem("flok-bar "+strings.TrimPrefix(version, "v"), "release notes on GitHub")
 	go b.staticClicks()
 	go b.watch()
 	go b.animate()
@@ -341,11 +342,23 @@ func (b *menuBar) staticClicks() {
 			b.run("edit-config")
 		case <-b.reload.ClickedCh:
 			b.run("reload")
+		case <-b.about.ClickedCh:
+			_ = exec.Command("open", releaseNotesURL(version)).Start()
 		case <-b.quit.ClickedCh:
 			systray.Quit()
 			return
 		}
 	}
+}
+
+// releaseNotesURL is this build's entry in CHANGELOG.md as published on the GitHub release, or
+// the releases list for a build that is not a tagged version.
+func releaseNotesURL(v string) string {
+	v = strings.TrimPrefix(v, "v")
+	if ok, _ := regexp.MatchString(`^\d+\.\d+\.\d+$`, v); ok {
+		return "https://github.com/w4jnl/flok/releases/tag/v" + v
+	}
+	return "https://github.com/w4jnl/flok/releases"
 }
 
 // run executes a flok subcommand detached from the bar.

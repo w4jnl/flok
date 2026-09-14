@@ -1,0 +1,99 @@
+# Changelog
+
+User-facing changes per release, newest first. `scripts/release.sh` refuses to tag a version
+that has no section here and uses the section as the GitHub release notes, so every release
+updates this file first. Dates are the tag dates.
+
+## Unreleased
+
+- Menu bar: the version row at the bottom of the menu opens these release notes on GitHub.
+
+## 0.3.4 (2026-09-14)
+
+- Menu bar icon is tinted by state: teal while an agent works, orange while one waits on you,
+  the plain menu bar colour at rest, with a darker teal on a light menu bar.
+- The rotating glyph stays in the menu bar colour; colour is reserved for the icon and the badge.
+
+## 0.3.3 (2026-09-14)
+
+- Waiting icon is a solid inversion of the mark (filled tile, chevron and cursor knocked out)
+  and blinks about once a second while something waits and the terminal is unfocused
+  (`[bar] blink`).
+- Outline icon widened to the tile's footprint; the cursor reads as a bar in both states.
+
+## 0.3.2 (2026-09-14)
+
+- Menu bar: coloured spinner and badge (`[bar] color`); the icon is drawn at 18 pt
+  (`[bar] icon_size`).
+- Fixed: `flok up` could not restart a menu bar that had died while a session was attached.
+
+## 0.3.1 (2026-09-14)
+
+- New brand: the S3 mark (a terminal bracket holding a chevron and a cursor) as the menu bar
+  icon, brand assets under `assets/brand`, README hero.
+- `flok doctor` and `flok version` on a terminal print the ASCII lockup.
+
+## 0.3.0 (2026-09-14)
+
+- Linux is a first-class platform for the terminal sidebar: tmux 3.4's escaped list output is
+  parsed, sound players are detected (mpv, ffplay, pw-play, paplay, play) or set with
+  `[sounds] command`.
+- tmux 2.7 (RHEL 8) and 3.2a (RHEL 9) are supported: the outer config is rendered per version,
+  the keybinds help falls back to a bare popup or a window, `flok doctor` lists what a version
+  lacks. CI runs the end-to-end suites on macOS, Ubuntu, Rocky 8 and Rocky 9.
+- Terminal bell: `[sounds] bell = auto | always | never`; with no sound player the bell rings
+  the local terminal, also over ssh.
+- Bundled sounds are WAV (PulseAudio players cannot decode mp3 on RHEL 9).
+- Prebuilt Linux tarballs (amd64, arm64, with checksums) are attached to every release; README
+  gained a Linux install recipe and a tmux version table.
+- The sidebar re-pins its width itself on tmux versions without the `window-resized` hook.
+
+## 0.2.4 (2026-09-12)
+
+- The spinner keeps running when the terminal window loses focus; idle mode applies only while
+  the sidebar is hidden.
+- A turn that ends without a Stop hook (Esc, usage limit, error) is cleared by three idle
+  screen samples as well as by Claude's registry, so the sidebar catches up in seconds rather
+  than tens of seconds.
+
+## 0.2.3 (2026-09-12)
+
+- Sidebar: only the 1 s tick spawns tmux; screen results, registry samples and hook changes
+  re-merge cached data. Idle mode (`[sidebar] idle_poll_ms`) slows polling while hidden.
+
+## 0.2.2 (2026-09-12)
+
+- CPU: the menu bar redraws only on change and animates at 2 fps (`[bar] animate_ms`); the
+  sidebar renders at 15 fps (`[sidebar] fps`), batches screen captures, takes focus from tmux
+  focus events and polls Claude's registry only while it can use the answer.
+- A Stop with background subagents still running shows as working ("waiting"), not done.
+
+## 0.2.1 (2026-09-12)
+
+- Menu bar: "Edit config…" and "Reload sidebar" items; `flok edit-config`.
+
+## 0.2.0 (2026-09-12)
+
+- flok-bar, the macOS menu bar companion (`[bar] enabled`): animated title, attention badge,
+  agent dropdown, click to return to an agent (AeroSpace or AppleScript focus).
+- Sidebar width is pinned across window resizes; a default config is written on install;
+  fallback corrections are persisted, so states no longer flap; `claude` is found without PATH.
+- CI for flok and the tap; README rewritten for a public audience.
+
+## 0.1.2 (2026-09-12)
+
+- Prefix chords typed while the sidebar has focus are replayed into the work pane; `prefix g`
+  toggles focus; the rail shows a focus cue.
+- `flok up` exits 0 after a deliberate detach or `flok down`.
+- A pane title never clears a hook-reported working state.
+
+## 0.1.1 (2026-09-11)
+
+- The rail shows the keyboard cursor; hotkeys park it.
+
+## 0.1.0 (2026-09-11)
+
+- First release: a herdr-style sidebar for tmux with sessions on top and agents below, driven
+  by Claude Code and Copilot CLI hooks with title, registry and screen-rule fallbacks; sounds
+  when an agent needs input or finishes unseen; compact rail, hide, `prefix ?` keybinds help;
+  Homebrew tap `w4jnl/tap`.
