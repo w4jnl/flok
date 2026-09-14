@@ -6,7 +6,12 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
-- Menu bar: a "flok <version>" row at the bottom of the menu opens these release notes on GitHub.
+## 0.3.5 (2026-09-14)
+
+- Menu bar: a "flok <version>" row at the bottom of the menu opens these release notes on
+  GitHub.
+- Release notes live in CHANGELOG.md and are published as the GitHub release notes; all earlier
+  releases were given theirs.
 
 ## 0.3.4 (2026-09-14)
 
