@@ -97,7 +97,7 @@ IN send-keys -t "$KP" /kill   # one chunk on purpose: multi-rune input must stil
 sleep 0.5
 ui=$(IN capture-pane -p -t "$KP")
 expect "keys UI filter mode"       'search: kill'        "$ui"
-expect "keys UI filtered rows"     'Kill'                "$ui"
+expect "keys UI filtered rows"     '[Kk]ill'             "$ui"   # tmux notes say "Kill", flok's own labels "kill window" (< 3.1)
 IN send-keys -t "$KP" Escape; sleep 0.3; IN send-keys -t "$KP" Escape
 sleep 0.5
 expect "esc closes the keys UI (pane gone)" '^0$' "$(IN list-panes -a -F '#{pane_id}' | grep -c "^$KP\$" || true)"

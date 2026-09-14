@@ -107,19 +107,19 @@ expect "answered question -> working" "[◐◓◑◒] $PROJ" "$(capture)"
 # Inside tmux Claude keeps the idle "✳" title while busy: that must NOT clear a hook working state.
 IN select-pane -t "$AGENT" -T "✳ fake-agent"
 sleep 2.5
-expect "idle title does not clear hook working" '[◐◓◑◒] (flok|fake-agent)' "$(capture)"
+expect "idle title does not clear hook working" "[◐◓◑◒] ($PROJ|fake-agent)" "$(capture)"
 # Interrupted turn (Esc emits no hook): Claude's registry turns idle -> idle after two samples, no sound, nothing new unseen.
 AGENT_PID=$(IN display -p -t "$AGENT" '#{pane_pid}')
 registry "[{\"pid\":$AGENT_PID,\"status\":\"idle\",\"kind\":\"interactive\",\"name\":\"fake\",\"sessionId\":\"abc\"}]"
-wait_for '○ (flok|fake-agent)' 6 || true
+wait_for "○ ($PROJ|fake-agent)" 6 || true
 snap=$(capture)
-expect "registry idle x2 -> interrupted turn shows idle" '○ (flok|fake-agent)' "$snap"
+expect "registry idle x2 -> interrupted turn shows idle" "○ ($PROJ|fake-agent)" "$snap"
 expect "interrupted turn leaves only the earlier block unseen" '^agents · 1' "$snap"
 expect "correction persisted into the hook record" '"state": "idle"' "$(cat "$T"/state/agents/*.json)"
 expect "correction reason recorded" 'corrected:registry idle' "$(cat "$T"/state/agents/*.json)"
 registry '[]'
 sleep 6   # registry gone again: a persisted correction must not flap back to working
-expect "corrected state does not flap back" '○ (flok|fake-agent)' "$(capture)"
+expect "corrected state does not flap back" "○ ($PROJ|fake-agent)" "$(capture)"
 
 hook claude '{"hook_event_name":"SessionEnd","session_id":"abc","reason":"prompt_input_exit"}'
 wait_for "~$PROJ" 3 || true
