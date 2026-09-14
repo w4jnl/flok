@@ -55,7 +55,7 @@ func TestTitleHeaderRows(t *testing.T) {
 func TestTitleRunsColours(t *testing.T) {
 	s := snapshot.Snapshot{Agents: []snapshot.Agent{{PaneID: "%1", State: agent.Working}, {PaneID: "%2", State: agent.Blocked}}}
 	runs := TitleRuns(s, snapshot.Fresh, 1, Options{Animate: true, Badge: true})
-	if len(runs) != 2 || runs[0].Color != "working" || runs[1].Color != "attention" || runs[1].Text != " ● 1" {
+	if len(runs) != 2 || runs[0].Color != "" || runs[1].Color != "attention" || runs[1].Text != " ● 1" {
 		t.Fatalf("runs: %+v", runs)
 	}
 	if Join(runs) != Title(s, snapshot.Fresh, 1, Options{Animate: true, Badge: true}) {

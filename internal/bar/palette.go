@@ -21,15 +21,16 @@ var Palette = map[string][3]float64{
 	"idle":      {0x8a / 255.0, 0x99 / 255.0, 0x9c / 255.0}, // #8A999C
 }
 
-// TitleRuns is Title split into coloured runs: the spinner in the working colour, the badge in
-// the attention colour, the idle glyph and the not-running dash in the label colour.
+// TitleRuns is Title split into coloured runs: only the badge is coloured (attention); the
+// spinner, the idle glyph and the not-running dash stay in the label colour — the icon already
+// carries the working colour, and a settled state deserves the accent more than motion does.
 func TitleRuns(s snapshot.Snapshot, f snapshot.Freshness, frame int, o Options) []Run {
 	if f != snapshot.Fresh {
 		return []Run{{Text: "–"}}
 	}
 	glyph := Run{Text: "○"}
 	if Working(s) {
-		glyph = Run{Text: "◐", Color: "working"}
+		glyph = Run{Text: "◐"}
 		if o.Animate {
 			glyph.Text = Frames[((frame%len(Frames))+len(Frames))%len(Frames)]
 		}
