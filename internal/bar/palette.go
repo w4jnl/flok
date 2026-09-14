@@ -50,6 +50,28 @@ func Join(runs []Run) string {
 	return out
 }
 
+// PaletteLight is the same palette for a light menu bar, where the bright working teal washes
+// out: W4J's teal takes its place (assets/brand/README.md); the others carry.
+var PaletteLight = map[string][3]float64{
+	"working":   {0x12 / 255.0, 0x99 / 255.0, 0x9d / 255.0}, // #12999D
+	"attention": Palette["attention"],
+	"done":      Palette["done"],
+	"idle":      Palette["idle"],
+}
+
+// IconColor is the palette token the icon is tinted with: attention while an agent waits on
+// the user, working while one works, "" (the template image, in the menu bar's own colour) at
+// rest.
+func IconColor(pending, working bool) string {
+	switch {
+	case pending:
+		return "attention"
+	case working:
+		return "working"
+	}
+	return ""
+}
+
 // Solid says which icon to show: the outline at rest, the solid inversion while an agent waits.
 // With blink on and the terminal unfocused the two alternate by phase (~1150 ms per step):
 // motion outranks any static difference at menu bar size, and the mark contains a terminal

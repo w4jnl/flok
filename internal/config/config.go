@@ -76,7 +76,7 @@ type Bar struct {
 	MaxRows   int    `toml:"max_rows"`
 	Editor    string `toml:"editor"`     // "nvim": Edit config opens it in a new tmux window; "" = macOS `open`
 	AnimateMs int    `toml:"animate_ms"` // spinner frame interval; every frame redraws the status item
-	Color     bool   `toml:"color"`      // colour the spinner and badge in the menu bar (state palette)
+	Color     bool   `toml:"color"`      // colour the spinner, badge and icon in the menu bar (state palette)
 	IconSize  int    `toml:"icon_size"`  // menu bar icon height in points (systray's default is 16)
 	Blink     bool   `toml:"blink"`      // alternate outline and solid icon every ~1.15 s while an agent waits, until the terminal is focused
 }

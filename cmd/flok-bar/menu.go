@@ -45,8 +45,9 @@ type menuBar struct {
 	snap      snapshot.Snapshot
 	fresh     snapshot.Freshness
 	frame     int
-	solidIcon bool // the solid (waiting) icon is on screen
-	blink     int  // blink phase, advanced by the blink loop while something waits
+	solidIcon bool   // the solid (waiting) icon is on screen
+	iconColor string // palette token the icon is tinted with ("" = template)
+	blink     int    // blink phase, advanced by the blink loop while something waits
 	goneSince time.Time
 	lastTitle string
 	lastHead  string
@@ -81,7 +82,7 @@ func (b *menuBar) maxRows() int {
 }
 
 func (b *menuBar) onReady() {
-	setTemplateIcon(icons.Flok, b.cfg.Bar.IconSize)
+	setTemplateIcon(icons.Flok, b.cfg.Bar.IconSize, "")
 	systray.SetTitle("–")
 	systray.SetTooltip("flok")
 	b.header = systray.AddMenuItem("flok", "")
@@ -176,7 +177,9 @@ func (b *menuBar) render(now time.Time) {
 	b.mu.Lock()
 	phase := b.blink
 	b.mu.Unlock()
-	b.showIcon(bar.Solid(f == snapshot.Fresh && bar.Pending(s) > 0, b.cfg.Bar.Blink, b.terminalFocused(), phase))
+	pending := f == snapshot.Fresh && bar.Pending(s) > 0
+	b.showIcon(bar.Solid(pending, b.cfg.Bar.Blink, b.terminalFocused(), phase), b.iconTint(pending, f == snapshot.Fresh && bar.Working(s)))
+	refreshIconAppearance() // light/dark switch since the icon was set: re-tint, else a no-op
 	rows := []bar.Row{}
 	if f == snapshot.Fresh {
 		rows = bar.Rows(s, now, len(b.slots))
@@ -241,20 +244,29 @@ func (b *menuBar) setTitle(runs []bar.Run) {
 	}
 }
 
-// showIcon switches between the outline and the solid icon, once per change (an icon can be
-// set but never removed, and every set is an AppKit redraw).
-func (b *menuBar) showIcon(solid bool) {
+// iconTint is the palette token for the icon ([bar] color): orange while an agent waits, teal
+// while one works, the plain template at rest.
+func (b *menuBar) iconTint(pending, working bool) string {
+	if !b.cfg.Bar.Color {
+		return ""
+	}
+	return bar.IconColor(pending, working)
+}
+
+// showIcon switches between the outline and the solid icon and their tint, once per change
+// (an icon can be set but never removed, and every set is an AppKit redraw).
+func (b *menuBar) showIcon(solid bool, color string) {
 	b.mu.Lock()
-	swap := solid != b.solidIcon
-	b.solidIcon = solid
+	swap := solid != b.solidIcon || color != b.iconColor
+	b.solidIcon, b.iconColor = solid, color
 	b.mu.Unlock()
 	if !swap {
 		return
 	}
 	if solid {
-		setTemplateIcon(icons.FlokDot, b.cfg.Bar.IconSize)
+		setTemplateIcon(icons.FlokDot, b.cfg.Bar.IconSize, color)
 	} else {
-		setTemplateIcon(icons.Flok, b.cfg.Bar.IconSize)
+		setTemplateIcon(icons.Flok, b.cfg.Bar.IconSize, color)
 	}
 }
 
@@ -272,13 +284,14 @@ func (b *menuBar) blinkLoop() {
 	for range tick.C {
 		b.mu.Lock()
 		pending := b.fresh == snapshot.Fresh && bar.Pending(b.snap) > 0
+		working := b.fresh == snapshot.Fresh && bar.Working(b.snap)
 		if pending {
 			b.blink++
 		}
 		phase := b.blink
 		b.mu.Unlock()
 		if pending && b.cfg.Bar.Blink {
-			b.showIcon(bar.Solid(true, true, b.terminalFocused(), phase))
+			b.showIcon(bar.Solid(true, true, b.terminalFocused(), phase), b.iconTint(pending, working))
 		}
 	}
 }

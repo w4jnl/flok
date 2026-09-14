@@ -368,7 +368,8 @@ error = ""
 enabled = false
 animate = true              # spin ◐◓◑◒ in the menu bar while an agent works
 animate_ms = 500            # frame interval; every frame redraws the status item, so 2 fps by default
-color = true                # spinner in the working colour, badge in the attention colour (no extra CPU)
+color = true                # spinner and icon teal while an agent works, badge and icon orange while one
+                            # waits on you (state palette; no extra CPU)
 icon_size = 18              # icon height in points (16 is the usual size)
 blink = true                # while an agent waits on you the icon blinks (outline/solid, ~1.15 s) until
                             # the terminal window is focused

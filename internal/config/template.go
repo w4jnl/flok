@@ -70,7 +70,8 @@ const Template = `# flok configuration - https://github.com/w4jnl/flok
 # enabled = false
 # animate = true              # spin ◐◓◑◒ in the menu bar while an agent works
 # animate_ms = 500            # frame interval; each frame redraws the status item (CPU)
-# color = true                # spinner in the working colour, badge in the attention colour (no extra CPU)
+# color = true                # spinner and icon teal while an agent works, badge and icon orange while one
+                              # waits on you (state palette; no extra CPU)
 # icon_size = 18              # icon height in points (16 = the usual systray size)
 # blink = true                # while an agent waits on you the icon blinks (outline/solid, ~1.15 s) until
                               # the terminal window is focused

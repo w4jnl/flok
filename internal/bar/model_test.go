@@ -86,3 +86,14 @@ func TestSolidBlink(t *testing.T) {
 		t.Fatal("pending, unfocused, blink: alternate by phase")
 	}
 }
+
+func TestIconColor(t *testing.T) {
+	if IconColor(true, true) != "attention" || IconColor(false, true) != "working" || IconColor(false, false) != "" {
+		t.Fatal("icon colour by state")
+	}
+	for tok := range Palette {
+		if _, ok := PaletteLight[tok]; !ok {
+			t.Fatalf("light palette lacks %s", tok)
+		}
+	}
+}
