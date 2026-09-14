@@ -239,7 +239,9 @@ func BarBinary(bin string) (string, error) {
 
 func fileExists(p string) bool { _, err := os.Stat(p); return err == nil }
 
-// BarRunning reports the pid from the pid file when that process is alive.
+// BarRunning reports the pid from the pid file when that process is alive. A bar that died
+// under a still-attached `flok up` lingers as a zombie, which kill(0) still counts as alive, so
+// the process state is checked too.
 func BarRunning() (int, bool) {
 	data, err := os.ReadFile(barPIDFile())
 	if err != nil {
@@ -250,6 +252,9 @@ func BarRunning() (int, bool) {
 		return 0, false
 	}
 	if err := syscall.Kill(pid, 0); err != nil {
+		return pid, false
+	}
+	if out, err := exec.Command("ps", "-o", "stat=", "-p", strconv.Itoa(pid)).Output(); err == nil && strings.HasPrefix(strings.TrimSpace(string(out)), "Z") {
 		return pid, false
 	}
 	return pid, true
@@ -274,7 +279,7 @@ func StartBar(cfg config.Config, bin string) error {
 		return err
 	}
 	pid := cmd.Process.Pid
-	_ = cmd.Process.Release()
+	go func() { _ = cmd.Wait() }() // reap it if it exits while this `flok up` is still attached
 	return os.WriteFile(barPIDFile(), []byte(strconv.Itoa(pid)), 0o644)
 }
 

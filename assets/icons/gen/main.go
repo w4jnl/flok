@@ -132,10 +132,11 @@ func mark(px int, waiting bool) canvas {
 	if waiting {
 		c.dot(22, 31.7, 4.1) // the "4" dot
 	} else {
-		// cursor at rest. The master (assets/brand/flok-mark.svg) draws it 4.0 high; at menu bar
-		// sizes (16-18pt) that is under 2pt and vanishes, so the icons render it 5.5 high on the
-		// same centre line — still a wide pill against the dot's compact disc.
-		c.bar(17.6, 28.95, 8.8, 5.5)
+		// cursor at rest. The master (assets/brand/flok-mark.svg) draws it 8.8 x 4.0; at menu bar
+		// sizes (16-18pt) that is under 2pt tall and vanishes, and merely thickening it turned the
+		// short pill into a blob that read as the dot. A dash needs width: 13.2 x 4.4 on the same
+		// centre line (3:1) stays a bar against the dot's 8.2 disc.
+		c.bar(15.4, 29.5, 13.2, 4.4)
 	}
 	return c
 }
