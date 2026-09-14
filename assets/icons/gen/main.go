@@ -147,7 +147,7 @@ func mark(px int, waiting bool) canvas {
 		c.roundRect(4.8, 4.0, 34.4, 35.9, 9.5) // one filled tile in place of the brackets
 		knock := newCanvas(px)
 		knock.chevron(22, 15.6, 8.6, 8.3, 5.7) // the bird and the cursor, in negative
-		knock.bar(17.6, 30.1, 8.8, 4.2)
+		knock.bar(15.4, 30.1, 13.2, 4.2)       // cursor widened like the outline's, see below
 		c.erase(knock)
 		return c
 	}
@@ -158,7 +158,10 @@ func mark(px int, waiting bool) canvas {
 	c.bracket(6.25, 13.95, 5.9, 38.1, frameR, wFrame)  // [
 	c.bracket(37.75, 30.05, 5.9, 38.1, frameR, wFrame) // ]
 	c.chevron(22, 14.7, 8.6, 8.3, wBird)               // the bird, centred on x=22
-	c.bar(17.6, 29.7, 8.8, 4.0)                        // cursor at rest
+	// cursor at rest. The master draws it 8.8 x 4.0 with 2.0 corners, a 4.8-unit straight run
+	// that renders as a 7 x 3 px blob at 18pt and reads as a dot; 13.2 wide (3.3:1) reads as
+	// the bar it is. Same height and centre line as the master.
+	c.bar(15.4, 29.7, 13.2, 4.0)
 	return c
 }
 
