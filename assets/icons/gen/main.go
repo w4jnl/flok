@@ -151,8 +151,12 @@ func mark(px int, waiting bool) canvas {
 		c.erase(knock)
 		return c
 	}
-	c.bracket(6.97, 14.67, 5.9, 38.1, frameR, wFrame)  // [
-	c.bracket(37.03, 29.33, 5.9, 38.1, frameR, wFrame) // ]
+	// The master puts the stems at 6.97 / 37.03, 2.2 units inside the solid tile's edges, which
+	// makes the outline read taller than wide at menu bar size. The icons put the stems' outer
+	// edge on the tile's edge (4.8 / 39.2) so both states share one footprint; returns keep
+	// their 7.7-unit length.
+	c.bracket(6.25, 13.95, 5.9, 38.1, frameR, wFrame)  // [
+	c.bracket(37.75, 30.05, 5.9, 38.1, frameR, wFrame) // ]
 	c.chevron(22, 14.7, 8.6, 8.3, wBird)               // the bird, centred on x=22
 	c.bar(17.6, 29.7, 8.8, 4.0)                        // cursor at rest
 	return c
