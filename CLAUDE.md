@@ -20,11 +20,12 @@ make test                  # go test ./...
 make vet                   # go vet ./...
 go test ./internal/merge -run TestHookAuthorityAndSeen -v   # one test
 go test ./internal/rules -run TestClaudeFixtures -v         # screen-rule fixtures
-scripts/e2e/m1.sh          # headless end-to-end suites, m1..m5 (see below)
+scripts/e2e/m1.sh          # headless end-to-end suites, m1..m7 (see below)
 scripts/spike/m0-outer.sh check   # nested-outer passthrough checks on isolated servers
 ```
 
-`go.mod` says Go 1.27. There is no linter config beyond `go vet`.
+`go.mod` says Go 1.27. There is no linter config beyond `go vet`. CI runs gofmt, vet, unit tests
+and a build on macOS and ubuntu, and the e2e suites on both as well.
 
 Releases: `scripts/release.sh <version>` tags `v<version>`, pushes, then bumps `url`/`sha256` in
 `Formula/flok.rb` of the tap clone (`$FLOK_TAP_DIR`, default `../homebrew-tap`, repo
@@ -39,8 +40,10 @@ private `FLOK_STATE` and `FLOK_CONFIG` in a temp dir. The real tmux server is ne
 Each `mN.sh` sources lib.sh and asserts on `capture-pane` output of the sidebar with
 `expect`/`wait_for`; `hook <agent> '<json>'` replays a hook payload against the fake agent's
 pane. Suites: m1 title-driven states, m2 hook-driven states, m3 nav/toggle/keys, m4 screen
-rules for hook-less agents, m5 launcher lifecycle (detach, killed session, reattach). They need
-a real `tmux` on PATH and `python3` (to read `runtime.json`).
+rules for hook-less agents, m5 launcher lifecycle (detach, killed session, reattach), m6
+snapshot.json / goto / flok-bar plumbing, m7 the terminal bell (an outer `alert-bell` hook
+observes the BEL). They need a real `tmux` on PATH and `python3` (to read `runtime.json`).
+`lib.sh` exports `TMUX_VER`/`tmux_at_least MAJ MIN` for checks older servers cannot pass.
 
 ## Architecture
 
@@ -149,4 +152,27 @@ main thread. Icons come from `assets/icons/gen` (`make icons`). e2e coverage: `s
 - Claude Code's title convention (spinner glyph ranges while working, `✳` idle) is duplicated in
   `agent/claude.go` and in the `osc_title_working` rule of `manifests/claude.toml`; keep them in
   step when Claude changes its spinner.
-- macOS first: sounds use `afplay` (`internal/notify`). Everything else is plain tmux.
+- Platforms: macOS first, Linux as a pure terminal interface (no flok-bar). Sounds go through
+  `notify.Player`, which picks the first of afplay, mpv, ffplay, pw-play, paplay, play on PATH or
+  runs `[sounds] command`; the bundled sounds are WAV (paplay/pw-play cannot decode mp3 on
+  RHEL 9). With no player, `[sounds] bell = "auto"` makes `notify.Bell` write BEL into the outer's
+  work pane (the inner client tty from runtime.json), which the outer forwards to the terminal,
+  also over ssh; `notify.Compose` picks the sounder per mode. `focus.Strategy` "auto" is "none"
+  off macOS; `[bar] enabled` is ignored off macOS with a message. A libghostty-based redesign was
+  studied (Sep 2026) and rejected: only the VT parser is public, all bindings are cgo; the outer
+  tmux is the one host that runs everywhere.
+- tmux versions: flok runs on 2.7 (RHEL 8) and newer, everything from 3.3. The gates are
+  `tmux.Features` (`internal/tmux/version.go`, derived from `tmux -V`, recorded by `flok up` in
+  `runtime.json` as `tmux_version` so other commands do not fork). The outer config template is
+  rendered per version (`launcher.RenderOuterConf`, pinned by `render_test.go`); never add a
+  tmux option, hook, flag or format modifier without a gate there — an unknown option does not
+  stop tmux, it dumps the errors into a view-mode overlay on the work pane (lib.sh asserts
+  `pane_in_mode` is 0 after `up`). `-e VAR=val` flags are banned (3.0–3.3 only): pane and popup
+  commands go through `launcher.SidebarCommand` / an `env …` prefix. `keys.PopupArgs` picks the
+  popup shape (none < 3.2, bare 3.2, bordered 3.3+); the tmux.conf snippet binds `?` to
+  `flok keys --open`, which falls back to a window. From 3.4 tmux escapes non-printable bytes
+  in `list-*` output as vis(3) octal (`\037` for the separator): `tmux.Decode` undoes it when
+  the client's `Features.EscapedOutput` says so, so always take snapshots through
+  `tmux.TakeSnapshotRaw`/`Decode`, never split raw output. CI runs the e2e suites on macOS
+  (3.7), Ubuntu (3.4), Rocky 9 (3.2a) and Rocky 8 (2.7); keep scripts POSIX/GNU-safe (no BSD
+  `sed -i ''`, use `sed -i.bak … && rm`; python 3.6 on Rocky 8).

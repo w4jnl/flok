@@ -21,6 +21,25 @@ type Local struct {
 	Name string
 	Path string
 	Bin  string
+	feat *Features // detected lazily, or set from runtime.json with SetVersion
+}
+
+// Features returns the capabilities of this tmux, detecting the version once when nobody
+// set it (SetVersion) — callers with runtime.json should pass its recorded version instead
+// of paying a `tmux -V` fork.
+func (l *Local) Features() Features {
+	if l.feat == nil {
+		f := FeaturesFor(DetectVersion(l.Bin))
+		l.feat = &f
+	}
+	return *l.feat
+}
+
+// SetVersion records the tmux version this client talks to.
+func (l *Local) SetVersion(v Version) *Local {
+	f := FeaturesFor(v)
+	l.feat = &f
+	return l
 }
 
 func NewLocal(name string) *Local     { return &Local{Name: name, Bin: "tmux"} }

@@ -1,0 +1,46 @@
+name: release
+
+# Linux binaries for each GitHub release (macOS comes from the Homebrew tap, which builds from
+# source; flok-bar is cgo and macOS-only, so it is not shipped here). scripts/release.sh creates
+# the release after pushing the tag; this runs on that event, or by hand for an existing tag.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "existing release tag, e.g. v0.3.0"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    name: linux tarballs
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: build and package (cgo-free, static)
+        run: |
+          set -euo pipefail
+          ver=${TAG#v}; mkdir -p dist
+          for arch in amd64 arm64; do
+            name=flok_${ver}_linux_${arch}; d=dist/$name; mkdir -p "$d"
+            CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath \
+              -ldflags "-s -w -X github.com/w4jnl/flok/internal/cli.Version=$TAG" -o "$d/flok" ./cmd/flok
+            cp README.md LICENSE LICENSE-APACHE NOTICE "$d/"
+            tar -C dist -czf "$d.tar.gz" "$name" && rm -r "$d"
+          done
+          (cd dist && sha256sum *.tar.gz > sha256sums.txt && cat sha256sums.txt)
+      - name: upload to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" dist/*.tar.gz dist/sha256sums.txt --clobber

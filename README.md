@@ -40,7 +40,9 @@ What that means in practice:
 
 - Features are the ones I need. Requests that do not fit my workflow will probably be declined,
   politely.
-- macOS is the first-class platform (sounds use `afplay`); Linux works but gets less testing.
+- macOS is the first-class platform; on Linux flok is the terminal sidebar alone (no menu bar
+  companion), sounds go through whichever player is installed, and the end-to-end suites run on
+  both in CI.
 - There is no compatibility promise between versions yet. Read the release notes before
   `brew upgrade`.
 - Bug reports with a reproduction are welcome; support is best effort.
@@ -173,11 +175,26 @@ Nothing is hand-maintained: what the popup shows is what your server has bound r
 
 ## Requirements
 
-- tmux 3.3 or newer (3.7 tested), macOS or Linux.
+- tmux 2.7 or newer, macOS or Linux. Everything works from 3.3; older servers lose a little
+  (see the table below). `flok doctor` prints the version it found and what that version lacks.
 - Claude Code and/or GitHub Copilot CLI for hook-driven state. Other agents get title and
   screen-rule detection only (manifests exist for Codex, Gemini and OpenCode).
-- macOS for sounds (`afplay`); on Linux sounds are silently skipped.
+- A sound player for the notification sounds: `afplay` on macOS; on Linux the first of `mpv`,
+  `ffplay`, `pw-play`, `paplay`, `play` (sox) found on PATH, or any command via `[sounds] command`.
+  Without one flok rings the terminal bell instead (`[sounds] bell = "auto"`), which reaches
+  your local terminal even when the agents run on a remote host over ssh.
 - Go 1.27 only if you build from source.
+
+### tmux versions
+
+| tmux | shipped by | what flok does there |
+|---|---|---|
+| 3.3 and newer | RHEL 10 (3.3a), Debian/Ubuntu (3.4+), Homebrew (3.7) | everything |
+| 3.2a | RHEL 9 | full sidebar; the keybinds popup has no border or title; no `allow-passthrough` for the inner server's apps; terminal focus is not tracked (done/idle assumes the terminal is focused) |
+| 2.7 | RHEL 8 | degraded: keybinds help opens in a new window instead of a popup, no extended keys (shift+enter-style bindings inside agents) through the outer server, a crashed sidebar's pane closes instead of staying respawnable |
+
+Below 2.7 `flok up` refuses to start. The gates live in `internal/tmux/version.go`; CI runs the
+end-to-end suites on macOS (3.7), Ubuntu (3.4), Rocky 9 (3.2a) and Rocky 8 (2.7).
 
 ## Install
 
@@ -185,6 +202,18 @@ Homebrew, from the `w4jnl/tap` tap:
 
 ```sh
 brew install w4jnl/tap/flok
+```
+
+On Linux, a prebuilt static binary from the [releases page](https://github.com/w4jnl/flok/releases)
+(no Go, no root; `x86_64`/`amd64` and `aarch64`/`arm64`):
+
+```sh
+ver=0.3.0; arch=$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')
+curl -fsSLO "https://github.com/w4jnl/flok/releases/download/v$ver/flok_${ver}_linux_${arch}.tar.gz"
+curl -fsSLO "https://github.com/w4jnl/flok/releases/download/v$ver/sha256sums.txt"
+sha256sum -c --ignore-missing sha256sums.txt
+mkdir -p ~/.local/bin && tar -xzf "flok_${ver}_linux_${arch}.tar.gz" --strip-components=1 -C ~/.local/bin "flok_${ver}_linux_${arch}/flok"
+flok install && flok doctor            # hooks into Claude Code / Copilot, tmux snippet, version report
 ```
 
 Or from source:
@@ -323,15 +352,19 @@ tables = ["prefix", "root", "copy-mode-vi"]
 
 [sounds]
 enabled = true
-player = "hook"             # hook | sidebar | none
+player = "hook"             # hook | sidebar | none (who plays: the hook process or the sidebar)
+command = ""                # "" = first on PATH of afplay, mpv, ffplay, pw-play, paplay, play;
+                            # or your own, e.g. "paplay --volume=40000 {file}" ({file}, {volume} expand)
+bell = "auto"               # auto: ring the terminal bell instead when no player exists (headless or
+                            # ssh hosts; the bell reaches your local terminal); always: bell and sound; never
 volume = 0.6
 min_interval_ms = 750
 when_focused = false
-done = ""                   # empty = bundled done.mp3; or e.g. "/System/Library/Sounds/Glass.aiff"
-blocked = ""                # empty = bundled request.mp3 (also used for error)
+done = ""                   # empty = bundled done.wav; or e.g. "/System/Library/Sounds/Glass.aiff"
+blocked = ""                # empty = bundled request.wav (also used for error)
 error = ""
 
-[bar]                       # macOS menu bar companion, started by `flok up`
+[bar]                       # macOS menu bar companion, started by `flok up` (ignored on Linux)
 enabled = false
 animate = true              # spin ◐◓◑◒ in the menu bar while an agent works
 animate_ms = 500            # frame interval; every frame redraws the status item, so 2 fps by default
@@ -411,7 +444,7 @@ internal/claudereg     `claude agents --json` reader, pid → tty → pane
 internal/tmux          exec-based tmux client, one-call snapshot
 internal/keys          list-keys collector and labels for the help
 internal/nav           switch-client / select-window / select-pane
-internal/notify        sounds (afplay), debounce
+internal/notify        sounds (afplay, pw-play, paplay, mpv, ffplay, play or a custom command), debounce
 internal/install       settings.json / Copilot hook writers, tmux snippet
 internal/config        config.toml, XDG paths
 ```

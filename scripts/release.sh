@@ -38,6 +38,7 @@ echo "tap bumped: $f"
 
 if command -v gh >/dev/null 2>&1; then
   gh release create "v$ver" --title "flok v$ver" --generate-notes >/dev/null && echo "GitHub release v$ver created"
+  echo "linux tarballs: built by the release workflow, appear at https://github.com/w4jnl/flok/releases/tag/v$ver"
 fi
 echo "CI:  https://github.com/w4jnl/flok/actions  and  https://github.com/w4jnl/homebrew-tap/actions"
 echo "users: brew update && brew upgrade flok"

@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -40,8 +41,33 @@ type Runtime struct {
 	FullWidth      int       `json:"full_width"`
 	RailWidth      int       `json:"rail_width"`
 	TerminalApp    string    `json:"terminal_app,omitempty"` // TERM_PROGRAM of the terminal that ran `flok up`
+	TmuxVersion    string    `json:"tmux_version,omitempty"` // `tmux -V` seen by `flok up`, so other commands skip the fork
 	StartedAt      time.Time `json:"started_at"`
 }
+
+// Version is the tmux version recorded by `flok up` (detected when the record predates it).
+func (r Runtime) Version() tmux.Version {
+	if r.TmuxVersion != "" {
+		return tmux.ParseVersion(r.TmuxVersion)
+	}
+	return tmux.DetectVersion("")
+}
+
+// Features are the capabilities of that tmux.
+func (r Runtime) Features() tmux.Features { return tmux.FeaturesFor(r.Version()) }
+
+// SidebarCommand is the shell command of the sidebar pane. The environment goes through
+// env(1) rather than tmux's -e flag, which new-session/split-window/respawn-pane only grew in
+// tmux 3.0-3.2 (RHEL 8 ships 2.7).
+func SidebarCommand(bin, rightPane string) string {
+	return "env FLOK_OUTER=1 FLOK_RIGHT_PANE=" + rightPane + " " + shellQuote(bin) + " sidebar"
+}
+
+func attachLoopCommand(bin string) string {
+	return "env FLOK_OUTER=1 " + shellQuote(bin) + " _attach-loop"
+}
+
+func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
 
 func RuntimePath() string { return filepath.Join(config.StateDir(), "runtime.json") }
 func quitMarker() string  { return filepath.Join(config.StateDir(), "quit") }
@@ -109,21 +135,40 @@ func UpdateRuntime(fn func(*Runtime)) error {
 	})
 }
 
-// RenderOuterConf fills the embedded template.
-func RenderOuterConf(cfg config.Config, bin string) (string, error) {
+// outerData feeds outer.tmux.conf.tmpl; F gates every option or hook the given tmux lacks.
+type outerData struct {
+	Bin, Border, ExtraConf, Width, DefaultTerminal string
+	F                                              tmux.Features
+}
+
+// DefaultTerminal is the TERM the outer gives the inner client: tmux-256color when the host
+// has that terminfo entry (RHEL keeps it in ncurses-term, which minimal installs lack), else
+// screen-256color. Without a usable entry the inner `tmux attach` fails and the outer dies.
+func DefaultTerminal() string {
+	if _, err := exec.LookPath("infocmp"); err != nil {
+		return "tmux-256color"
+	}
+	if err := exec.Command("infocmp", "tmux-256color").Run(); err != nil {
+		return "screen-256color"
+	}
+	return "tmux-256color"
+}
+
+// RenderOuterConf fills the embedded template for a tmux with the given features.
+func RenderOuterConf(cfg config.Config, bin string, f tmux.Features) (string, error) {
 	tmpl, err := template.New("outer").Parse(outerTmpl)
 	if err != nil {
 		return "", err
 	}
 	var b bytes.Buffer
-	err = tmpl.Execute(&b, map[string]string{"Bin": bin, "Border": cfg.Theme.CurrentLine,
-		"ExtraConf": config.ExpandHome(cfg.Outer.ExtraConf), "Width": strconv.Itoa(cfg.Sidebar.Width)})
+	err = tmpl.Execute(&b, outerData{Bin: bin, Border: cfg.Theme.CurrentLine, DefaultTerminal: DefaultTerminal(),
+		ExtraConf: config.ExpandHome(cfg.Outer.ExtraConf), Width: strconv.Itoa(cfg.Sidebar.Width), F: f})
 	return b.String(), err
 }
 
 // WriteOuterConf renders the outer config into the state dir and returns its path.
-func WriteOuterConf(cfg config.Config, bin string) (string, error) {
-	text, err := RenderOuterConf(cfg, bin)
+func WriteOuterConf(cfg config.Config, bin string, f tmux.Features) (string, error) {
+	text, err := RenderOuterConf(cfg, bin, f)
 	if err != nil {
 		return "", err
 	}
@@ -146,27 +191,33 @@ func Up(cfg config.Config, bin string, detach bool) error {
 	if os.Getenv("TMUX") != "" && !detach {
 		return errors.New("flok up: run it from a plain terminal, not inside tmux")
 	}
-	inner := tmux.NewLocal(cfg.Inner.Socket)
+	ver := tmux.DetectVersion("")
+	if ver.Known && !ver.AtLeast(tmux.Floor.Major, tmux.Floor.Minor) {
+		return fmt.Errorf("tmux %s is too old: flok needs %s or newer", ver, tmux.Floor)
+	}
+	inner := tmux.NewLocal(cfg.Inner.Socket).SetVersion(ver)
 	if _, err := inner.Run("list-sessions"); err != nil {
 		if _, err := inner.Run("new-session", "-d", "-s", "main"); err != nil {
 			return fmt.Errorf("start inner tmux server: %w", err)
 		}
 	}
-	confPath, err := WriteOuterConf(cfg, bin)
+	confPath, err := WriteOuterConf(cfg, bin, tmux.FeaturesFor(ver))
 	if err != nil {
 		return err
 	}
-	outer := tmux.NewLocal(cfg.Outer.Socket)
+	outer := tmux.NewLocal(cfg.Outer.Socket).SetVersion(ver)
 	sess := cfg.Outer.Session
 	if _, err := outer.Run("has-session", "-t", sess); err != nil {
-		if err := createOuter(cfg, bin, confPath, outer, sess); err != nil {
+		if err := createOuter(cfg, bin, confPath, outer, sess, ver); err != nil {
 			return err
 		}
 	} else if err := ensureSidebar(cfg, bin, outer); err != nil {
 		return err
 	}
 	if cfg.Bar.Enabled {
-		if err := StartBar(cfg, bin); err != nil {
+		if runtime.GOOS != "darwin" {
+			fmt.Fprintln(os.Stderr, "flok: [bar] enabled is ignored: the menu bar companion is macOS only")
+		} else if err := StartBar(cfg, bin); err != nil {
 			fmt.Fprintln(os.Stderr, "flok: menu bar:", err)
 		}
 	}
@@ -235,14 +286,15 @@ func StopBar() {
 	_ = os.Remove(barPIDFile())
 }
 
-func createOuter(cfg config.Config, bin, confPath string, outer *tmux.Local, sess string) error {
+func createOuter(cfg config.Config, bin, confPath string, outer *tmux.Local, sess string, ver tmux.Version) error {
 	cols, rows := termSize()
 	home, _ := os.UserHomeDir()
-	_ = os.Remove(RuntimePath()) // a leftover from an earlier outer must not leak into this one
-	_ = SetTerminalFocus(true)   // a fresh outer is visible and, until a hook says otherwise, focused
+	_ = os.Remove(RuntimePath())                                         // a leftover from an earlier outer must not leak into this one
+	_ = UpdateRuntime(func(r *Runtime) { r.TmuxVersion = ver.String() }) // the sidebar reads it at start
+	_ = SetTerminalFocus(true)                                           // a fresh outer is visible and, until a hook says otherwise, focused
 	_ = SetSidebarHidden(false)
 	if _, err := outer.Run("-f", confPath, "new-session", "-d", "-s", sess, "-n", "main", "-x", strconv.Itoa(cols), "-y", strconv.Itoa(rows),
-		"-c", home, "-e", "FLOK_OUTER=1", bin+" _attach-loop"); err != nil {
+		"-c", home, attachLoopCommand(bin)); err != nil {
 		return fmt.Errorf("create outer session: %w", err)
 	}
 	right, err := tmux.Display(outer, sess, "#{pane_id}")
@@ -250,12 +302,14 @@ func createOuter(cfg config.Config, bin, confPath string, outer *tmux.Local, ses
 		return err
 	}
 	out, err := outer.Run("split-window", "-hb", "-l", strconv.Itoa(cfg.Sidebar.Width), "-t", right, "-c", home,
-		"-e", "FLOK_OUTER=1", "-e", "FLOK_RIGHT_PANE="+right, "-P", "-F", "#{pane_id}", bin+" sidebar")
+		"-P", "-F", "#{pane_id}", SidebarCommand(bin, right))
 	if err != nil {
 		return fmt.Errorf("create sidebar pane: %w", err)
 	}
 	sidebar := strings.TrimSpace(out)
-	_, _ = outer.Run("set-option", "-p", "-t", sidebar, "remain-on-exit", "on")
+	if outer.Features().PaneOptions { // keep a crashed sidebar's pane so `flok up` can respawn it
+		_, _ = outer.Run("set-option", "-p", "-t", sidebar, "remain-on-exit", "on")
+	}
 	// normalise to the pinned layout (the client attaching next may have another size)
 	_, _ = outer.Run("set-option", "-w", "-t", sess, "main-pane-width", strconv.Itoa(cfg.Sidebar.Width), ";",
 		"select-layout", "-t", sess, "main-vertical")
@@ -264,7 +318,7 @@ func createOuter(cfg config.Config, bin, confPath string, outer *tmux.Local, ses
 	return UpdateRuntime(func(r *Runtime) {
 		r.OuterSocket, r.OuterSession, r.SidebarPane, r.RightPane = cfg.Outer.Socket, sess, sidebar, right
 		r.InnerSocket, r.FullWidth, r.RailWidth = cfg.Inner.Socket, cfg.Sidebar.Width, cfg.Sidebar.RailWidth
-		r.TerminalApp, r.StartedAt = os.Getenv("TERM_PROGRAM"), time.Now()
+		r.TerminalApp, r.TmuxVersion, r.StartedAt = os.Getenv("TERM_PROGRAM"), ver.String(), time.Now()
 	})
 }
 
@@ -279,8 +333,7 @@ func ensureSidebar(cfg config.Config, bin string, outer *tmux.Local) error {
 		return nil // pane gone; the user can `down` and `up`
 	}
 	if dead == "1" {
-		_, err = outer.Run("respawn-pane", "-k", "-t", rt.SidebarPane, "-e", "FLOK_OUTER=1",
-			"-e", "FLOK_RIGHT_PANE="+rt.RightPane, bin+" sidebar")
+		_, err = outer.Run("respawn-pane", "-k", "-t", rt.SidebarPane, SidebarCommand(bin, rt.RightPane))
 	}
 	return err
 }

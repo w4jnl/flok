@@ -14,11 +14,17 @@ func TestStrategiesAndAerospaceSelection(t *testing.T) {
 		}
 		return "", nil
 	}
-	if s := Strategy(Options{Strategy: "auto", Look: func(string) bool { return true }}); s != "aerospace" {
+	if s := Strategy(Options{Strategy: "auto", GOOS: "darwin", Look: func(string) bool { return true }}); s != "aerospace" {
 		t.Fatalf("auto with aerospace -> %s", s)
 	}
-	if s := Strategy(Options{Strategy: "auto", Look: func(string) bool { return false }}); s != "applescript" {
+	if s := Strategy(Options{Strategy: "auto", GOOS: "darwin", Look: func(string) bool { return false }}); s != "applescript" {
 		t.Fatalf("auto without aerospace -> %s", s)
+	}
+	if s := Strategy(Options{Strategy: "auto", GOOS: "linux", Look: func(string) bool { return true }}); s != "none" {
+		t.Fatalf("auto on linux -> %s (aerospace/osascript are macOS tools)", s)
+	}
+	if s := Strategy(Options{Strategy: "xdotool windowactivate $(xdotool search --name {app})", GOOS: "linux"}); !strings.HasPrefix(s, "xdotool") {
+		t.Fatalf("custom command must survive on linux: %s", s)
 	}
 	if err := Terminal(Options{App: "ghostty", Strategy: "aerospace", Run: run}); err != nil {
 		t.Fatal(err)

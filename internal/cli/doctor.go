@@ -3,10 +3,8 @@ package cli
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"regexp"
-	"strconv"
+	"runtime"
 	"strings"
 	"time"
 
@@ -29,18 +27,24 @@ func runDoctor(cfg config.Config) int {
 	var out []check
 	add := func(level, format string, a ...any) { out = append(out, check{level, fmt.Sprintf(format, a...)}) }
 
-	// tmux
-	if v, err := exec.Command("tmux", "-V").Output(); err != nil {
+	// tmux: flok runs on 2.7 (RHEL 8) and newer; 3.3 has everything, older versions lose the
+	// features listed by tmux.Features.Degraded (RHEL 9 ships 3.2a)
+	ver := tmux.DetectVersion("")
+	feat := tmux.FeaturesFor(ver)
+	switch {
+	case ver.Raw == "unknown":
 		add("fail", "tmux not found in PATH")
-	} else {
-		ver := strings.TrimSpace(strings.TrimPrefix(string(v), "tmux "))
-		if major, minor := parseVersion(ver); major > 3 || (major == 3 && minor >= 3) {
-			add("ok", "tmux %s", ver)
-		} else {
-			add("fail", "tmux %s is too old (need 3.3+ for display-popup -b and pane environments)", ver)
+	case !ver.Known:
+		add("warn", "tmux version %q not recognised; assuming a current tmux", ver.Raw)
+	case !ver.AtLeast(tmux.Floor.Major, tmux.Floor.Minor):
+		add("fail", "tmux %s is too old: flok needs %s or newer", ver, tmux.Floor)
+	default:
+		add("ok", "tmux %s", ver)
+		for _, d := range feat.Degraded() {
+			add("warn", "tmux %s: %s", ver, d)
 		}
 	}
-	inner := tmux.NewLocal(cfg.Inner.Socket)
+	inner := tmux.NewLocal(cfg.Inner.Socket).SetVersion(ver)
 	if _, err := inner.Run("list-sessions"); err != nil {
 		add("warn", "inner tmux server (%s) not running; `up` starts one", inner.Label())
 	} else {
@@ -84,8 +88,22 @@ func runDoctor(cfg config.Config) int {
 
 	// sounds
 	if cfg.Sounds.Enabled {
-		if _, err := os.Stat("/usr/bin/afplay"); err != nil {
-			add("warn", "afplay not found; sounds will not play")
+		player := notify.Player{Command: cfg.Sounds.Command}
+		switch found := notify.Detect(nil); {
+		case cfg.Sounds.Command != "":
+			add("ok", "sound player: [sounds] command = %q", cfg.Sounds.Command)
+		case found != "":
+			add("ok", "sound player: %s", found)
+		case cfg.Sounds.Bell == "never":
+			add("warn", "no sound player found (afplay, mpv, ffplay, pw-play, paplay, play) and bell = never: sounds will not play")
+		default:
+			add("ok", "no sound player found: the terminal bell rings instead (bell = auto)")
+		}
+		add("ok", "bell: %s", notify.BellMode(player, cfg.Sounds.Bell))
+		if cfg.Sounds.Bell != "never" {
+			if rt, err := launcher.ReadRuntime(); err == nil && rt.InnerClientTTY == "" {
+				add("warn", "bell: runtime.json has no inner client tty yet (the sidebar records it on start)")
+			}
 		}
 		files := notify.Resolve(config.StateDir(), map[string]string{"done": cfg.Sounds.Done, "blocked": cfg.Sounds.Blocked, "error": cfg.Sounds.Error})
 		for kind, f := range files {
@@ -122,7 +140,7 @@ func runDoctor(cfg config.Config) int {
 	if err != nil {
 		add("ok", "outer session not running (start with `flok up`)")
 	} else {
-		outer := tmux.NewLocal(rt.OuterSocket)
+		outer := tmux.NewLocal(rt.OuterSocket).SetVersion(ver)
 		if dead, err := tmux.Display(outer, rt.SidebarPane, "#{pane_dead}"); err != nil {
 			add("warn", "runtime.json refers to a missing outer pane; run `flok down` then `up`")
 		} else if dead == "1" {
@@ -131,10 +149,10 @@ func runDoctor(cfg config.Config) int {
 			add("ok", "outer %s running, sidebar pane %s", outer.Label(), rt.SidebarPane)
 		}
 		if tty, err := tmux.Display(outer, rt.RightPane, "#{pane_tty}"); err == nil {
-			feats, _ := inner.Run("list-clients", "-F", "#{client_tty}\x1f#{client_termfeatures}")
+			feats, _ := inner.Run("list-clients", "-F", "#{client_tty}"+tmux.Sep+"#{client_termfeatures}")
 			found := false
-			for _, line := range strings.Split(feats, "\n") {
-				f := strings.Split(line, "\x1f")
+			for _, line := range strings.Split(tmux.Decode(feats, feat.EscapedOutput), "\n") {
+				f := strings.Split(line, tmux.Sep)
 				if len(f) == 2 && f[0] == tty {
 					found = true
 					if strings.Contains(f[1], "RGB") {
@@ -151,7 +169,9 @@ func runDoctor(cfg config.Config) int {
 	}
 
 	// menu bar companion
-	if cfg.Bar.Enabled {
+	if cfg.Bar.Enabled && runtime.GOOS != "darwin" {
+		add("warn", "[bar] enabled is ignored: the menu bar companion is macOS only (flok is the sidebar alone here)")
+	} else if cfg.Bar.Enabled {
 		if path, err := launcher.BarBinary(bin); err != nil {
 			add("warn", "[bar] enabled but flok-bar not found next to %s or on PATH", bin)
 		} else if pid, running := launcher.BarRunning(); running {
@@ -175,18 +195,6 @@ func runDoctor(cfg config.Config) int {
 		}
 	}
 	return rc
-}
-
-var versionRe = regexp.MustCompile(`(\d+)\.(\d+)`)
-
-func parseVersion(v string) (int, int) {
-	m := versionRe.FindStringSubmatch(v)
-	if m == nil {
-		return 0, 0
-	}
-	major, _ := strconv.Atoi(m[1])
-	minor, _ := strconv.Atoi(m[2])
-	return major, minor
 }
 
 func findTmuxConf() string {

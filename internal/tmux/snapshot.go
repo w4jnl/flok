@@ -58,17 +58,68 @@ func TakeSnapshot(c Client) (Snapshot, error) {
 }
 
 // TakeSnapshotRaw also returns tmux's raw output, a cheap fingerprint for "nothing changed".
+// Output from a tmux that vis(3)-escapes its list-* output (3.4+) is decoded first; the
+// client says so through Features (see Decode).
 func TakeSnapshotRaw(c Client) (Snapshot, string, error) {
 	out, err := c.Run("list-sessions", "-F", sessionFmt, ";", "list-panes", "-a", "-F", paneFmt, ";", "list-clients", "-F", clientFmt)
 	if err != nil {
 		return Snapshot{}, "", err
 	}
+	out = Decode(out, Escapes(c))
 	snap := ParseSnapshot(out)
 	snap.TakenAt = time.Now()
 	return snap, out, nil
 }
 
-// ParseSnapshot parses the combined output of TakeSnapshot.
+// Sep is the field separator flok puts in its -F formats: tmux never emits it in names,
+// paths or titles.
+const Sep = sep
+
+// Escapes reports whether a client's tmux vis(3)-escapes list-* output (false for clients
+// that do not know their version, such as test fakes).
+func Escapes(c Client) bool {
+	f, ok := c.(interface{ Features() Features })
+	return ok && f.Features().EscapedOutput
+}
+
+// Decode undoes tmux's output escaping when escaped is true. From 3.4 on, server_client_print
+// runs list-* output through strvis(VIS_OCTAL|VIS_CSTYLE|VIS_NOSLASH): non-printable bytes
+// become `\ooo` or a C escape (`\t`, `\a`, …) and backslashes are NOT doubled, so only those
+// two forms are decoded; 3.3 and earlier print the raw bytes and must not be touched (a title
+// containing the text `\037` would otherwise be corrupted).
+func Decode(out string, escaped bool) string {
+	if !escaped || !strings.Contains(out, `\`) {
+		return out
+	}
+	var b strings.Builder
+	b.Grow(len(out))
+	for i := 0; i < len(out); i++ {
+		c := out[i]
+		if c != '\\' || i+1 >= len(out) {
+			b.WriteByte(c)
+			continue
+		}
+		if i+3 < len(out) && isOctal(out[i+1]) && isOctal(out[i+2]) && isOctal(out[i+3]) {
+			v, _ := strconv.ParseUint(out[i+1:i+4], 8, 8)
+			b.WriteByte(byte(v))
+			i += 3
+			continue
+		}
+		if r, ok := cEscapes[out[i+1]]; ok {
+			b.WriteByte(r)
+			i++
+			continue
+		}
+		b.WriteByte(c)
+	}
+	return b.String()
+}
+
+var cEscapes = map[byte]byte{'a': 7, 'b': 8, 'f': 12, 'n': 10, 'r': 13, 't': 9, 'v': 11}
+
+func isOctal(c byte) bool { return c >= '0' && c <= '7' }
+
+// ParseSnapshot parses the combined output of TakeSnapshot (already decoded, see Decode).
 func ParseSnapshot(out string) Snapshot {
 	var s Snapshot
 	for _, line := range strings.Split(out, "\n") {

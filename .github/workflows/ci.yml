@@ -33,17 +33,59 @@ jobs:
         run: ./bin/flok-bar version
 
   e2e:
-    name: e2e (macos, isolated tmux servers)
-    runs-on: macos-latest
+    name: e2e (${{ matrix.os }}, isolated tmux servers)
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-      - run: brew install tmux
+      - name: install tmux (macOS)
+        if: runner.os == 'macOS'
+        run: brew install tmux
+      - name: install tmux (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -q && sudo apt-get install -y -q tmux
+      - run: tmux -V
       - name: run suites
         run: |
           set -e
+          for s in scripts/e2e/m*.sh; do
+            echo "== $s"
+            "$s"
+          done
+
+  # The tmux versions RHEL ships: Rocky 8 = 2.7 (flok's floor, degraded mode), Rocky 9 = 3.2a.
+  # tar/gzip/git go in first because checkout and setup-go need them inside the container.
+  e2e-el:
+    name: e2e (${{ matrix.name }}, tmux ${{ matrix.tmux }})
+    runs-on: ubuntu-latest
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: rocky8, image: "rockylinux:8", tmux: "2.7" }
+          - { name: rocky9, image: "rockylinux:9", tmux: "3.2a" }
+    env:
+      LANG: en_US.UTF-8
+      LC_ALL: en_US.UTF-8
+    steps:
+      - name: packages
+        run: dnf -y install tmux python3 git tar gzip procps-ng ncurses-term glibc-langpack-en && tmux -V
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - run: go test ./...
+      - name: run suites
+        run: |
+          set -e
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           for s in scripts/e2e/m*.sh; do
             echo "== $s"
             "$s"

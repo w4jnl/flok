@@ -122,6 +122,17 @@ func Label(b Binding, overrides map[string]string) string {
 		return "command prompt"
 	case strings.HasPrefix(cmd, "display-panes"):
 		return "show pane numbers"
+	case strings.HasPrefix(cmd, "display-menu"):
+		// tmux's stock < and > bindings; only tmux 3.5+ ships notes for them
+		switch {
+		case strings.Contains(cmd, "window_index"):
+			return "window menu"
+		case strings.Contains(cmd, "pane_index"):
+			return "pane menu"
+		case strings.Contains(cmd, "session_name"):
+			return "session menu"
+		}
+		return "menu"
 	case strings.HasPrefix(cmd, "rotate-window"):
 		return "rotate panes"
 	case strings.HasPrefix(cmd, "break-pane"):

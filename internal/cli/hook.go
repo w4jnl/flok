@@ -11,6 +11,7 @@ import (
 
 	"github.com/w4jnl/flok/internal/agent"
 	"github.com/w4jnl/flok/internal/config"
+	"github.com/w4jnl/flok/internal/launcher"
 	"github.com/w4jnl/flok/internal/notify"
 	"github.com/w4jnl/flok/internal/state"
 	"github.com/w4jnl/flok/internal/tmux"
@@ -79,7 +80,16 @@ func runHook(cfg config.Config, args []string) (code int) {
 	var sounder notify.Sounder = notify.Noop{}
 	plays := cfg.Sounds.Enabled && cfg.Sounds.Player == "hook"
 	if plays {
-		sounder = notify.Afplay{Files: notify.Resolve(st.Dir, map[string]string{"done": cfg.Sounds.Done, "blocked": cfg.Sounds.Blocked, "error": cfg.Sounds.Error}), Volume: cfg.Sounds.Volume}
+		player := notify.Player{Files: notify.Resolve(st.Dir, map[string]string{"done": cfg.Sounds.Done, "blocked": cfg.Sounds.Blocked, "error": cfg.Sounds.Error}), Volume: cfg.Sounds.Volume, Command: cfg.Sounds.Command}
+		// the bell goes into the outer's work pane (the inner client's pty from runtime.json),
+		// which the outer server forwards to the terminal — also over ssh
+		bell := notify.Bell{Resolve: func() string {
+			if rt, err := launcher.ReadRuntime(); err == nil {
+				return rt.InnerClientTTY
+			}
+			return ""
+		}}
+		sounder = notify.Compose(player, bell, cfg.Sounds.Bell)
 	}
 	a, fx, err := st.Update(pane, func(a *agent.Agent) state.Effects {
 		fx := state.Apply(a, ev, focused, now)

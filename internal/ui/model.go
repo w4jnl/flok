@@ -42,6 +42,7 @@ type Deps struct {
 	Registry    bool                // poll `claude agents --json`
 	Rules       *rules.Set          // screen-rule manifests; nil disables capture-pane detection
 	OnSwitch    func(paneID string) // called after switching to an agent pane
+	Feat        tmux.Features       // what the tmux both servers run on can do (popups, …)
 }
 
 const (
@@ -81,6 +82,7 @@ type Model struct {
 	lastFP                 uint64     // fingerprint of the inputs of the last Build
 	lastRegSeq, lastScrSeq int
 	polls                  int           // 1 s polls so far (focus fallback cadence)
+	repinPending           bool          // a select-layout is scheduled after a resize (tmux < 3.3)
 	tmuxSnap               tmux.Snapshot // last tmux snapshot; rebuilds reuse it instead of spawning tmux
 	lastRaw                string        // raw tmux output behind tmuxSnap (fingerprint input for rebuilds)
 	lastHook               map[string]agent.Agent
@@ -113,6 +115,7 @@ type (
 		err       error
 	}
 	switchedMsg     struct{ err error }
+	repinMsg        struct{}
 	stateChangedMsg struct{}
 	registryTickMsg struct{}
 	registryMsg     struct{ entries map[string]claudereg.Entry }
@@ -131,14 +134,16 @@ func New(d Deps) Model {
 	lipgloss.SetColorProfile(termenv.TrueColor)
 	m := Model{d: d, theme: NewTheme(d.Cfg.Theme), tracker: merge.NewTracker(), clientTTY: d.ClientTTY, changes: make(chan struct{}, 1), vc: &viewCache{},
 		prevState: map[string]agent.State{}, sounder: notify.Noop{}, started: time.Now()}
-	if d.Cfg.Sounds.Enabled && d.Cfg.Sounds.Player != "none" {
-		m.sounder = notify.Afplay{Files: notify.Resolve(config.StateDir(), map[string]string{"done": d.Cfg.Sounds.Done, "blocked": d.Cfg.Sounds.Blocked, "error": d.Cfg.Sounds.Error}),
-			Volume: d.Cfg.Sounds.Volume}
-	}
 	if m.clientTTY == "" && d.Outer != nil && d.RightPane != "" {
 		if tty, err := tmux.Display(d.Outer, d.RightPane, "#{pane_tty}"); err == nil {
 			m.clientTTY = tty
 		}
+	}
+	if d.Cfg.Sounds.Enabled && d.Cfg.Sounds.Player != "none" {
+		player := notify.Player{Files: notify.Resolve(config.StateDir(), map[string]string{"done": d.Cfg.Sounds.Done, "blocked": d.Cfg.Sounds.Blocked, "error": d.Cfg.Sounds.Error}),
+			Volume: d.Cfg.Sounds.Volume, Command: d.Cfg.Sounds.Command}
+		tty := m.clientTTY // the outer's work pane: the bell travels through the outer server to the terminal
+		m.sounder = notify.Compose(player, notify.Bell{Resolve: func() string { return tty }}, d.Cfg.Sounds.Bell)
 	}
 	if d.Store != nil {
 		go watchStore(d.Store.Dir, m.changes)
@@ -215,6 +220,21 @@ func watchStore(dir string, ch chan struct{}) {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
+}
+
+// repinAfterResize keeps the sidebar at its pinned width on tmux versions without the
+// window-resized hook (< 3.3, RHEL 9): tmux scales every pane on a window resize, so the
+// sidebar re-applies the main-vertical layout itself, debounced, when its width is neither the
+// full nor the rail width. Newer servers do this in the outer config's hook.
+func (m *Model) repinAfterResize(width int) tea.Cmd {
+	if m.d.Feat.ResizedHook || m.d.Outer == nil || m.d.SidebarPane == "" || m.hidden || m.repinPending {
+		return nil
+	}
+	if width == m.d.Cfg.Sidebar.Width || width == m.d.Cfg.Sidebar.RailWidth {
+		return nil
+	}
+	m.repinPending = true
+	return tea.Tick(200*time.Millisecond, func(time.Time) tea.Msg { return repinMsg{} })
 }
 
 // storeEventWanted filters fsnotify events: hook records and seen marks under agents/ and seen/,
@@ -701,6 +721,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.clamp()
+		return m, m.repinAfterResize(msg.Width)
+	case repinMsg:
+		m.repinPending = false
+		outer, sb := m.d.Outer, m.d.SidebarPane
+		if outer == nil || sb == "" || m.hidden {
+			return m, nil
+		}
+		return m, func() tea.Msg { _, _ = outer.Run("select-layout", "-t", sb, "main-vertical"); return nil }
 	case snapshotMsg:
 		if msg.err != nil {
 			m.errText = msg.err.Error()
@@ -935,14 +963,14 @@ type helpPopupFailedMsg struct{ err error }
 func (m *Model) openHelp() tea.Cmd {
 	outer := m.d.Outer
 	exe, err := os.Executable()
-	if outer == nil || err != nil {
+	// FLOK_OUTER makes `flok keys` read the inner server's bindings, not the outer's
+	args := keys.PopupArgs(m.d.Feat, "", "env FLOK_OUTER=1 '"+exe+"' keys")
+	if outer == nil || err != nil || args == nil { // headless, or a tmux without popups (< 3.2)
 		m.openHelpInline()
 		return nil
 	}
 	return func() tea.Msg {
-		_, err := outer.Run("display-popup", "-E", "-w", "80%", "-h", "85%", "-b", "rounded", "-T", " keybinds ",
-			"-e", "FLOK_OUTER=1", "'"+exe+"' keys")
-		if err != nil {
+		if _, err := outer.Run(args...); err != nil {
 			return helpPopupFailedMsg{err}
 		}
 		return nil

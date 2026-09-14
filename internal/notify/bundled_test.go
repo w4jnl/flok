@@ -15,7 +15,7 @@ func TestBundledAndResolve(t *testing.T) {
 			t.Fatalf("%s: bundled sound not written: %v", kind, err)
 		}
 	}
-	if filepath.Base(files["blocked"]) != "request.mp3" || filepath.Base(files["done"]) != "done.mp3" {
+	if filepath.Base(files["blocked"]) != "request.wav" || filepath.Base(files["done"]) != "done.wav" {
 		t.Fatalf("unexpected mapping: %v", files)
 	}
 	r := Resolve(dir, map[string]string{"done": "/x/custom.aiff", "blocked": ""})

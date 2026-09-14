@@ -4,7 +4,7 @@
 source "$(dirname "$0")/lib.sh"
 SNAP=$T/state/snapshot.json
 for _ in $(seq 1 30); do [ -f "$SNAP" ] && break; sleep 0.1; done
-expect "sidebar publishes snapshot.json" 'fake-agent|flok' "$(cat "$SNAP" 2>/dev/null)"
+expect "sidebar publishes snapshot.json" "fake-agent|$PROJ" "$(cat "$SNAP" 2>/dev/null)"
 py() { python3 -c "import json,sys; s=json.load(open('$SNAP')); $1"; }
 expect "snapshot lists the fake agent pane" "^$AGENT\$" "$(py 'print(next(a["pane_id"] for a in s["agents"]))')"
 expect "snapshot session list has Alpha and Beta" 'Alpha Beta' "$(py 'print(" ".join(sorted(x["name"] for x in s["sessions"])))')"
@@ -16,7 +16,7 @@ hook claude '{"hook_event_name":"PermissionRequest","session_id":"abc","tool_nam
 for _ in $(seq 1 30); do grep -q '"blocked"' "$SNAP" 2>/dev/null && break; sleep 0.1; done
 expect "snapshot state blocked" '^blocked permission:Bash 1$' "$(py 'a=s["agents"][0]; print(a["state"], a["reason"], a["unseen"])')"
 expect "status agrees with the snapshot" 'blocked' "$("$BIN" status | grep "$AGENT")"
-expect "snapshot is fresh (updated_at recent)" '^ok$' "$(py 'import datetime; d=datetime.datetime.now(datetime.timezone.utc)-datetime.datetime.fromisoformat(s["updated_at"]); print("ok" if d.total_seconds()<10 else d)')"
+expect "snapshot is fresh (written recently)" '^ok$' "$(python3 -c "import os,time; d=time.time()-os.path.getmtime('$SNAP'); print('ok' if d<10 else d)")"
 
 # goto: switch the inner client to the agent pane (no window focus in tests) and mark it seen
 IN select-window -t Alpha:0
@@ -31,9 +31,9 @@ printf '\n[bar]\neditor = "tail -f"\n' >> "$T/config.toml"
 "$BIN" edit-config --no-focus; sleep 0.8
 CSESS=$(IN list-clients -F '#{client_session}' | head -1)
 expect "edit-config opened a flok-config window in the client's session" 'flok-config' "$(IN list-windows -t "$CSESS" -F '#{window_name}')"
-expect "the editor runs on config.toml" 'tail' "$(IN display -p -t "$CSESS:flok-config" '#{pane_current_command}')"
+expect "the editor runs on config.toml" 'tail|coreutils' "$(IN display -p -t "$CSESS:flok-config" '#{pane_current_command}')"   # coreutils-single (EL containers) reports "coreutils"
 IN kill-window -t "$CSESS:flok-config"
-sed -i '' -e '/^\[bar\]$/d' -e '/^editor = "tail -f"$/d' "$T/config.toml"
+sed -i.bak -e '/^\[bar\]$/d' -e '/^editor = "tail -f"$/d' "$T/config.toml" && rm -f "$T/config.toml.bak"   # -i.bak: BSD and GNU sed
 
 if [ -n "${FLOK_E2E_BAR:-}" ]; then
   python3 - "$T/config.toml" <<'PY'

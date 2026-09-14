@@ -54,7 +54,11 @@ const Template = `# flok configuration - https://github.com/w4jnl/flok
 
 [sounds]
 # enabled = true
-# player = "hook"             # hook | sidebar | none
+# player = "hook"             # hook | sidebar | none (who plays: the hook process or the sidebar)
+# command = ""                # "" = first on PATH of afplay, mpv, ffplay, pw-play, paplay, play;
+                              # or your own, e.g. "paplay --volume=40000 {file}" ({file}, {volume} expand)
+# bell = "auto"               # auto: ring the terminal bell instead when no player exists (headless/ssh
+                              # hosts, the bell reaches your local terminal); always: bell and sound; never
 # volume = 0.6
 # min_interval_ms = 750
 # when_focused = false
