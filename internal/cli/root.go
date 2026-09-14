@@ -90,7 +90,11 @@ func Main(args []string) int {
 	case "completion":
 		return runCompletion(args[1:])
 	case "version", "--version", "-V":
-		fmt.Println("flok", strings.TrimPrefix(Version, "v"))
+		if stdoutIsTerminal() { // the lockup for people; "flok X.Y.Z" for scripts and the brew test
+			fmt.Println(Lockup(Version))
+		} else {
+			fmt.Println("flok", strings.TrimPrefix(Version, "v"))
+		}
 		return 0
 	case "help", "-h", "--help":
 		usage()

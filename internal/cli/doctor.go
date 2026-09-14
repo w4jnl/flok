@@ -187,6 +187,7 @@ func runDoctor(cfg config.Config) int {
 	}
 
 	rc := 0
+	fmt.Println(Lockup(Version))
 	for _, c := range out {
 		mark := map[string]string{"ok": "ok  ", "warn": "warn", "fail": "FAIL"}[c.level]
 		fmt.Printf("%s  %s\n", mark, c.text)
