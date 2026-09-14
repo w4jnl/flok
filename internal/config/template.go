@@ -70,6 +70,7 @@ const Template = `# flok configuration - https://github.com/w4jnl/flok
 # enabled = false
 # animate = true              # spin ◐◓◑◒ in the menu bar while an agent works
 # animate_ms = 500            # frame interval; each frame redraws the status item (CPU)
+# color = true                # spinner in the working colour, badge in the attention colour (no extra CPU)
 # badge = true                # show "● N" for agents waiting for you
 # focus = "auto"              # click-to-return: auto | aerospace | applescript | none | "shell command"
 # app = ""                    # terminal to focus; empty = the one flok up ran in (TERM_PROGRAM)

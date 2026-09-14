@@ -51,3 +51,26 @@ func TestTitleHeaderRows(t *testing.T) {
 		t.Fatal("max rows")
 	}
 }
+
+func TestTitleRunsColours(t *testing.T) {
+	s := snapshot.Snapshot{Agents: []snapshot.Agent{{PaneID: "%1", State: agent.Working}, {PaneID: "%2", State: agent.Blocked}}}
+	runs := TitleRuns(s, snapshot.Fresh, 1, Options{Animate: true, Badge: true})
+	if len(runs) != 2 || runs[0].Color != "working" || runs[1].Color != "attention" || runs[1].Text != " ● 1" {
+		t.Fatalf("runs: %+v", runs)
+	}
+	if Join(runs) != Title(s, snapshot.Fresh, 1, Options{Animate: true, Badge: true}) {
+		t.Fatalf("runs must spell the plain title: %q vs %q", Join(runs), Title(s, snapshot.Fresh, 1, Options{Animate: true, Badge: true}))
+	}
+	idle := TitleRuns(snapshot.Snapshot{Agents: []snapshot.Agent{{PaneID: "%1", State: agent.Idle}}}, snapshot.Fresh, 0, Options{Badge: true})
+	if len(idle) != 1 || idle[0].Color != "" || idle[0].Text != "○" {
+		t.Fatalf("idle: %+v", idle)
+	}
+	if gone := TitleRuns(snapshot.Snapshot{}, snapshot.Gone, 0, Options{}); len(gone) != 1 || gone[0].Text != "–" {
+		t.Fatalf("gone: %+v", gone)
+	}
+	for _, tok := range []string{"working", "attention", "done", "idle"} {
+		if _, ok := Palette[tok]; !ok {
+			t.Fatalf("palette lacks %s", tok)
+		}
+	}
+}

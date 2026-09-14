@@ -165,7 +165,7 @@ func (b *menuBar) render(now time.Time) {
 	b.mu.Lock()
 	s, f, frame := b.snap, b.fresh, b.frame
 	b.mu.Unlock()
-	b.setTitle(bar.Title(s, f, frame, b.options()))
+	b.setTitle(bar.TitleRuns(s, f, frame, b.options()))
 	if head := bar.Header(s, f); head != b.lastHead { // every AppKit call below is diffed: most
 		b.header.SetTitle(head) // refreshes change nothing and must cost nothing
 		b.lastHead = head
@@ -225,13 +225,24 @@ func (b *menuBar) render(now time.Time) {
 	}
 }
 
-func (b *menuBar) setTitle(t string) {
+// setTitle pushes the title once per change: as coloured runs ([bar] color, the state palette
+// via an attributed title) or as systray's plain title. Both cost one AppKit redraw.
+func (b *menuBar) setTitle(runs []bar.Run) {
+	key := bar.Join(runs)
+	for _, r := range runs {
+		key += "\x00" + r.Color
+	}
 	b.mu.Lock()
-	changed := t != b.lastTitle
-	b.lastTitle = t
+	changed := key != b.lastTitle
+	b.lastTitle = key
 	b.mu.Unlock()
-	if changed {
-		systray.SetTitle(t)
+	if !changed {
+		return
+	}
+	if b.cfg.Bar.Color {
+		setColoredTitle(runs)
+	} else {
+		systray.SetTitle(bar.Join(runs))
 	}
 }
 
@@ -253,7 +264,7 @@ func (b *menuBar) animate() {
 		s, f, frame := b.snap, b.fresh, b.frame
 		b.mu.Unlock()
 		if working {
-			b.setTitle(bar.Title(s, f, frame, b.options()))
+			b.setTitle(bar.TitleRuns(s, f, frame, b.options()))
 		}
 	}
 }

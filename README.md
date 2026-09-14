@@ -368,6 +368,7 @@ error = ""
 enabled = false
 animate = true              # spin ◐◓◑◒ in the menu bar while an agent works
 animate_ms = 500            # frame interval; every frame redraws the status item, so 2 fps by default
+color = true                # spinner in the working colour, badge in the attention colour (no extra CPU)
 badge = true                # "● N" for agents waiting for you (icon gains a dot too)
 focus = "auto"              # click-to-return: auto | aerospace | applescript | none | "shell command"
 app = ""                    # terminal to focus; empty = the one `flok up` ran in (TERM_PROGRAM)
