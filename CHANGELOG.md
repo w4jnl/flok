@@ -6,6 +6,8 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+## 0.3.6 (2026-09-15)
+
 - Light terminals get a light palette (Dracula's Alucard): `flok up` asks the terminal for its
   background and the sidebar, keybinds popup and pane border follow (`[theme] mode = auto | dark
   | light`, colours under `[theme.light]`). `flok theme` shows what was detected;
