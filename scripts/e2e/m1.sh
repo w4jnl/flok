@@ -37,6 +37,15 @@ OUT send-keys -t "$SIDEBAR" '@'
 sleep 0.8
 expect "space hotkey switched to Beta" '^Beta$' "$(IN list-clients -F '#{client_session}')"
 
+# the palette follows the terminal theme recorded by flok up (or set with `flok theme`)
+if tmux_at_least 3 3; then   # colour checks through capture -e / show on current tmux only
+"$BIN" theme light >/dev/null; sleep 1.2
+expect "light theme repaints the sidebar (brand #12999D)" '18;153;157' "$(OUT capture-pane -e -p -t "$SIDEBAR")"
+expect "light theme recolours the outer pane border"      'cfcfde'     "$(OUT show -gv pane-border-style)"
+"$BIN" theme dark >/dev/null; sleep 1.2
+expect "dark theme is back (brand #3FD0D4)"               '63;208;21[12]' "$(OUT capture-pane -e -p -t "$SIDEBAR")"   # the 8-bit conversion rounds D4 to 211
+fi
+
 OUT resize-pane -t "$SIDEBAR" -x 6
 sleep 0.8
 snap=$(capture); echo "--- rail ---"; printf '%s\n' "$snap" | grep -v '^ *$' | head -5

@@ -34,6 +34,8 @@ usage: flok <command>
   keys        keybinds help (tmux popup); --print [--filter q] dumps it as text
   explain     show which screen-detection rules match agent panes (debugging)
   doctor      check tmux, hooks, sounds, manifests and the running outer session
+  theme       [auto|dark|light]: show the terminal background flok detects, or switch the
+              sidebar between its dark and light palette
   install     wire Claude Code / Copilot CLI hooks and print the tmux.conf snippet
               and write a commented default config.toml if none exists
               (--claude, --copilot, --tmux, --config; default: all)
@@ -77,6 +79,8 @@ func Main(args []string) int {
 		return runExplain(cfg, args[1:])
 	case "doctor":
 		return runDoctor(cfg)
+	case "theme":
+		return runTheme(cfg, args[1:])
 	case "jump", "next", "prev":
 		return runNav(cfg, args[0], args[1:])
 	case "toggle", "hide", "focus", "reload":

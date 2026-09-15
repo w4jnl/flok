@@ -164,6 +164,11 @@ main thread. Icons come from `assets/icons/gen` (`make icons`). e2e coverage: `s
   off macOS; `[bar] enabled` is ignored off macOS with a message. A libghostty-based redesign was
   studied (Sep 2026) and rejected: only the VT parser is public, all bindings are cgo; the outer
   tmux is the one host that runs everywhere.
+- Light/dark: `flok up` asks the terminal for its background (OSC 11 with a DA1 sentinel,
+  `internal/termtheme`) before tmux owns it and records `terminal-theme` in the state dir; the
+  sidebar reads it each poll (fsnotify for instant switches), `config.Theme` resolves `mode`
+  against it, and `borderCmd` recolours the outer border. Do not rely on tmux's `client_theme`:
+  it can report the OS appearance instead of the actual background (Dracula on a Light Mac).
 - tmux versions: flok runs on 2.7 (RHEL 8) and newer, everything from 3.3. The gates are
   `tmux.Features` (`internal/tmux/version.go`, derived from `tmux -V`, recorded by `flok up` in
   `runtime.json` as `tmux_version` so other commands do not fork). The outer config template is

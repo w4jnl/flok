@@ -25,6 +25,7 @@ var commands = []command{
 	{"keys", "keybinds help", []string{"--print", "--filter"}},
 	{"explain", "show matching screen-detection rules for a pane", nil},
 	{"doctor", "check the installation", nil},
+	{"theme", "show or switch the light/dark palette", nil},
 	{"install", "wire agent hooks and print the tmux snippet", []string{"--claude", "--copilot", "--tmux"}},
 	{"completion", "print a shell completion script", nil},
 	{"version", "print the version", nil},

@@ -9,6 +9,7 @@ import (
 
 	"github.com/w4jnl/flok/internal/config"
 	"github.com/w4jnl/flok/internal/keys"
+	"github.com/w4jnl/flok/internal/launcher"
 	"github.com/w4jnl/flok/internal/tmux"
 	"github.com/w4jnl/flok/internal/ui"
 )
@@ -52,7 +53,7 @@ func runKeys(cfg config.Config, args []string) int {
 		fmt.Print(ui.Dump(secs, filter))
 		return 0
 	}
-	h := ui.NewHelp(ui.NewTheme(cfg.Theme), secs, true)
+	h := ui.NewHelp(ui.NewTheme(launcher.ActivePalette(cfg)), secs, true)
 	p := tea.NewProgram(h, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		return report(err)

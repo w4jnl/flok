@@ -84,11 +84,15 @@ const Template = `# flok configuration - https://github.com/w4jnl/flok
                               # server; empty opens the file with the macOS default app
 
 [theme]                       # Dracula; state tokens may name a colour or a hex value
+# mode = "auto"               # auto: follow the terminal background, asked at flok up | dark | light
 # working = "cyan"
 # blocked = "orange"
 # done = "green"
 # idle = "comment"
-# brand = "#3FD0D4"           # wordmark / rail mark accent; "#12999D" suits light backgrounds
+# brand = "#3FD0D4"           # wordmark / rail mark accent
+
+# [theme.light]               # palette for light terminals (Dracula's Alucard); same keys as [theme]
+# brand = "#12999D"
 `
 
 // WriteTemplate creates the config file with Template when it does not exist yet.

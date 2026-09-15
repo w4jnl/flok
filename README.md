@@ -382,11 +382,15 @@ max_rows = 16
 editor = ""                 # "Edit config…" in the bar: "nvim" opens it in a new tmux window; "" = `open`
 
 [theme]                     # Dracula by default; state tokens may name a colour or a hex value
+mode = "auto"               # auto: follow the terminal's background, asked at `flok up` | dark | light
 working = "cyan"
 blocked = "orange"
 done = "green"
 idle = "comment"
-brand = "#3FD0D4"           # wordmark / rail mark accent; "#12999D" suits light backgrounds
+brand = "#3FD0D4"           # wordmark / rail mark accent
+
+[theme.light]               # palette for light terminals (Dracula's Alucard); same keys as [theme]
+brand = "#12999D"
 ```
 
 ## Files

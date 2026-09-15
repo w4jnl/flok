@@ -22,3 +22,18 @@ func TestMarkerFlags(t *testing.T) {
 		t.Fatal("markers must flip back")
 	}
 }
+
+func TestTerminalTheme(t *testing.T) {
+	s := New(t.TempDir())
+	if th, bg := s.TerminalTheme(); th != "" || bg != "" {
+		t.Fatal("no record: unknown")
+	}
+	_ = s.SetTerminalTheme("light", "#fffbeb")
+	if th, bg := s.TerminalTheme(); th != "light" || bg != "#fffbeb" {
+		t.Fatalf("round trip: %q %q", th, bg)
+	}
+	_ = s.SetTerminalTheme("", "")
+	if th, _ := s.TerminalTheme(); th != "" {
+		t.Fatal("clearing removes the record")
+	}
+}

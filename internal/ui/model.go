@@ -87,9 +87,11 @@ type Model struct {
 	lastRaw                string        // raw tmux output behind tmuxSnap (fingerprint input for rebuilds)
 	lastHook               map[string]agent.Agent
 	lastSeen               map[string]time.Time
-	unfocused              bool // terminal-focus marker: the terminal window is not focused
-	hidden                 bool // sidebar-hidden marker / window_zoomed_flag: the pane is not visible
-	focused                bool // the outer's active pane is the sidebar: keys arrive here
+	unfocused              bool   // terminal-focus marker: the terminal window is not focused
+	hidden                 bool   // sidebar-hidden marker / window_zoomed_flag: the pane is not visible
+	focused                bool   // the outer's active pane is the sidebar: keys arrive here
+	dark                   bool   // the dark palette is in use (see config.Theme.IsDark)
+	themeRec               string // terminal theme recorded by flok up ("dark", "light", "")
 	// Inner tmux prefix, so chords typed while the sidebar has focus are replayed into the work
 	// pane instead of being swallowed (prefixTmux "C-a", prefixKey "ctrl+a").
 	prefixTmux    string
@@ -111,7 +113,8 @@ type (
 		seen      map[string]time.Time
 		unfocused bool
 		hidden    bool
-		rebuilt   bool // produced by rebuild from cached tmux data, not by a tmux poll
+		theme     string // terminal theme record ("dark", "light", "")
+		rebuilt   bool   // produced by rebuild from cached tmux data, not by a tmux poll
 		err       error
 	}
 	switchedMsg     struct{ err error }
@@ -132,7 +135,12 @@ type viewCache struct {
 
 func New(d Deps) Model {
 	lipgloss.SetColorProfile(termenv.TrueColor)
-	m := Model{d: d, theme: NewTheme(d.Cfg.Theme), tracker: merge.NewTracker(), clientTTY: d.ClientTTY, changes: make(chan struct{}, 1), vc: &viewCache{},
+	themeRec := ""
+	if d.Store != nil {
+		themeRec, _ = d.Store.TerminalTheme()
+	}
+	dark := d.Cfg.Theme.IsDark(themeRec)
+	m := Model{d: d, dark: dark, themeRec: themeRec, theme: NewTheme(d.Cfg.Theme.Resolve(dark)), tracker: merge.NewTracker(), clientTTY: d.ClientTTY, changes: make(chan struct{}, 1), vc: &viewCache{},
 		prevState: map[string]agent.State{}, sounder: notify.Noop{}, started: time.Now()}
 	if m.clientTTY == "" && d.Outer != nil && d.RightPane != "" {
 		if tty, err := tmux.Display(d.Outer, d.RightPane, "#{pane_tty}"); err == nil {
@@ -237,6 +245,30 @@ func (m *Model) repinAfterResize(width int) tea.Cmd {
 	return tea.Tick(200*time.Millisecond, func(time.Time) tea.Msg { return repinMsg{} })
 }
 
+// setTheme switches between the dark and the light palette and repaints (help overlay included).
+func (m *Model) setTheme(dark bool) {
+	m.dark = dark
+	m.theme = NewTheme(m.d.Cfg.Theme.Resolve(dark))
+	if m.help != nil {
+		m.help.theme = m.theme
+	}
+	m.vc.valid = false
+	m.debugf("theme dark=%v", dark)
+}
+
+// borderCmd recolours the outer server's pane border, which `flok up` rendered from the palette
+// of the moment.
+func (m Model) borderCmd() tea.Cmd {
+	outer, col := m.d.Outer, "fg="+string(m.theme.CurrentLine)
+	if outer == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		_, _ = outer.Run("set", "-g", "pane-border-style", col, ";", "set", "-g", "pane-active-border-style", col)
+		return nil
+	}
+}
+
 // storeEventWanted filters fsnotify events: hook records and seen marks under agents/ and seen/,
 // plus the sidebar-hidden marker in the root (un-hide must resume the spinner at once);
 // everything else in the root (our own snapshot.json temp+rename writes, terminal-focus, which
@@ -244,7 +276,7 @@ func (m *Model) repinAfterResize(width int) tea.Cmd {
 func storeEventWanted(root, name string) bool {
 	base := filepath.Base(name)
 	if filepath.Dir(name) == root {
-		return base == "sidebar-hidden"
+		return base == "sidebar-hidden" || base == "terminal-theme"
 	}
 	return strings.HasSuffix(base, ".json")
 }
@@ -600,6 +632,7 @@ func (m Model) poll() tea.Cmd {
 		if store != nil {
 			msg.hook, msg.seen = store.LoadAgents(), store.LoadSeen()
 			msg.unfocused, msg.hidden = !store.TerminalFocused(), store.SidebarHidden()
+			msg.theme, _ = store.TerminalTheme()
 		}
 		msg.fp = fingerprint(raw, msg.hook, msg.seen, msg.unfocused)
 		return msg
@@ -629,13 +662,14 @@ func (m Model) rebuild(reloadStore bool) tea.Cmd {
 	}
 	store := m.d.Store
 	snap, raw := m.tmuxSnap, m.lastRaw
-	hook, seen, unfocused, hidden := m.lastHook, m.lastSeen, m.unfocused, m.hidden
+	hook, seen, unfocused, hidden, theme := m.lastHook, m.lastSeen, m.unfocused, m.hidden, m.themeRec
 	return func() tea.Msg {
 		if reloadStore && store != nil {
 			hook, seen = store.LoadAgents(), store.LoadSeen()
 			unfocused, hidden = !store.TerminalFocused(), store.SidebarHidden()
+			theme, _ = store.TerminalTheme()
 		}
-		return snapshotMsg{snap: snap, raw: raw, hook: hook, seen: seen, unfocused: unfocused, hidden: hidden,
+		return snapshotMsg{snap: snap, raw: raw, hook: hook, seen: seen, unfocused: unfocused, hidden: hidden, theme: theme,
 			fp: fingerprint(raw, hook, seen, unfocused), rebuilt: true}
 	}
 }
@@ -738,6 +772,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.focus != nil && *msg.focus != m.focused {
 			m.focused, focusChanged = *msg.focus, true
 		}
+		themeChanged := false
+		if dark := m.d.Cfg.Theme.IsDark(msg.theme); dark != m.dark {
+			m.setTheme(dark)
+			themeChanged = true
+		}
+		m.themeRec = msg.theme
 		wasIdle := m.idle()
 		m.unfocused, m.hidden = msg.unfocused, msg.hidden
 		if msg.zoomed != nil {
@@ -751,12 +791,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.tmuxSnap, m.lastRaw, m.lastHook, m.lastSeen = msg.snap, msg.raw, msg.hook, msg.seen
 		var cmds []tea.Cmd
+		if themeChanged {
+			cmds = append(cmds, m.borderCmd())
+		}
 		if wasIdle && !m.idle() && msg.rebuilt { // someone is looking again: cached tmux data may be idle_poll_ms old
 			cmds = append(cmds, m.poll())
 		}
 		if msg.fp == m.lastFP && m.registrySeq == m.lastRegSeq && m.screenSeq == m.lastScrSeq && m.errText == "" {
-			m.vc.valid = !focusChanged // identical inputs: keep the frame, skip the merge
-			if m.publisher != nil {    // the merge did not run, so keep flok-bar's liveness signal going
+			m.vc.valid = !focusChanged && !themeChanged // identical inputs: keep the frame, skip the merge
+			if m.publisher != nil {                     // the merge did not run, so keep flok-bar's liveness signal going
 				_, _ = m.publisher.Heartbeat(time.Now())
 			}
 			return m, batch(append(cmds, m.animCmd())...)

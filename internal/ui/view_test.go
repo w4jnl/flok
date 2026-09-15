@@ -4,9 +4,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/w4jnl/flok/internal/agent"
+	"github.com/w4jnl/flok/internal/config"
 	"github.com/w4jnl/flok/internal/merge"
 )
 
@@ -60,5 +62,28 @@ func TestBrandMarkOnTheRail(t *testing.T) {
 	}
 	if short := render(m, 6, 7); !strings.Contains(short[0], "①") {
 		t.Fatalf("a short rail drops the mark: %q", short[0])
+	}
+}
+
+func TestThemeFollowsTheTerminalRecord(t *testing.T) {
+	m, _ := newTestModel(t)
+	def := config.Default().Theme
+	if !m.dark || m.theme.Brand != lipgloss.Color(def.Brand) {
+		t.Fatal("no record: the dark palette")
+	}
+	m.lastRaw = "raw"
+	if err := m.d.Store.SetTerminalTheme("light", "#fffbeb"); err != nil {
+		t.Fatal(err)
+	}
+	m.vc.valid = true
+	next, _ := m.Update(m.rebuild(true)().(snapshotMsg))
+	m = next.(Model)
+	if m.dark || m.theme.Brand != lipgloss.Color(def.Light.Brand) || m.theme.FG != lipgloss.Color(def.Light.FG) || m.vc.valid {
+		t.Fatalf("a light record switches the palette and repaints: dark=%v brand=%v valid=%v", m.dark, m.theme.Brand, m.vc.valid)
+	}
+	m.d.Cfg.Theme.Mode = "dark" // config wins over the record
+	next, _ = m.Update(m.rebuild(true)().(snapshotMsg))
+	if m = next.(Model); !m.dark {
+		t.Fatal("[theme] mode = dark overrides a light terminal")
 	}
 }

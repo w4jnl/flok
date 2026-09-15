@@ -13,7 +13,7 @@ type Theme struct {
 	Brand                                                                        lipgloss.Color // wordmark / rail mark accent
 }
 
-func NewTheme(c config.Theme) Theme {
+func NewTheme(c config.Palette) Theme {
 	t := Theme{BG: lipgloss.Color(c.BG), CurrentLine: lipgloss.Color(c.CurrentLine), FG: lipgloss.Color(c.FG),
 		Comment: lipgloss.Color(c.Comment), Cyan: lipgloss.Color(c.Cyan), Green: lipgloss.Color(c.Green),
 		Orange: lipgloss.Color(c.Orange), Pink: lipgloss.Color(c.Pink), Purple: lipgloss.Color(c.Purple),

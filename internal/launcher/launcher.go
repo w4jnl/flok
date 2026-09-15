@@ -23,6 +23,7 @@ import (
 	"github.com/w4jnl/flok/internal/config"
 	"github.com/w4jnl/flok/internal/snapshot"
 	"github.com/w4jnl/flok/internal/state"
+	"github.com/w4jnl/flok/internal/termtheme"
 	"github.com/w4jnl/flok/internal/tmux"
 )
 
@@ -161,7 +162,7 @@ func RenderOuterConf(cfg config.Config, bin string, f tmux.Features) (string, er
 		return "", err
 	}
 	var b bytes.Buffer
-	err = tmpl.Execute(&b, outerData{Bin: bin, Border: cfg.Theme.CurrentLine, DefaultTerminal: DefaultTerminal(),
+	err = tmpl.Execute(&b, outerData{Bin: bin, Border: ActivePalette(cfg).CurrentLine, DefaultTerminal: DefaultTerminal(),
 		ExtraConf: config.ExpandHome(cfg.Outer.ExtraConf), Width: strconv.Itoa(cfg.Sidebar.Width), F: f})
 	return b.String(), err
 }
@@ -190,6 +191,9 @@ func termSize() (int, int) {
 func Up(cfg config.Config, bin string, detach bool) error {
 	if os.Getenv("TMUX") != "" && !detach {
 		return errors.New("flok up: run it from a plain terminal, not inside tmux")
+	}
+	if os.Getenv("TMUX") == "" && cfg.Theme.Mode != "dark" && cfg.Theme.Mode != "light" {
+		_, _ = DetectTerminalTheme() // before tmux owns the terminal; the sidebar follows the record
 	}
 	ver := tmux.DetectVersion("")
 	if ver.Known && !ver.AtLeast(tmux.Floor.Major, tmux.Floor.Minor) {
@@ -462,6 +466,28 @@ func Down(cfg config.Config) error {
 // (the outer's client-focus-in/out hooks run `flok _focus 1|0`).
 func SetTerminalFocus(focused bool) error {
 	return state.New(config.StateDir()).SetTerminalFocus(focused)
+}
+
+// DetectTerminalTheme asks the terminal this process runs in for its background and records the
+// result for the sidebar ([theme] mode = auto). A terminal that answers but does not report its
+// background clears the record (the sidebar falls back to dark); no terminal at all keeps it.
+func DetectTerminalTheme() (termtheme.Result, error) {
+	st := state.New(config.StateDir())
+	r, err := termtheme.Detect(time.Second)
+	switch {
+	case err == nil:
+		_ = st.SetTerminalTheme(r.Theme, r.BG)
+	case errors.Is(err, termtheme.ErrNoReply):
+		_ = st.SetTerminalTheme("", "")
+	}
+	return r, err
+}
+
+// ActivePalette is the palette for the terminal flok runs in: [theme] mode, else the theme
+// detected at flok up.
+func ActivePalette(cfg config.Config) config.Palette {
+	theme, _ := state.New(config.StateDir()).TerminalTheme()
+	return cfg.Theme.Resolve(cfg.Theme.IsDark(theme))
 }
 
 // SetSidebarHidden records whether `flok hide` zoomed the work pane over the sidebar.

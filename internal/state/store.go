@@ -2,6 +2,7 @@ package state
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -142,6 +143,31 @@ func (s *Store) SetTerminalFocus(focused bool) error {
 }
 func (s *Store) SetSidebarHidden(hidden bool) error {
 	return writeFlag(s.Dir, "sidebar-hidden", hidden)
+}
+
+// TerminalTheme is the terminal theme `flok up` detected ("dark", "light", or "" when unknown) and
+// the background colour it came from ("" when set by hand with `flok theme`).
+func (s *Store) TerminalTheme() (theme, bg string) {
+	f := strings.Fields(readFlag(s.Dir, "terminal-theme"))
+	if len(f) > 0 {
+		theme = f[0]
+	}
+	if len(f) > 1 {
+		bg = f[1]
+	}
+	return theme, bg
+}
+
+// SetTerminalTheme records the terminal theme; an empty theme removes the record.
+func (s *Store) SetTerminalTheme(theme, bg string) error {
+	p := filepath.Join(s.Dir, "terminal-theme")
+	if theme == "" {
+		if err := os.Remove(p); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		return nil
+	}
+	return os.WriteFile(p, []byte(strings.TrimSpace(theme+" "+bg)), 0o644)
 }
 
 func readFlag(dir, name string) string {

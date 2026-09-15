@@ -82,7 +82,8 @@ type Bar struct {
 	Blink     bool   `toml:"blink"`      // alternate outline and solid icon every ~1.15 s while an agent waits, until the terminal is focused
 }
 
-type Theme struct {
+// Palette is one set of sidebar colours.
+type Palette struct {
 	BG          string `toml:"bg"`
 	CurrentLine string `toml:"current_line"`
 	FG          string `toml:"fg"`
@@ -99,6 +100,34 @@ type Theme struct {
 	Done        string `toml:"done"`
 	Idle        string `toml:"idle"`
 	Brand       string `toml:"brand"` // wordmark / rail mark accent
+}
+
+// Theme is the sidebar's colours: the dark palette under [theme] (Dracula by default), the light
+// one under [theme.light] (Dracula's Alucard), and which of the two applies.
+type Theme struct {
+	Palette
+	Mode  string  `toml:"mode"` // auto (follow the terminal background, detected at flok up) | dark | light
+	Light Palette `toml:"light"`
+}
+
+// IsDark says whether the dark palette applies, given the theme detected at flok up ("dark",
+// "light", or "" when unknown, which counts as dark).
+func (t Theme) IsDark(detected string) bool {
+	switch t.Mode {
+	case "dark":
+		return true
+	case "light":
+		return false
+	}
+	return detected != "light"
+}
+
+// Resolve returns the dark or the light palette.
+func (t Theme) Resolve(dark bool) Palette {
+	if dark {
+		return t.Palette
+	}
+	return t.Light
 }
 
 type Config struct {
@@ -123,9 +152,13 @@ func Default() Config {
 		Sounds: Sounds{Enabled: true, Player: "hook", Bell: "auto", Volume: 0.6, MinIntervalMs: 750,
 			Done: "", Blocked: "", Error: ""}, // empty = the bundled herdr sounds (done.wav / request.wav)
 		Bar: Bar{Enabled: false, Animate: true, Badge: true, Focus: "auto", MaxRows: 16, AnimateMs: 500, Color: true, IconSize: 18, Blink: true},
-		Theme: Theme{BG: "#282a36", CurrentLine: "#44475a", FG: "#f8f8f2", Comment: "#6272a4", Cyan: "#8be9fd", Green: "#50fa7b",
-			Orange: "#ffb86c", Pink: "#ff79c6", Purple: "#bd93f9", Red: "#ff5555", Yellow: "#f1fa8c",
-			Working: "cyan", Blocked: "orange", Done: "green", Idle: "comment", Brand: "#3FD0D4"},
+		Theme: Theme{Mode: "auto",
+			Palette: Palette{BG: "#282a36", CurrentLine: "#44475a", FG: "#f8f8f2", Comment: "#6272a4", Cyan: "#8be9fd", Green: "#50fa7b",
+				Orange: "#ffb86c", Pink: "#ff79c6", Purple: "#bd93f9", Red: "#ff5555", Yellow: "#f1fa8c",
+				Working: "cyan", Blocked: "orange", Done: "green", Idle: "comment", Brand: "#3FD0D4"},
+			Light: Palette{BG: "#fffbeb", CurrentLine: "#cfcfde", FG: "#1f1f1f", Comment: "#635d97", Cyan: "#036a96", Green: "#14710a",
+				Orange: "#a34d14", Pink: "#a3144d", Purple: "#644ac9", Red: "#cb3a2a", Yellow: "#846e15",
+				Working: "cyan", Blocked: "orange", Done: "green", Idle: "comment", Brand: "#12999D"}},
 	}
 }
 

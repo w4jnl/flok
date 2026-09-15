@@ -14,6 +14,7 @@ import (
 	"github.com/w4jnl/flok/internal/launcher"
 	"github.com/w4jnl/flok/internal/notify"
 	"github.com/w4jnl/flok/internal/rules"
+	"github.com/w4jnl/flok/internal/state"
 	"github.com/w4jnl/flok/internal/tmux"
 )
 
@@ -84,6 +85,17 @@ func runDoctor(cfg config.Config) int {
 		add("warn", "`%s agents --json` failed (%v); registry fallback disabled", bin, err)
 	} else {
 		add("ok", "`claude agents --json` works via %s (%d sessions)", bin, len(entries))
+	}
+
+	// theme
+	if rec, bg := state.New(config.StateDir()).TerminalTheme(); cfg.Theme.Mode == "dark" || cfg.Theme.Mode == "light" {
+		add("ok", "theme: %s ([theme] mode)", cfg.Theme.Mode)
+	} else if rec == "" {
+		add("ok", "theme: dark (terminal background not detected; `flok theme` in a plain terminal checks it)")
+	} else if bg == "" {
+		add("ok", "theme: %s (set with flok theme)", rec)
+	} else {
+		add("ok", "theme: %s (terminal background %s, detected at flok up)", themeName(cfg.Theme.IsDark(rec)), bg)
 	}
 
 	// sounds
