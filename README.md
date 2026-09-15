@@ -60,7 +60,7 @@ What that means in practice:
   the pane in front of you; debounced so ten agents finishing together beep once.
 - **Navigation**: click or `Enter` on a row to jump there; `prefix o` jumps to whatever needs you.
 - **Rail** mode at six columns, hide mode at zero, both a keystroke away. The `[flok]` wordmark
-  sits on top of the wide sidebar, the bracket mark on the rail.
+  sits on top of the wide sidebar, the mark on the rail.
 - **Keybinds help**: `prefix ?` opens a popup listing all live bindings of your tmux server,
   grouped (flok, prefix, no prefix, copy-mode, plugins), with tmux's own notes as labels and `/`
   to filter.
@@ -329,7 +329,7 @@ sessions_max_ratio = 0.4    # at most this share of the height for the sessions 
 session_order = "index"     # same order as tmux's chooser (prefix s): index | name | activity
 agent_rows = 2              # 2: project + "kind · title" line per agent; 1: single line
 show_branch = true
-brand = true                # [flok] wordmark on top (the bracket mark on the rail)
+brand = true                # [flok] wordmark on top (the mark on the rail)
 branch_source = "active_pane"   # or "session_path"
 poll_ms = 1000
 idle_poll_ms = 3000         # while the sidebar is hidden (prefix B); the spinner pauses too

@@ -29,7 +29,7 @@ type Sidebar struct {
 	SessionOrder     string  `toml:"session_order"` // index (tmux's chooser order) | name | activity
 	AgentRows        int     `toml:"agent_rows"`    // lines per agent row: 2 (name + "kind · title") or 1
 	ShowBranch       bool    `toml:"show_branch"`
-	Brand            bool    `toml:"brand"` // [flok] wordmark on top (the bracket mark on the rail)
+	Brand            bool    `toml:"brand"` // [flok] wordmark on top (the mark on the rail)
 	BranchSource     string  `toml:"branch_source"`
 	PollMs           int     `toml:"poll_ms"`
 	IdlePollMs       int     `toml:"idle_poll_ms"` // poll interval while the sidebar is hidden (prefix B)

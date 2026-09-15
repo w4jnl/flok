@@ -1,11 +1,15 @@
 package ui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+)
 
 // The sidebar's brand line, the text form of assets/brand: the [flok] wordmark on top of the
-// wide layout and the bracket mark on the rail — the menu bar icon drawn in glyphs, ⌈⌉⌊⌋ framing
-// the chevron ⩓ and the cursor ▁ of the brand's ASCII lockup (internal/cli/brand.go). Like the
-// icon, the frame takes the brand accent and the name, chevron and cursor the foreground.
+// wide layout, and on the rail the mark's top half — the chevron ⩓ of the brand's ASCII lockup
+// (internal/cli/brand.go) under ⌈ ⌉ — above a separator. Like the icon, the frame takes the brand
+// accent and the name and chevron the foreground.
 
 // brandRows is how many lines the brand takes: one on the wide layout, two on the rail, none
 // when switched off ([sidebar] brand) or when the pane is too short to spare them.
@@ -35,12 +39,10 @@ func (m Model) brandWordmark() string {
 	return frame.Render("[") + ink.Render("flok") + frame.Render("]")
 }
 
-// brandRail is the two-line mark for the rail; the leading space puts the chevron and the
-// cursor in the column of the rail's digits.
+// brandRail is the rail's mark and the separator under it (styled like the one between the
+// sessions and the agents); the leading space puts the chevron in the column of the digits.
 func (m Model) brandRail() []string {
 	frame, ink := m.brandStyles()
-	return []string{
-		" " + frame.Render("⌈") + ink.Render("⩓") + frame.Render("⌉"),
-		" " + frame.Render("⌊") + ink.Render("▁") + frame.Render("⌋"),
-	}
+	sep := lipgloss.NewStyle().Foreground(m.theme.Comment).Render(strings.Repeat("─", m.width))
+	return []string{" " + frame.Render("⌈") + ink.Render("⩓") + frame.Render("⌉"), sep}
 }

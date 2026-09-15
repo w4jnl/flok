@@ -51,8 +51,8 @@ func TestBrandWordmarkOnTheWideLayout(t *testing.T) {
 func TestBrandMarkOnTheRail(t *testing.T) {
 	m := brandModel(t)
 	lines := render(m, 6, 30)
-	if len(lines) != 30 || !strings.Contains(lines[0], "⌈⩓⌉") || !strings.Contains(lines[1], "⌊▁⌋") || !strings.Contains(lines[2], "①") {
-		t.Fatalf("rail: want the two-line mark above ①, got %q", lines[:3])
+	if len(lines) != 30 || !strings.Contains(lines[0], "⌈⩓⌉") || lines[1] != strings.Repeat("─", 6) || !strings.Contains(lines[2], "①") {
+		t.Fatalf("rail: want the mark and a separator above ①, got %q", lines[:3])
 	}
 	m.width, m.height = 6, 30
 	if p, i, ok := m.rowAt(2); !ok || p != panelSpaces || i != 0 {
