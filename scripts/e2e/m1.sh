@@ -4,6 +4,7 @@ source "$(dirname "$0")/lib.sh"
 
 snap=$(capture)
 echo "--- sidebar (idle) ---"; printf '%s\n' "$snap" | grep -v '^ *$' | head -8
+expect "brand wordmark on top"     '^\[flok\]'             "$snap"
 expect "spaces header"            '^sessions'              "$snap"
 expect "both sessions listed"     "Alpha.*${REPO_BRANCH:0:6}"  "$snap"   # long branch names are truncated with …
 expect "second session listed"    'Beta'                 "$snap"
@@ -40,6 +41,7 @@ OUT resize-pane -t "$SIDEBAR" -x 6
 sleep 0.8
 snap=$(capture); echo "--- rail ---"; printf '%s\n' "$snap" | grep -v '^ *$' | head -5
 expect "rail circled spaces" '①' "$snap"
+expect "rail brand mark"     '⌈⩓⌉' "$snap"
 expect "rail separator"      '─' "$snap"
 OUT send-keys -t "$SIDEBAR" '!'; sleep 0.6      # a space hotkey parks the cursor in the spaces panel
 expect "rail shows the cursor in the spaces panel" '^›\s*[①②]' "$(capture)"

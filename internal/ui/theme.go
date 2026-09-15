@@ -10,6 +10,7 @@ import (
 type Theme struct {
 	BG, CurrentLine, FG, Comment, Cyan, Green, Orange, Pink, Purple, Red, Yellow lipgloss.Color
 	Working, Blocked, Done, Idle                                                 lipgloss.Color
+	Brand                                                                        lipgloss.Color // wordmark / rail mark accent
 }
 
 func NewTheme(c config.Theme) Theme {
@@ -46,6 +47,7 @@ func NewTheme(c config.Theme) Theme {
 	t.Blocked = tok(c.Blocked, t.Orange)
 	t.Done = tok(c.Done, t.Green)
 	t.Idle = tok(c.Idle, t.Comment)
+	t.Brand = tok(c.Brand, lipgloss.Color("#3FD0D4"))
 	return t
 }
 

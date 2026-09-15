@@ -13,6 +13,7 @@ import (
 
 type layout struct {
 	rail                  bool
+	brandRows             int // lines the brand takes on top (see brand.go)
 	spacesTop, spacesRows int
 	agentsTop, agentsRows int // agentsRows counts agents, each perAgent lines tall
 	footerY               int
@@ -24,8 +25,9 @@ func (m Model) isRail() bool { return m.width > 0 && m.width < m.d.Cfg.Sidebar.R
 func (m Model) layout() layout {
 	h := m.height
 	nS, nA := len(m.snap.Spaces), len(m.snap.Agents)
+	brand := m.brandRows()
 	if m.isRail() {
-		avail := h - 1 // separator
+		avail := h - 1 - brand // separator, brand mark
 		if avail < 2 {
 			avail = 2
 		}
@@ -42,10 +44,10 @@ func (m Model) layout() layout {
 			s += extra
 			a -= extra
 		}
-		return layout{rail: true, spacesTop: 0, spacesRows: s, agentsTop: s + 1, agentsRows: a, perAgent: 1}
+		return layout{rail: true, brandRows: brand, spacesTop: brand, spacesRows: s, agentsTop: brand + s + 1, agentsRows: a, perAgent: 1}
 	}
 	per := m.agentRows()
-	avail := h - 4 // two headers, one blank line, footer
+	avail := h - 4 - brand // two headers, one blank line, footer, brand line
 	if avail < 1+per {
 		avail = 1 + per
 	}
@@ -74,7 +76,7 @@ func (m Model) layout() layout {
 	if a < 1 {
 		a = 1
 	}
-	return layout{spacesTop: 1, spacesRows: s, agentsTop: 1 + s + 2, agentsRows: a, footerY: h - 1, perAgent: per}
+	return layout{brandRows: brand, spacesTop: 1 + brand, spacesRows: s, agentsTop: 1 + brand + s + 2, agentsRows: a, footerY: h - 1, perAgent: per}
 }
 
 // agentRows is the configured number of lines per agent row, clamped to 1..2.
@@ -157,6 +159,9 @@ func (m Model) viewFull() string {
 	blank := strings.Repeat(" ", w)
 
 	lines := make([]string, 0, m.height)
+	if lay.brandRows > 0 {
+		lines = append(lines, pad(m.brandWordmark(), w, plain))
+	}
 	lines = append(lines, pad(hdr.Render("sessions"), w, plain))
 	for r := 0; r < lay.spacesRows; r++ {
 		if i := m.offset[panelSpaces] + r; i < len(m.snap.Spaces) {
@@ -375,6 +380,11 @@ func (m Model) viewRail() string {
 		return base.Render(" ")
 	}
 	overflow := func(n int) string { return pad(dim.Render(fmt.Sprintf("+%d", n)), w, plain) }
+	if lay.brandRows > 0 {
+		for _, l := range m.brandRail() {
+			lines = append(lines, pad(l, w, plain))
+		}
+	}
 
 	for r := 0; r < lay.spacesRows; r++ {
 		i := m.offset[panelSpaces] + r

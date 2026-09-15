@@ -29,6 +29,7 @@ type Sidebar struct {
 	SessionOrder     string  `toml:"session_order"` // index (tmux's chooser order) | name | activity
 	AgentRows        int     `toml:"agent_rows"`    // lines per agent row: 2 (name + "kind · title") or 1
 	ShowBranch       bool    `toml:"show_branch"`
+	Brand            bool    `toml:"brand"` // [flok] wordmark on top (the bracket mark on the rail)
 	BranchSource     string  `toml:"branch_source"`
 	PollMs           int     `toml:"poll_ms"`
 	IdlePollMs       int     `toml:"idle_poll_ms"` // poll interval while the sidebar is hidden (prefix B)
@@ -97,6 +98,7 @@ type Theme struct {
 	Blocked     string `toml:"blocked"`
 	Done        string `toml:"done"`
 	Idle        string `toml:"idle"`
+	Brand       string `toml:"brand"` // wordmark / rail mark accent
 }
 
 type Config struct {
@@ -115,7 +117,7 @@ func Default() Config {
 	return Config{
 		Inner:   Inner{Socket: "default", ReattachOnDetach: false},
 		Outer:   Outer{Socket: "flok", Session: "flok", ExtraConf: "~/.config/flok/outer.extra.conf"},
-		Sidebar: Sidebar{Width: 28, RailWidth: 6, RailThreshold: 12, SessionsMaxRatio: 0.4, AgentRows: 2, SessionOrder: "index", ShowBranch: true, BranchSource: "active_pane", PollMs: 1000, IdlePollMs: 3000, SpinnerMs: 250, FPS: 15, RegistryPollMs: 10000, ScreenPollMs: 2000, CaptureLines: 0, StaleWorkingMin: 30},
+		Sidebar: Sidebar{Width: 28, RailWidth: 6, RailThreshold: 12, SessionsMaxRatio: 0.4, AgentRows: 2, SessionOrder: "index", ShowBranch: true, Brand: true, BranchSource: "active_pane", PollMs: 1000, IdlePollMs: 3000, SpinnerMs: 250, FPS: 15, RegistryPollMs: 10000, ScreenPollMs: 2000, CaptureLines: 0, StaleWorkingMin: 30},
 		Agents:  Agents{Enabled: []string{"claude", "copilot"}, ManifestDir: "~/.config/flok/agents", ScreenRules: "auto"},
 		Keys:    Keys{Tables: []string{"prefix", "root", "copy-mode-vi"}},
 		Sounds: Sounds{Enabled: true, Player: "hook", Bell: "auto", Volume: 0.6, MinIntervalMs: 750,
@@ -123,7 +125,7 @@ func Default() Config {
 		Bar: Bar{Enabled: false, Animate: true, Badge: true, Focus: "auto", MaxRows: 16, AnimateMs: 500, Color: true, IconSize: 18, Blink: true},
 		Theme: Theme{BG: "#282a36", CurrentLine: "#44475a", FG: "#f8f8f2", Comment: "#6272a4", Cyan: "#8be9fd", Green: "#50fa7b",
 			Orange: "#ffb86c", Pink: "#ff79c6", Purple: "#bd93f9", Red: "#ff5555", Yellow: "#f1fa8c",
-			Working: "cyan", Blocked: "orange", Done: "green", Idle: "comment"},
+			Working: "cyan", Blocked: "orange", Done: "green", Idle: "comment", Brand: "#3FD0D4"},
 	}
 }
 

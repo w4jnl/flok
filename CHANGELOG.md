@@ -6,6 +6,9 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+- Sidebar: the `[flok]` wordmark on top of the wide layout and the bracket mark on the rail
+  (`[sidebar] brand`, colour `[theme] brand`); a short pane drops it before losing a row.
+
 ## 0.3.5 (2026-09-14)
 
 - Menu bar: a "flok <version>" row at the bottom of the menu opens these release notes on
