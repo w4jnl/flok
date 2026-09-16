@@ -91,6 +91,8 @@ func Main(args []string) int {
 		return report(launcher.AttachLoop(cfg))
 	case "_focus":
 		return report(launcher.SetTerminalFocus(len(args) > 1 && args[1] == "1"))
+	case "_blocked-sound":
+		return runBlockedSound(cfg, args[1:])
 	case "completion":
 		return runCompletion(args[1:])
 	case "version", "--version", "-V":

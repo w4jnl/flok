@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
+	"syscall"
 	"time"
 
 	"github.com/w4jnl/flok/internal/agent"
@@ -29,6 +32,10 @@ func hookLog(format string, args ...any) {
 // runHook is the receiver behind `flok hook <agent> [--event name]`. It must be fast,
 // silent and always exit 0: Copilot denies tools when a hook fails.
 func runHook(cfg config.Config, args []string) (code int) {
+	return runHookWithBlockedSoundStarter(cfg, args, startBlockedSoundWorker)
+}
+
+func runHookWithBlockedSoundStarter(cfg config.Config, args []string, startBlockedSound func(string, time.Time) error) (code int) {
 	defer func() {
 		if r := recover(); r != nil {
 			hookLog("panic: %v", r)
@@ -80,16 +87,7 @@ func runHook(cfg config.Config, args []string) (code int) {
 	var sounder notify.Sounder = notify.Noop{}
 	plays := cfg.Sounds.Enabled && cfg.Sounds.Player == "hook"
 	if plays {
-		player := notify.Player{Files: notify.Resolve(st.Dir, map[string]string{"done": cfg.Sounds.Done, "blocked": cfg.Sounds.Blocked, "error": cfg.Sounds.Error}), Volume: cfg.Sounds.Volume, Command: cfg.Sounds.Command}
-		// the bell goes into the outer's work pane (the inner client's pty from runtime.json),
-		// which the outer server forwards to the terminal — also over ssh
-		bell := notify.Bell{Resolve: func() string {
-			if rt, err := launcher.ReadRuntime(); err == nil {
-				return rt.InnerClientTTY
-			}
-			return ""
-		}}
-		sounder = notify.Compose(player, bell, cfg.Sounds.Bell)
+		sounder = hookSounder(st, cfg)
 	}
 	a, fx, err := st.Update(pane, func(a *agent.Agent) state.Effects {
 		fx := state.Apply(a, ev, focused, now)
@@ -114,36 +112,92 @@ func runHook(cfg config.Config, args []string) (code int) {
 	st.AppendEvent(map[string]any{"at": now, "pane": pane, "agent": id, "event": ev.Name, "kind": ev.Kind,
 		"state": a.State, "reason": a.Reason, "tool": a.CurrentTool, "detail": a.ToolDetail, "sound": fx.Sound})
 	if plays && fx.Sound == "blocked" {
-		playBlockedIfStillWaiting(st, sounder, cfg, pane)
+		if cfg.Sounds.BlockedGraceMs <= 0 {
+			playBlockedIfStillWaiting(st, sounder, cfg, pane, now)
+		} else if err := startBlockedSound(pane, now); err != nil {
+			hookLog("%s: start blocked grace-check: %v", pane, err)
+		}
 	}
 	return 0
 }
 
-// playBlockedIfStillWaiting sleeps a grace window (outside the pane's flock, so a concurrent
-// postToolUse/postToolUseFailure hook invocation can resolve the block in the meantime) and then
-// re-checks the pane's persisted state. Permission requests an agent auto-approves usually
-// resolve within a few hundred ms; a real one waiting on the user does not. Only the still-waiting
-// case plays a sound, so intermediate auto-approved blips stay silent.
-func playBlockedIfStillWaiting(st *state.Store, sounder notify.Sounder, cfg config.Config, pane string) {
+func hookSounder(st *state.Store, cfg config.Config) notify.Sounder {
+	player := notify.Player{Files: notify.Resolve(st.Dir, map[string]string{"done": cfg.Sounds.Done, "blocked": cfg.Sounds.Blocked, "error": cfg.Sounds.Error}), Volume: cfg.Sounds.Volume, Command: cfg.Sounds.Command}
+	// The bell goes into the outer's work pane (the inner client's pty from runtime.json),
+	// which the outer server forwards to the terminal — also over ssh.
+	bell := notify.Bell{Resolve: func() string {
+		if rt, err := launcher.ReadRuntime(); err == nil {
+			return rt.InnerClientTTY
+		}
+		return ""
+	}}
+	return notify.Compose(player, bell, cfg.Sounds.Bell)
+}
+
+// startBlockedSoundWorker detaches the grace timer from the synchronous permissionRequest hook.
+// Copilot cannot auto-approve a request or emit postToolUse until that hook exits.
+func startBlockedSoundWorker(pane string, at time.Time) error {
+	cmd := exec.Command(binPath(), "_blocked-sound", pane, strconv.FormatInt(at.UnixNano(), 10))
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	null, _ := os.OpenFile(os.DevNull, os.O_RDWR, 0)
+	if null != nil {
+		cmd.Stdin, cmd.Stdout, cmd.Stderr = null, null, null
+	}
+	err := cmd.Start()
+	if null != nil {
+		_ = null.Close()
+	}
+	if err != nil {
+		return err
+	}
+	return cmd.Process.Release()
+}
+
+func runBlockedSound(cfg config.Config, args []string) int {
+	if !cfg.Sounds.Enabled || cfg.Sounds.Player != "hook" || len(args) != 2 {
+		return 0
+	}
+	ns, err := strconv.ParseInt(args[1], 10, 64)
+	if err != nil {
+		hookLog("%s: blocked grace-check timestamp: %v", args[0], err)
+		return 0
+	}
 	grace := time.Duration(cfg.Sounds.BlockedGraceMs) * time.Millisecond
 	if grace > 0 {
 		time.Sleep(grace)
 	}
+	st := state.New(config.StateDir())
+	playBlockedIfStillWaiting(st, hookSounder(st, cfg), cfg, args[0], time.Unix(0, ns))
+	return 0
+}
+
+// playBlockedIfStillWaiting checks the exact notification that started this worker. A newer
+// blocked request must not make an older request's timer play or mark the newer one sounded.
+func playBlockedIfStillWaiting(st *state.Store, sounder notify.Sounder, cfg config.Config, pane string, at time.Time) {
 	_, _, err := st.Update(pane, func(rec *agent.Agent) state.Effects {
-		n := len(rec.Notifications)
-		if n == 0 || rec.Notifications[n-1].Sounded {
+		idx := -1
+		for i := range rec.Notifications {
+			n := rec.Notifications[i]
+			if n.Kind == "blocked" && n.At.Equal(at) {
+				idx = i
+				break
+			}
+		}
+		if idx < 0 || rec.Notifications[idx].Sounded {
 			return state.Effects{}
 		}
-		if rec.State != agent.Blocked {
-			rec.Notifications[n-1].Sounded = true // resolved before the grace window: suppress
+		if !agent.BlockedNotificationActive(*rec, rec.Notifications[idx]) {
+			rec.Notifications[idx].Sounded = true
 			return state.Effects{}
 		}
 		if notify.Allowed(st.Dir, pane+"-blocked", 2*time.Second, time.Duration(cfg.Sounds.MinIntervalMs)*time.Millisecond, time.Now()) {
 			if err := sounder.Play("blocked"); err == nil {
-				rec.Notifications[n-1].Sounded = true
+				rec.Notifications[idx].Sounded = true
 			} else {
 				hookLog("sound blocked: %v", err)
 			}
+		} else {
+			rec.Notifications[idx].Sounded = true
 		}
 		return state.Effects{}
 	})
