@@ -93,7 +93,10 @@ func runHook(cfg config.Config, args []string) (code int) {
 	}
 	a, fx, err := st.Update(pane, func(a *agent.Agent) state.Effects {
 		fx := state.Apply(a, ev, focused, now)
-		if fx.Sound != "" && plays &&
+		// "blocked" is deferred to playBlockedIfStillWaiting below: many permission requests are
+		// approved by the agent's own trust rules a few hundred ms after they fire, and sounding
+		// those would notify the user about a decision they never had to make.
+		if fx.Sound != "" && fx.Sound != "blocked" && plays &&
 			notify.Allowed(st.Dir, pane+"-"+fx.Sound, 2*time.Second, time.Duration(cfg.Sounds.MinIntervalMs)*time.Millisecond, now) {
 			if err := sounder.Play(fx.Sound); err == nil {
 				if n := len(a.Notifications); n > 0 {
@@ -110,5 +113,41 @@ func runHook(cfg config.Config, args []string) (code int) {
 	}
 	st.AppendEvent(map[string]any{"at": now, "pane": pane, "agent": id, "event": ev.Name, "kind": ev.Kind,
 		"state": a.State, "reason": a.Reason, "tool": a.CurrentTool, "detail": a.ToolDetail, "sound": fx.Sound})
+	if plays && fx.Sound == "blocked" {
+		playBlockedIfStillWaiting(st, sounder, cfg, pane)
+	}
 	return 0
+}
+
+// playBlockedIfStillWaiting sleeps a grace window (outside the pane's flock, so a concurrent
+// postToolUse/postToolUseFailure hook invocation can resolve the block in the meantime) and then
+// re-checks the pane's persisted state. Permission requests an agent auto-approves usually
+// resolve within a few hundred ms; a real one waiting on the user does not. Only the still-waiting
+// case plays a sound, so intermediate auto-approved blips stay silent.
+func playBlockedIfStillWaiting(st *state.Store, sounder notify.Sounder, cfg config.Config, pane string) {
+	grace := time.Duration(cfg.Sounds.BlockedGraceMs) * time.Millisecond
+	if grace > 0 {
+		time.Sleep(grace)
+	}
+	_, _, err := st.Update(pane, func(rec *agent.Agent) state.Effects {
+		n := len(rec.Notifications)
+		if n == 0 || rec.Notifications[n-1].Sounded {
+			return state.Effects{}
+		}
+		if rec.State != agent.Blocked {
+			rec.Notifications[n-1].Sounded = true // resolved before the grace window: suppress
+			return state.Effects{}
+		}
+		if notify.Allowed(st.Dir, pane+"-blocked", 2*time.Second, time.Duration(cfg.Sounds.MinIntervalMs)*time.Millisecond, time.Now()) {
+			if err := sounder.Play("blocked"); err == nil {
+				rec.Notifications[n-1].Sounded = true
+			} else {
+				hookLog("sound blocked: %v", err)
+			}
+		}
+		return state.Effects{}
+	})
+	if err != nil {
+		hookLog("%s: blocked grace-check: %v", pane, err)
+	}
 }
