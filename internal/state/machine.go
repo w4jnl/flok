@@ -58,9 +58,6 @@ func Apply(a *agent.Agent, ev agent.Event, focused func() bool, now time.Time) E
 			reason = "permission:" + ev.Tool
 		}
 		dup := a.State == agent.Blocked && ((ev.ToolUseID != "" && ev.ToolUseID == a.LastToolUseID) || (ev.ToolUseID == "" && sameBlock(a.Reason, reason)))
-		if a.State == agent.Blocked && !dup {
-			a.StateSince = now
-		}
 		set(agent.Blocked)
 		a.Reason = reason
 		if ev.ToolUseID != "" {

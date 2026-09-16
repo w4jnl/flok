@@ -62,11 +62,6 @@ const Template = `# flok configuration - https://github.com/w4jnl/flok
                               # hosts, the bell reaches your local terminal); always: bell and sound; never
 # volume = 0.6
 # min_interval_ms = 750
-# blocked_grace_ms = 1500      # a permission request must stay blocked this long before it sounds;
-                              # filters out prompts Copilot/Claude auto-approve almost instantly.
-                              # Auto-approve latency varies a lot (seen 50ms-900ms+ in practice);
-                              # raise this further if you still hear sounds for requests you never
-                              # had to act on, at the cost of a longer delay before a genuine wait sounds.
 # when_focused = false
 # done = ""                   # empty = bundled sound; or e.g. "/System/Library/Sounds/Glass.aiff"
 # blocked = ""

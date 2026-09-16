@@ -57,6 +57,12 @@ func TestCopilotMapHook(t *testing.T) {
 	if !ok || ev.Kind != EvToolStart || ev.Tool != "bash" || ev.AgentSessionID != "c1" {
 		t.Fatalf("copilot preToolUse: %+v %v", ev, ok)
 	}
+	if ev, ok := MapHook("copilot", raw(t, `{"hook_event_name":"permissionRequest","toolName":"bash"}`)); ok {
+		t.Fatalf("pre-decision permission request should be ignored: %+v", ev)
+	}
+	if ev, ok := MapHook("copilot", raw(t, `{"hook_event_name":"notification","notification_type":"permission_prompt"}`)); !ok || ev.Kind != EvBlocked || ev.Reason != "permission" {
+		t.Fatalf("permission prompt notification: %+v %v", ev, ok)
+	}
 	if ev, ok := MapHook("copilot", raw(t, `{"hook_event_name":"errorOccurred","recoverable":true}`)); ok {
 		t.Fatalf("recoverable error should be ignored: %+v", ev)
 	}

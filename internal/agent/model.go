@@ -48,12 +48,6 @@ type Agent struct {
 	HasHooks       bool           `json:"has_hooks"`
 }
 
-// BlockedNotificationActive reports whether n represents the pane's current blocked state,
-// rather than an older request that resolved before another request started.
-func BlockedNotificationActive(a Agent, n Notification) bool {
-	return n.Kind == "blocked" && a.State == Blocked && a.StateSince.Equal(n.At)
-}
-
 // Space is one tmux session; the sidebar header calls the panel "sessions".
 type Space struct {
 	SessionID   string

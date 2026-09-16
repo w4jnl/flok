@@ -498,21 +498,18 @@ func (m *Model) soundTransitions() {
 			if cfg.Player != "sidebar" || m.d.Store == nil {
 				continue
 			}
-			for _, n := range a.Notifications {
+			for i, n := range a.Notifications {
 				if n.Sounded || n.At.Before(m.started) || time.Since(n.At) > time.Minute {
 					continue
 				}
-				if n.Kind == "blocked" {
-					if grace := time.Duration(cfg.BlockedGraceMs) * time.Millisecond; time.Since(n.At) < grace {
-						continue // too early to tell an auto-approval from a real wait; re-checked next tick
-					}
-					if !agent.BlockedNotificationActive(a, n) {
-						m.markSounded(a.PaneID, n)
-						continue
-					}
-				}
 				m.playIfAllowed(a.PaneID, n.Kind)
-				m.markSounded(a.PaneID, n)
+				idx := i
+				_, _, _ = m.d.Store.Update(a.PaneID, func(rec *agent.Agent) state.Effects {
+					if idx < len(rec.Notifications) {
+						rec.Notifications[idx].Sounded = true
+					}
+					return state.Effects{}
+				})
 			}
 			continue
 		}
@@ -534,21 +531,6 @@ func (m *Model) soundTransitions() {
 }
 
 func (m Model) lastUnfocused() bool { return m.d.Store != nil && !m.d.Store.TerminalFocused() }
-
-// markSounded persists that a hook-recorded notification was handled (played or suppressed),
-// so soundTransitions does not reconsider it on the next poll.
-func (m Model) markSounded(pane string, target agent.Notification) {
-	_, _, _ = m.d.Store.Update(pane, func(rec *agent.Agent) state.Effects {
-		for i := range rec.Notifications {
-			n := rec.Notifications[i]
-			if n.Kind == target.Kind && n.At.Equal(target.At) {
-				rec.Notifications[i].Sounded = true
-				break
-			}
-		}
-		return state.Effects{}
-	})
-}
 
 func (m Model) playIfAllowed(pane, kind string) {
 	dir := ""

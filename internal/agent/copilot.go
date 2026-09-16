@@ -27,8 +27,10 @@ func (Copilot) MapHook(raw map[string]any) (Event, bool) {
 		ev.Kind = EvToolEnd
 		ev.Tool = str(raw, "toolName")
 	case "permissionRequest":
-		ev.Kind, ev.Reason = EvBlocked, "permission"
-		ev.Tool, ev.Detail = ToolSummary(str(raw, "toolName"), sub(raw, "toolInput"))
+		// This fires before Copilot's permission service applies trust rules and auto-approvals,
+		// so it does not mean the user was prompted. The asynchronous permission_prompt
+		// notification below is the authoritative signal that input is actually required.
+		return Event{}, false
 	case "notification":
 		switch str(raw, "notification_type") {
 		case "permission_prompt":

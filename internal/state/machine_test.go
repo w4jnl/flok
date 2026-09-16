@@ -82,21 +82,6 @@ func TestStopFocusedIsIdleAndNudge(t *testing.T) {
 	}
 }
 
-func TestDistinctBlockRefreshesStateSince(t *testing.T) {
-	unfocused := func() bool { return false }
-	first := time.Now()
-	second := first.Add(time.Second)
-	a := agent.Agent{State: agent.Working}
-	Apply(&a, agent.Event{Kind: agent.EvBlocked, Reason: "permission", Tool: "bash", ToolUseID: "one"}, unfocused, first)
-	Apply(&a, agent.Event{Kind: agent.EvBlocked, Reason: "elicitation", ToolUseID: "two"}, unfocused, second)
-	if !a.StateSince.Equal(second) || len(a.Notifications) != 2 {
-		t.Fatalf("distinct block did not become current: %+v", a)
-	}
-	if !agent.BlockedNotificationActive(a, a.Notifications[1]) || agent.BlockedNotificationActive(a, a.Notifications[0]) {
-		t.Fatalf("active blocked notification is ambiguous: %+v", a)
-	}
-}
-
 func TestStoreRoundTrip(t *testing.T) {
 	s := New(t.TempDir())
 	now := time.Now()
