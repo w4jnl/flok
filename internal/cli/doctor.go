@@ -50,6 +50,9 @@ func runDoctor(cfg config.Config) int {
 		add("warn", "inner tmux server (%s) not running; `up` starts one", inner.Label())
 	} else {
 		add("ok", "inner tmux server %s reachable", inner.Label())
+		if files, err := inner.Run("display-message", "-p", "#{config_files}"); err == nil && doubleTmuxConfig(files) {
+			add("warn", "tmux loaded both ~/.tmux.conf and ~/.config/tmux/tmux.conf (%s): plugins initialise twice, and tmux-continuum then runs two tmux-resurrect restores that type every restored command twice; keep one file", strings.TrimSpace(files))
+		}
 		if hook, err := inner.Run("show-options", "-gv", "@resurrect-hook-post-save-layout"); err == nil &&
 			strings.Contains(hook, "flok") && strings.Contains(hook, "resurrect save") {
 			processes, _ := inner.Run("show-options", "-gv", "@resurrect-processes")
@@ -238,4 +241,22 @@ func findTmuxConf() string {
 		}
 	}
 	return ""
+}
+
+// doubleTmuxConfig reports whether tmux loaded both the legacy ~/.tmux.conf and the XDG
+// ~/.config/tmux/tmux.conf (the `config_files` format, tmux 3.2+, lists them comma-separated).
+// tmux 3.1+ reads both when both exist, so a ~/.tmux.conf kept only to `source-file` the XDG
+// one runs the whole configuration twice.
+func doubleTmuxConfig(configFiles string) bool {
+	legacy, xdg := false, false
+	for _, f := range strings.Split(configFiles, ",") {
+		f = strings.TrimSpace(f)
+		switch {
+		case strings.HasSuffix(f, "/.tmux.conf"):
+			legacy = true
+		case strings.HasSuffix(f, "/tmux/tmux.conf"):
+			xdg = true
+		}
+	}
+	return legacy && xdg
 }

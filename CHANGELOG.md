@@ -16,7 +16,9 @@ updates this file first. Dates are the tag dates.
   hook records second, so a pane whose hooks never fired (installed after the session started,
   or calling a binary that no longer exists) is still restored exactly.
 - `flok doctor` fails when the installed Claude Code or Copilot hooks call a flok binary that
-  does not exist; such hooks fail silently on every event.
+  does not exist; such hooks fail silently on every event. It also warns when tmux loaded both
+  `~/.tmux.conf` and `~/.config/tmux/tmux.conf`: plugins initialise twice, and tmux-continuum
+  then runs two tmux-resurrect restores that type every restored command twice.
 
 ## 0.4.0 (2026-09-17)
 
