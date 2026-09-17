@@ -420,7 +420,8 @@ error = ""
 [bar]                       # macOS menu bar companion, started by `flok up` (ignored on Linux)
 enabled = false
 animate = true              # spin ◐◓◑◒ in the menu bar while an agent works
-animate_ms = 500            # frame interval; every frame redraws the status item, so 2 fps by default
+animate_ms = 0              # frame interval; 0 = the sidebar's spinner_ms (250, 4 fps); every frame
+                            # redraws the status item, 500 halves that CPU
 color = true                # icon teal while an agent works, icon and badge orange while one waits on
                             # you; the spinner stays in the menu bar colour (state palette; no extra CPU)
 icon_size = 18              # icon height in points (16 is the usual size)

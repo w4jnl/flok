@@ -6,6 +6,9 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+- Menu bar: the working spinner turns at the sidebar's pace (`[sidebar] spinner_ms`, 4 fps)
+  unless `[bar] animate_ms` is set; it used to be fixed at 2 fps.
+
 - `flok up` no longer pre-empts a tmux-continuum restore. It used to start the inner server
   with a session named `main`; when the save file also had a `main` session, tmux-resurrect
   found its first pane already taken and restored neither that pane's directory nor its agent.

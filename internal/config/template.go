@@ -70,7 +70,8 @@ const Template = `# flok configuration - https://github.com/w4jnl/flok
 [bar]                         # macOS menu bar companion (flok-bar), started by flok up
 # enabled = false
 # animate = true              # spin ◐◓◑◒ in the menu bar while an agent works
-# animate_ms = 500            # frame interval; each frame redraws the status item (CPU)
+# animate_ms = 0              # frame interval; 0 = the sidebar's spinner_ms (250, 4 fps); each frame
+                              # redraws the status item (CPU), 500 halves that
 # color = true                # icon teal while an agent works, icon and badge orange while one waits on
                               # you; the spinner stays in the menu bar colour (state palette; no extra CPU)
 # icon_size = 18              # icon height in points (16 = the usual systray size)

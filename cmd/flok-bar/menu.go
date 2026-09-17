@@ -299,12 +299,16 @@ func (b *menuBar) blinkLoop() {
 	}
 }
 
-// animate advances the spinner while an agent is working. Every frame redraws the status item
-// (AppKit lays the menu bar out again), so the default is 2 fps; [bar] animate_ms tunes it.
+// animate advances the spinner while an agent is working, in step with the sidebar's spinner
+// ([sidebar] spinner_ms, 250 ms) unless [bar] animate_ms says otherwise. Every frame redraws the
+// status item (AppKit lays the menu bar out again), so a slower interval saves CPU.
 func (b *menuBar) animate() {
 	ms := b.cfg.Bar.AnimateMs
 	if ms < 100 {
-		ms = 500
+		ms = b.cfg.Sidebar.SpinnerMs
+	}
+	if ms < 100 {
+		ms = 250
 	}
 	tick := time.NewTicker(time.Duration(ms) * time.Millisecond)
 	defer tick.Stop()
