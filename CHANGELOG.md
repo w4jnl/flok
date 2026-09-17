@@ -6,8 +6,7 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
-- Menu bar: the working spinner turns at the sidebar's pace (`[sidebar] spinner_ms`, 4 fps)
-  unless `[bar] animate_ms` is set; it used to be fixed at 2 fps.
+## 0.4.1 (2026-09-17)
 
 - `flok up` no longer pre-empts a tmux-continuum restore. It used to start the inner server
   with a session named `main`; when the save file also had a `main` session, tmux-resurrect
@@ -22,6 +21,8 @@ updates this file first. Dates are the tag dates.
   does not exist; such hooks fail silently on every event. It also warns when tmux loaded both
   `~/.tmux.conf` and `~/.config/tmux/tmux.conf`: plugins initialise twice, and tmux-continuum
   then runs two tmux-resurrect restores that type every restored command twice.
+- Menu bar: the working spinner turns at the sidebar's pace (`[sidebar] spinner_ms`, 4 fps)
+  unless `[bar] animate_ms` is set; it used to be fixed at 2 fps.
 
 ## 0.4.0 (2026-09-17)
 
