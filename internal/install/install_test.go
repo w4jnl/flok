@@ -2,6 +2,7 @@ package install
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -62,5 +63,21 @@ func TestTmuxSnippetIsVersionIndependent(t *testing.T) {
 	snip := TmuxSnippet("/usr/local/bin/flok")
 	if strings.Contains(snip, "display-popup") || !strings.Contains(snip, `keys --open --client '#{client_tty}'`) {
 		t.Fatalf("snippet: %s", snip)
+	}
+}
+
+func TestTmuxResurrectSnippetAppendsProcesses(t *testing.T) {
+	snip := TmuxResurrectSnippet("/opt/flok bin/flok")
+	for _, process := range []string{"claude", "copilot"} {
+		want := fmt.Sprintf(
+			`if-shell -F '#{m:*%[1]s*,#{@resurrect-processes}}' '' "set -ag @resurrect-processes ' %[1]s'"`,
+			process,
+		)
+		if !strings.Contains(snip, want) {
+			t.Fatalf("%s must be appended conditionally: %s", process, snip)
+		}
+	}
+	if !strings.Contains(snip, `'/opt/flok bin/flok' resurrect save`) {
+		t.Fatalf("binary path must be shell quoted: %s", snip)
 	}
 }

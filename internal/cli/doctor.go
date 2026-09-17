@@ -50,6 +50,16 @@ func runDoctor(cfg config.Config) int {
 		add("warn", "inner tmux server (%s) not running; `up` starts one", inner.Label())
 	} else {
 		add("ok", "inner tmux server %s reachable", inner.Label())
+		if hook, err := inner.Run("show-options", "-gv", "@resurrect-hook-post-save-layout"); err == nil &&
+			strings.Contains(hook, "flok") && strings.Contains(hook, "resurrect save") {
+			processes, _ := inner.Run("show-options", "-gv", "@resurrect-processes")
+			if strings.Contains(processes, ":all:") ||
+				strings.Contains(processes, "claude") && strings.Contains(processes, "copilot") {
+				add("ok", "tmux-resurrect exact agent restoration enabled")
+			} else {
+				add("warn", "tmux-resurrect hook is enabled but @resurrect-processes must include claude and copilot")
+			}
+		}
 	}
 
 	// binary + tmux.conf

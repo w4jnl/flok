@@ -157,3 +157,19 @@ bind ? run-shell -b "%[1]s keys --open --client '#{client_tty}'"   # popup on tm
 # <<< flok <<<
 `, bin)
 }
+
+// TmuxResurrectSnippet opts into exact Claude/Copilot conversation restoration. Each process
+// is appended only when absent so reloading tmux.conf does not grow the option indefinitely.
+func TmuxResurrectSnippet(bin string) string {
+	command := shellQuote(bin) + " resurrect save"
+	return fmt.Sprintf(`# >>> flok tmux-resurrect >>>
+if-shell -F '#{m:*claude*,#{@resurrect-processes}}' '' "set -ag @resurrect-processes ' claude'"
+if-shell -F '#{m:*copilot*,#{@resurrect-processes}}' '' "set -ag @resurrect-processes ' copilot'"
+set -g @resurrect-hook-post-save-layout %q
+# <<< flok tmux-resurrect <<<
+`, command)
+}
+
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}

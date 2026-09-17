@@ -67,8 +67,8 @@ What that means in practice:
 - **Menu bar companion** (macOS, opt-in): a flok icon in the menu bar that spins while agents
   work, a badge for agents waiting for you, and a dropdown of agents; a click brings the terminal
   window to the front and puts you on that agent's pane.
-- **Zero footprint** on your tmux: no plugin, no pane injected into your windows, nothing saved by
-  resurrect. Kill the outer server and everything is as before.
+- **Zero footprint by default** on your tmux: no plugin and no pane injected into your windows.
+  An optional tmux-resurrect integration can save exact agent resume commands.
 
 ## How it works
 
@@ -250,6 +250,46 @@ echo 'eval "$(flok completion zsh)"'  >> ~/.zshrc     # after compinit; or: flok
 Launching from a window manager or a terminal binding: `flok up` exits 0 after a detach or
 `flok down`, so a command like `flok up || tmux attach || tmux new-session` falls back to plain
 tmux only when flok cannot start. `flok up` starts the inner tmux server itself when needed.
+
+### Restore agents with tmux-resurrect
+
+tmux-resurrect restores panes and directories by default, but only restarts programs on its
+allowlist. Adding `claude` and `copilot` to that list would restart the CLIs without reliably
+selecting the same conversation when several sessions share a directory.
+
+Flok can annotate each tmux-resurrect save with the exact session ID already received through
+agent hooks. Print the opt-in snippet and paste it below the tmux-resurrect/tpm configuration:
+
+```sh
+flok install --tmux-resurrect
+```
+
+The generated configuration is equivalent to:
+
+```tmux
+if-shell -F '#{m:*claude*,#{@resurrect-processes}}' '' "set -ag @resurrect-processes ' claude'"
+if-shell -F '#{m:*copilot*,#{@resurrect-processes}}' '' "set -ag @resurrect-processes ' copilot'"
+set -g @resurrect-hook-post-save-layout "'/path/to/flok' resurrect save"
+```
+
+On every save, `flok resurrect save` rewrites only Claude/Copilot process fields in the new
+tmux-resurrect state file:
+
+- Claude Code becomes `claude --resume <exact-session-id>`.
+- Copilot CLI becomes `copilot --resume=<exact-session-id>`.
+- A recognized agent without hook data or a usable session ID is deliberately saved with no
+  process, so its restored pane remains a shell instead of opening the wrong conversation.
+
+tmux-resurrect still owns pane creation, layout, working-directory restoration and process
+launch. This means there is no post-restore race and no dependency on pane IDs being reused.
+Conversation history resumes, but a tool that was in flight when tmux died is not rerun. With
+tmux-continuum, the restored pane set is as current as its latest save (15 minutes by default).
+Trigger a manual tmux-resurrect save after enabling the integration if you want an immediate
+baseline.
+
+tmux-resurrect supports one `@resurrect-hook-post-save-layout` command. If that option is already
+used, chain both commands in the same shell value rather than replacing the existing hook. Run
+`flok doctor` to confirm the hook and process allowlist are visible to the inner tmux server.
 
 ## Keys
 

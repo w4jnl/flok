@@ -38,7 +38,9 @@ usage: flok <command>
               sidebar between its dark and light palette
   install     wire Claude Code / Copilot CLI hooks and print the tmux.conf snippet
               and write a commented default config.toml if none exists
-              (--claude, --copilot, --tmux, --config; default: all)
+              (--claude, --copilot, --tmux, --tmux-resurrect, --config; default excludes
+              the opt-in tmux-resurrect integration)
+  resurrect   tmux-resurrect integration (save <state-file>; called by its save hook)
   hook        hook receiver used by the agents (stdin JSON; never call by hand)
   completion  print a bash or zsh completion script (flok completion bash|zsh)
   version     print the version
@@ -87,6 +89,8 @@ func Main(args []string) int {
 		return runLayout(cfg, args[0], args[1:])
 	case "install":
 		return runInstall(cfg, args[1:])
+	case "resurrect":
+		return runResurrect(cfg, args[1:])
 	case "_attach-loop":
 		return report(launcher.AttachLoop(cfg))
 	case "_focus":

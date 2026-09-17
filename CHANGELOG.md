@@ -6,6 +6,10 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+- Optional tmux-resurrect integration restores hook-backed Claude Code and Copilot CLI panes to
+  their exact conversations (`flok install --tmux-resurrect`); panes without an exact session ID
+  restore as shells rather than guessing.
+
 ## 0.3.6 (2026-09-15)
 
 - Light terminals get a light palette (Dracula's Alucard): `flok up` asks the terminal for its

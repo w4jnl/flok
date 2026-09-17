@@ -26,7 +26,8 @@ func copilotHooksPath() string {
 	return filepath.Join(base, "hooks", "flok.json")
 }
 
-// runInstall handles `install [--claude] [--copilot] [--tmux]` (no flag = everything).
+// runInstall handles `install [--claude] [--copilot] [--tmux] [--tmux-resurrect]`
+// (no flag = everything except the opt-in tmux-resurrect integration).
 func runInstall(cfg config.Config, args []string) int {
 	want := map[string]bool{}
 	for _, a := range args {
@@ -81,6 +82,11 @@ func runInstall(cfg config.Config, args []string) int {
 		fmt.Println("tmux: paste this BELOW the tpm `run` line of your tmux.conf, then `prefix r`:")
 		fmt.Println()
 		fmt.Print(install.TmuxSnippet(bin))
+	}
+	if want["--tmux-resurrect"] {
+		fmt.Println("tmux-resurrect: paste this BELOW the tmux-resurrect/tpm configuration, then reload tmux:")
+		fmt.Println()
+		fmt.Print(install.TmuxResurrectSnippet(bin))
 	}
 	return rc
 }
