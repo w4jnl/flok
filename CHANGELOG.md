@@ -6,9 +6,15 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+## 0.4.0 (2026-09-17)
+
 - Optional tmux-resurrect integration restores hook-backed Claude Code and Copilot CLI panes to
   their exact conversations (`flok install --tmux-resurrect`); panes without an exact session ID
   restore as shells rather than guessing.
+- Copilot CLI sounds now play only when a permission prompt is actually shown, not for
+  auto-approved tool calls.
+- Stale hook records are removed when an agent pane is reused, preventing duplicate sidebar rows
+  and navigation to an unrelated or empty pane.
 
 ## 0.3.6 (2026-09-15)
 
