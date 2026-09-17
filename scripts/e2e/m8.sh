@@ -20,7 +20,7 @@ registry '[]'
 mk_save; "$BIN" resurrect save "$SAVE"; rc=$?
 expect "resurrect save exits 0" '^0$' "$rc"
 expect "unknown agent pane is saved as a shell" '	claude	:$' "$(agent_line)"
-expect "resurrect.log names the pane and the reason" "^[0-9T:+-]+ $AGENT claude: no hook record and not listed by .claude agents." "$(cat "$LOG" 2>/dev/null)"
+expect "resurrect.log names the pane and the reason" "^[0-9T:Z+-]+ $AGENT claude: no hook record and not listed by .claude agents." "$(cat "$LOG" 2>/dev/null)"   # RFC 3339 stamp: +02:00 here, Z on CI
 expect "other panes untouched" '^pane	Beta	0	1	:\*	0	shell	:'"$T"'	1	bash	:$' "$(grep '^pane	Beta' "$SAVE")"
 expect "panes the inner server does not know are untouched" ':claude -c$' "$(grep '^pane	Gone' "$SAVE")"
 expect "window records untouched" '^window	Alpha	'"$WIN"'	:agent	1	:\*	layout	:$' "$(grep '^window' "$SAVE")"
