@@ -60,8 +60,13 @@ func TestCopilotMapHook(t *testing.T) {
 	if ev, ok := MapHook("copilot", raw(t, `{"hook_event_name":"permissionRequest","toolName":"bash"}`)); ok {
 		t.Fatalf("pre-decision permission request should be ignored: %+v", ev)
 	}
-	if ev, ok := MapHook("copilot", raw(t, `{"hook_event_name":"notification","notification_type":"permission_prompt"}`)); !ok || ev.Kind != EvBlocked || ev.Reason != "permission" {
-		t.Fatalf("permission prompt notification: %+v %v", ev, ok)
+	for _, payload := range []string{
+		`{"hook_event_name":"notification","notificationType":"permission_prompt"}`,
+		`{"hook_event_name":"notification","notification_type":"permission_prompt"}`,
+	} {
+		if ev, ok := MapHook("copilot", raw(t, payload)); !ok || ev.Kind != EvBlocked || ev.Reason != "permission" {
+			t.Fatalf("permission prompt notification %s: %+v %v", payload, ev, ok)
+		}
 	}
 	if ev, ok := MapHook("copilot", raw(t, `{"hook_event_name":"errorOccurred","recoverable":true}`)); ok {
 		t.Fatalf("recoverable error should be ignored: %+v", ev)

@@ -32,7 +32,11 @@ func (Copilot) MapHook(raw map[string]any) (Event, bool) {
 		// notification below is the authoritative signal that input is actually required.
 		return Event{}, false
 	case "notification":
-		switch str(raw, "notification_type") {
+		notificationType := str(raw, "notificationType")
+		if notificationType == "" {
+			notificationType = str(raw, "notification_type")
+		}
+		switch notificationType {
 		case "permission_prompt":
 			ev.Kind, ev.Reason = EvBlocked, "permission"
 		case "elicitation_dialog":
