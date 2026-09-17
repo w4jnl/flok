@@ -40,11 +40,11 @@ func TestRewriteExactAgentSessions(t *testing.T) {
 		"%3": {Kind: "claude", HasHooks: true, AgentSessionID: "tool-id", State: agent.Working, LastEventAt: now},
 		"%5": {Kind: "copilot", HasHooks: true, AgentSessionID: "stale-id", State: agent.Done, LastEventAt: now},
 	}
-	report, err := Rewrite(path, snap, hooks, agent.Enabled([]string{"claude", "copilot"}))
+	report, err := Rewrite(path, Inputs{Snapshot: snap, Hooks: hooks, Adapters: agent.Enabled([]string{"claude", "copilot"})})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.Rewritten != 3 || len(report.Skipped) != 1 || report.Skipped[0].PaneID != "%4" {
+	if report.Rewritten != 3 || len(report.Skipped) != 1 || report.Skipped[0].PaneID != "%4" || report.Skipped[0].Reason != "no hook record" {
 		t.Fatalf("report: %+v", report)
 	}
 	got, err := os.ReadFile(path)
@@ -74,7 +74,7 @@ func TestRewriteRejectsMalformedPaneWithoutChangingFile(t *testing.T) {
 	if err := os.WriteFile(path, []byte(input), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, err := Rewrite(path, tmux.Snapshot{}, nil, nil)
+	_, err := Rewrite(path, Inputs{})
 	if err == nil || !strings.Contains(err.Error(), "want at least 11") {
 		t.Fatalf("error = %v", err)
 	}
@@ -92,7 +92,7 @@ func TestRewriteRejectsUnsafeSessionID(t *testing.T) {
 	}
 	snap := tmux.Snapshot{Panes: []tmux.Pane{{ID: "%1", SessionName: "work", WindowIndex: 1, PaneIndex: 1, Command: "copilot"}}}
 	hooks := map[string]agent.Agent{"%1": {Kind: "copilot", HasHooks: true, AgentSessionID: "bad\nid", State: agent.Idle}}
-	report, err := Rewrite(path, snap, hooks, agent.Enabled([]string{"copilot"}))
+	report, err := Rewrite(path, Inputs{Snapshot: snap, Hooks: hooks, Adapters: agent.Enabled([]string{"copilot"})})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,5 +102,55 @@ func TestRewriteRejectsUnsafeSessionID(t *testing.T) {
 	got, _ := os.ReadFile(path)
 	if string(got) != strings.Replace(input, ":copilot\n", ":\n", 1) {
 		t.Fatalf("unsafe session did not fall back to shell: %q", got)
+	}
+}
+
+// The registry describes the live process: it saves panes whose hooks never fired (hooks
+// installed after the session started, or calling a binary that was removed), covers a pane
+// whose foreground process is a tool the agent runs, and beats a hook record that may be stale.
+func TestRewritePrefersClaudeRegistryOverHooks(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.txt")
+	input := strings.Join([]string{
+		"pane\twork\t1\t1\t:*\t1\tNo hooks\t:/p/a\t1\t2.1.274\t:claude -c",
+		"pane\twork\t1\t1\t:*\t2\tStale hook\t:/p/b\t0\tclaude\t:claude",
+		"pane\twork\t1\t1\t:*\t3\tTool running\t:/p/c\t0\tgit\t:git log",
+		"pane\twork\t1\t1\t:*\t4\tCopilot\t:/p/d\t0\tcopilot\t:copilot",
+		"pane\twork\t1\t1\t:*\t5\tNothing known\t:/p/e\t0\tclaude\t:claude",
+		"",
+	}, "\n")
+	if err := os.WriteFile(path, []byte(input), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	snap := tmux.Snapshot{Panes: []tmux.Pane{
+		{ID: "%1", SessionName: "work", WindowIndex: 1, PaneIndex: 1, Command: "2.1.274"},
+		{ID: "%2", SessionName: "work", WindowIndex: 1, PaneIndex: 2, Command: "claude"},
+		{ID: "%3", SessionName: "work", WindowIndex: 1, PaneIndex: 3, Command: "git"},
+		{ID: "%4", SessionName: "work", WindowIndex: 1, PaneIndex: 4, Command: "copilot"},
+		{ID: "%5", SessionName: "work", WindowIndex: 1, PaneIndex: 5, Command: "claude"},
+	}}
+	hooks := map[string]agent.Agent{
+		"%2": {Kind: "claude", HasHooks: true, AgentSessionID: "old-id", State: agent.Idle},
+		"%4": {Kind: "copilot", HasHooks: true, AgentSessionID: "copilot-id", State: agent.Idle},
+	}
+	registry := map[string]string{"%1": "reg-a", "%2": "reg-b", "%3": "reg-c", "%4": "ignored-for-copilot"}
+	report, err := Rewrite(path, Inputs{Snapshot: snap, Hooks: hooks, Registry: registry, Adapters: agent.Enabled([]string{"claude", "copilot"})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Rewritten != 4 || len(report.Skipped) != 1 || report.Skipped[0].PaneID != "%5" ||
+		!strings.Contains(report.Skipped[0].Reason, "claude agents") {
+		t.Fatalf("report: %+v", report)
+	}
+	got, _ := os.ReadFile(path)
+	want := strings.Join([]string{
+		"pane\twork\t1\t1\t:*\t1\tNo hooks\t:/p/a\t1\t2.1.274\t:claude --resume 'reg-a'",
+		"pane\twork\t1\t1\t:*\t2\tStale hook\t:/p/b\t0\tclaude\t:claude --resume 'reg-b'",
+		"pane\twork\t1\t1\t:*\t3\tTool running\t:/p/c\t0\tgit\t:claude --resume 'reg-c'",
+		"pane\twork\t1\t1\t:*\t4\tCopilot\t:/p/d\t0\tcopilot\t:copilot --resume='copilot-id'",
+		"pane\twork\t1\t1\t:*\t5\tNothing known\t:/p/e\t0\tclaude\t:",
+		"",
+	}, "\n")
+	if string(got) != want {
+		t.Fatalf("rewritten state:\n%s\nwant:\n%s", got, want)
 	}
 }

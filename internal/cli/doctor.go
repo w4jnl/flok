@@ -79,12 +79,22 @@ func runDoctor(cfg config.Config) int {
 	} else {
 		add("warn", "Claude Code hooks missing for %s (run `flok install --claude`)", strings.Join(missing, ", "))
 	}
+	for _, hookBin := range install.ClaudeHookBinaries(claudeSettingsPath()) {
+		if !fileExists(hookBin) {
+			add("fail", "Claude Code hooks call %s, which does not exist: no hook fires (run `%s install --claude`)", hookBin, bin)
+		}
+	}
 	if data, err := os.ReadFile(claudeSettingsPath()); err == nil && strings.Contains(string(data), `"defaultMode": "auto"`) {
 		add("ok", "Claude defaultMode is auto: few permission prompts; blocked comes mostly from questions")
 	}
 	if _, err := os.Stat(filepath.Dir(filepath.Dir(copilotHooksPath()))); err == nil {
 		if _, err := os.Stat(copilotHooksPath()); err == nil {
 			add("ok", "Copilot CLI hooks installed (%s)", copilotHooksPath())
+			for _, hookBin := range install.CopilotHookBinaries(copilotHooksPath()) {
+				if !fileExists(hookBin) {
+					add("fail", "Copilot CLI hooks call %s, which does not exist: no hook fires (run `%s install --copilot`)", hookBin, bin)
+				}
+			}
 		} else {
 			add("warn", "Copilot CLI hooks missing (run `flok install --copilot`)")
 		}

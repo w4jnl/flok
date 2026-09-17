@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/w4jnl/flok/internal/agent"
+	"github.com/w4jnl/flok/internal/claudereg"
 	"github.com/w4jnl/flok/internal/config"
 	"github.com/w4jnl/flok/internal/resurrect"
 	"github.com/w4jnl/flok/internal/state"
@@ -25,7 +26,9 @@ func runResurrect(cfg config.Config, args []string) int {
 		return report(err)
 	}
 	store := state.New(config.StateDir())
-	result, err := resurrect.Rewrite(args[1], snap, store.LoadAgents(), agent.Enabled(cfg.Agents.Enabled))
+	adapters := agent.Enabled(cfg.Agents.Enabled)
+	result, err := resurrect.Rewrite(args[1], resurrect.Inputs{
+		Snapshot: snap, Hooks: store.LoadAgents(), Adapters: adapters, Registry: claudeSessions(snap, adapters)})
 	if err != nil {
 		return report(err)
 	}
@@ -33,6 +36,31 @@ func runResurrect(cfg config.Config, args []string) int {
 		fmt.Fprintln(os.Stderr, "flok: tmux-resurrect diagnostics:", err)
 	}
 	return 0
+}
+
+// claudeSessions maps panes to the session IDs Claude Code itself reports for its running
+// processes, matched by tty. A save happens rarely, so the registry call (about 0.2 s) is
+// affordable here, and it keeps a pane exact when its hooks never fired.
+func claudeSessions(snap tmux.Snapshot, adapters []agent.Adapter) map[string]string {
+	enabled := false
+	for _, ad := range adapters {
+		enabled = enabled || ad.ID() == "claude"
+	}
+	if !enabled {
+		return nil
+	}
+	entries, err := claudereg.List(3 * time.Second)
+	if err != nil {
+		return nil
+	}
+	byTTY := claudereg.ByTTY(entries)
+	out := map[string]string{}
+	for _, p := range snap.Panes {
+		if e, ok := byTTY[p.TTY]; ok && e.SessionID != "" {
+			out[p.ID] = e.SessionID
+		}
+	}
+	return out
 }
 
 func writeResurrectDiagnostics(skipped []resurrect.Skipped) error {

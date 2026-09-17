@@ -81,3 +81,24 @@ func TestTmuxResurrectSnippetAppendsProcesses(t *testing.T) {
 		t.Fatalf("binary path must be shell quoted: %s", snip)
 	}
 }
+
+func TestHookBinariesListTheCommandsBinary(t *testing.T) {
+	dir := t.TempDir()
+	settings := filepath.Join(dir, "settings.json")
+	if _, err := ClaudeSettings(settings, "/opt/flok"); err != nil {
+		t.Fatal(err)
+	}
+	if got := ClaudeHookBinaries(settings); len(got) != 1 || got[0] != "/opt/flok" {
+		t.Fatalf("claude binaries = %q", got)
+	}
+	hooks := filepath.Join(dir, "hooks", "flok.json")
+	if _, err := CopilotHooks(hooks, "/usr/local/bin/flok"); err != nil {
+		t.Fatal(err)
+	}
+	if got := CopilotHookBinaries(hooks); len(got) != 1 || got[0] != "/usr/local/bin/flok" {
+		t.Fatalf("copilot binaries = %q", got)
+	}
+	if got := ClaudeHookBinaries(filepath.Join(dir, "missing.json")); got != nil {
+		t.Fatalf("missing file = %q", got)
+	}
+}

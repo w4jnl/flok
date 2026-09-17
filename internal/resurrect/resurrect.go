@@ -26,9 +26,22 @@ type Report struct {
 	Skipped   []Skipped
 }
 
+// Inputs is the live state a rewrite consults.
+type Inputs struct {
+	Snapshot tmux.Snapshot
+	Hooks    map[string]agent.Agent // hook records by pane ID
+	Adapters []agent.Adapter
+	// Registry holds Claude session IDs by pane ID from Claude Code's own registry
+	// (`claude agents --json`, matched by tty). It describes the live process, so it wins over a
+	// hook record, and it covers panes whose hooks never fired: hooks installed after the
+	// session started, or pointing at a binary that no longer exists.
+	Registry map[string]string
+}
+
 // Rewrite updates agent pane commands in path and leaves every other field untouched.
-func Rewrite(path string, snap tmux.Snapshot, hooks map[string]agent.Agent, adapters []agent.Adapter) (Report, error) {
+func Rewrite(path string, in Inputs) (Report, error) {
 	var report Report
+	snap := in.Snapshot
 	resolved, err := filepath.EvalSymlinks(path)
 	if err != nil {
 		return report, fmt.Errorf("resolve state file %s: %w", path, err)
@@ -69,23 +82,15 @@ func Rewrite(path string, snap tmux.Snapshot, hooks map[string]agent.Agent, adap
 		if !ok {
 			continue
 		}
-		kind, recognized := agentKind(pane, hooks[pane.ID], adapters)
+		kind, recognized := agentKind(pane, in.Hooks[pane.ID], in.Registry[pane.ID], in.Adapters)
 		if !recognized {
 			continue
 		}
-		rec, hasHook := hooks[pane.ID]
-		switch {
-		case !hasHook || !rec.HasHooks:
+		if id, reason := sessionFor(kind, in.Hooks[pane.ID], in.Registry[pane.ID]); id == "" {
 			fields[10] = ":"
-			report.Skipped = append(report.Skipped, Skipped{PaneID: pane.ID, Kind: kind, Reason: "no hook record"})
-		case rec.Kind != kind:
-			fields[10] = ":"
-			report.Skipped = append(report.Skipped, Skipped{PaneID: pane.ID, Kind: kind, Reason: "hook record belongs to " + rec.Kind})
-		case !validSessionID(rec.AgentSessionID):
-			fields[10] = ":"
-			report.Skipped = append(report.Skipped, Skipped{PaneID: pane.ID, Kind: kind, Reason: "no usable session ID"})
-		default:
-			fields[10] = ":" + resumeCommand(kind, rec.AgentSessionID)
+			report.Skipped = append(report.Skipped, Skipped{PaneID: pane.ID, Kind: kind, Reason: reason})
+		} else {
+			fields[10] = ":" + resumeCommand(kind, id)
 			report.Rewritten++
 		}
 		lines[i] = []byte(strings.Join(fields, "\t"))
@@ -104,14 +109,38 @@ func paneKey(session string, window, pane int) string {
 	return session + "\x00" + strconv.Itoa(window) + "\x00" + strconv.Itoa(pane)
 }
 
-func agentKind(pane tmux.Pane, rec agent.Agent, adapters []agent.Adapter) (string, bool) {
+// agentKind recognizes an agent pane by its current command, by Claude's registry (which also
+// covers a pane whose foreground process is a tool the agent runs) or by a hook record that
+// says a turn is open.
+func agentKind(pane tmux.Pane, rec agent.Agent, registryID string, adapters []agent.Adapter) (string, bool) {
 	if ad := agent.Match(pane.Command, adapters); ad != nil && supported(ad.ID()) {
 		return ad.ID(), true
+	}
+	if validSessionID(registryID) {
+		return "claude", true
 	}
 	if rec.HasHooks && (rec.State == agent.Working || rec.State == agent.Blocked) && supported(rec.Kind) {
 		return rec.Kind, true
 	}
 	return "", false
+}
+
+// sessionFor picks the session ID to resume, or explains why the pane is saved as a shell.
+func sessionFor(kind string, rec agent.Agent, registryID string) (id, reason string) {
+	if kind == "claude" && validSessionID(registryID) {
+		return registryID, ""
+	}
+	switch {
+	case !rec.HasHooks && kind == "claude":
+		return "", "no hook record and not listed by `claude agents`"
+	case !rec.HasHooks:
+		return "", "no hook record"
+	case rec.Kind != kind:
+		return "", "hook record belongs to " + rec.Kind
+	case !validSessionID(rec.AgentSessionID):
+		return "", "no usable session ID"
+	}
+	return rec.AgentSessionID, ""
 }
 
 func supported(kind string) bool { return kind == "claude" || kind == "copilot" }

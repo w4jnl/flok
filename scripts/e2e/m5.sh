@@ -64,4 +64,48 @@ sleep 0.8
 "$BIN" down; sleep 1.5
 expect "flok up exits 0 after flok down" 'UP_EXIT=0' "$(TTY capture-pane -p -t t)"
 TTY kill-server 2>/dev/null || true
+
+# A cold start (no inner server) bootstraps the inner with a throwaway session that is renamed
+# to main once no tmux-continuum restore produced other sessions, so a restore running during
+# startup never finds a saved session's first pane already taken.
+IN kill-server 2>/dev/null || true; sleep 0.3
+TTY -f /dev/null new-session -d -s t -x 120 -y 40 "env -u TMUX -u TMUX_PANE FLOK_CONFIG=$FLOK_CONFIG FLOK_STATE=$FLOK_STATE $BIN up; echo UP_EXIT=\$?; sleep 20"
+for _ in $(seq 1 50); do OUT has-session -t flok 2>/dev/null && break; sleep 0.2; done
+for _ in $(seq 1 60); do IN has-session -t main 2>/dev/null && break; sleep 0.1; done   # the attach loop retires the bootstrap once a resurrect restore had its chance (2 s grace when tmux-continuum is configured)
+expect "cold start leaves one inner session named main" '^main$' "$(IN list-sessions -F '#{session_name}' 2>/dev/null)"
+expect "the inner client is attached to it" '^main$' "$(IN list-clients -F '#{client_session}' | head -1)"
+# retiring the bootstrap must not look like a destroyed session: a deliberate detach still closes the outer
+IN detach-client -t "$(IN list-clients -F '#{client_tty}' | head -1)"; sleep 1.5
+if OUT has-session -t flok 2>/dev/null; then bad "outer still running after a detach following a cold start"; "$BIN" down; else ok "detach after a cold start closes the outer"; fi
+expect "flok up exits 0 after that detach" 'UP_EXIT=0' "$(TTY capture-pane -p -t t)"
+TTY kill-server 2>/dev/null || true
+
+# A restore that runs in the background while the inner server starts (tmux-continuum) must
+# neither be pre-empted by the bootstrap session nor lose panes into it. The stand-in below does
+# what tmux-resurrect does, from a config the inner server reads through XDG_CONFIG_HOME (tmux
+# 3.1+): look the saved session up by name, create it, split it, all while the bootstrap exists.
+# Session "flok" is the trap: tmux resolves an unknown name by prefix, so a bootstrap called
+# flok-bootstrap used to swallow it. The stand-in is named like the real restore script so the
+# launcher waits for it.
+if tmux_at_least 3 1; then
+  XDG=$T/xdg; mkdir -p "$XDG/tmux" "$XDG/tmux-resurrect/scripts"
+  cat > "$XDG/tmux-resurrect/scripts/restore.sh" <<EOF
+#!/usr/bin/env bash
+sleep 0.5
+tmux -L e2e-inner has-session -t flok 2>/dev/null || tmux -L e2e-inner new-session -d -s flok -c "$T"
+tmux -L e2e-inner split-window -t flok -c "$T"
+sleep 0.5
+EOF
+  chmod +x "$XDG/tmux-resurrect/scripts/restore.sh"
+  printf 'set -g @continuum-restore on\nrun-shell -b "%s"\n' "$XDG/tmux-resurrect/scripts/restore.sh" > "$XDG/tmux/tmux.conf"
+  IN kill-server 2>/dev/null || true; sleep 0.3
+  TTY -f /dev/null new-session -d -s t -x 120 -y 40 "env -u TMUX -u TMUX_PANE XDG_CONFIG_HOME=$XDG FLOK_CONFIG=$FLOK_CONFIG FLOK_STATE=$FLOK_STATE $BIN up; echo UP_EXIT=\$?; sleep 20"
+  for _ in $(seq 1 50); do OUT has-session -t flok 2>/dev/null && break; sleep 0.2; done
+  for _ in $(seq 1 80); do [ "$(IN list-sessions -F '#{session_name}' 2>/dev/null)" = flok ] && break; sleep 0.1; done
+  expect "background restore: the saved session is the only one left" '^flok$' "$(IN list-sessions -F '#{session_name}' 2>/dev/null | tr '\n' ' ' | sed 's/ $//')"
+  expect "background restore: its panes were not lost with the bootstrap" '^2$' "$(IN list-panes -t flok 2>/dev/null | wc -l | tr -d ' ')"
+  expect "background restore: the client moved to it" '^flok$' "$(IN list-clients -F '#{client_session}' | head -1)"
+  "$BIN" down; sleep 1
+  TTY kill-server 2>/dev/null || true
+else echo "skip  background-restore check (XDG tmux.conf needs tmux 3.1, have $TMUX_VER)"; fi
 finish

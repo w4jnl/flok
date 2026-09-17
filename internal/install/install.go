@@ -118,6 +118,75 @@ func ClaudeMissing(path string) []string {
 	return missing
 }
 
+// ClaudeHookBinaries lists the distinct flok binaries the installed Claude Code hooks call.
+// A hook whose binary was removed (a dev build replaced by a package, say) fails silently on
+// every event: no records, no sounds, no exact tmux-resurrect saves. doctor checks they exist.
+func ClaudeHookBinaries(path string) []string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var settings struct {
+		Hooks map[string][]struct {
+			Hooks []struct {
+				Command string `json:"command"`
+			} `json:"hooks"`
+		} `json:"hooks"`
+	}
+	if json.Unmarshal(data, &settings) != nil {
+		return nil
+	}
+	var bins []string
+	for _, event := range ClaudeEvents {
+		for _, entry := range settings.Hooks[event] {
+			for _, h := range entry.Hooks {
+				bins = appendBinary(bins, h.Command, claudeMarker)
+			}
+		}
+	}
+	return bins
+}
+
+// CopilotHookBinaries lists the distinct flok binaries the installed Copilot hooks call.
+func CopilotHookBinaries(path string) []string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var doc struct {
+		Hooks map[string][]struct {
+			Bash string `json:"bash"`
+		} `json:"hooks"`
+	}
+	if json.Unmarshal(data, &doc) != nil {
+		return nil
+	}
+	var bins []string
+	for _, event := range CopilotEvents {
+		for _, h := range doc.Hooks[event] {
+			bins = appendBinary(bins, h.Bash, copilotMarker)
+		}
+	}
+	return bins
+}
+
+const copilotMarker = " hook copilot"
+
+// appendBinary adds the binary in front of marker to bins once.
+func appendBinary(bins []string, command, marker string) []string {
+	i := strings.Index(command, marker)
+	if i <= 0 {
+		return bins
+	}
+	bin := command[:i]
+	for _, b := range bins {
+		if b == bin {
+			return bins
+		}
+	}
+	return append(bins, bin)
+}
+
 // CopilotHooks writes ~/.copilot/hooks/flok.json. Copilot payloads carry no event name,
 // so each entry passes it explicitly. The hook prints nothing and exits 0 (preToolUse and
 // permissionRequest are fail-closed on non-zero exit).

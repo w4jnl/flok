@@ -6,6 +6,18 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+- `flok up` no longer pre-empts a tmux-continuum restore. It used to start the inner server
+  with a session named `main`; when the save file also had a `main` session, tmux-resurrect
+  found its first pane already taken and restored neither that pane's directory nor its agent.
+  The bootstrap session is now called `~flok` (tmux resolves an unknown session target by
+  prefix, so the name must not start like any saved session) and is dropped once the restore
+  is over, or renamed to `[inner] session` (default `main`) when nothing was restored.
+- `flok resurrect save` takes Claude Code session IDs from `claude agents --json` first and from
+  hook records second, so a pane whose hooks never fired (installed after the session started,
+  or calling a binary that no longer exists) is still restored exactly.
+- `flok doctor` fails when the installed Claude Code or Copilot hooks call a flok binary that
+  does not exist; such hooks fail silently on every event.
+
 ## 0.4.0 (2026-09-17)
 
 - Optional tmux-resurrect integration restores hook-backed Claude Code and Copilot CLI panes to

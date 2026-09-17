@@ -201,7 +201,7 @@ func Up(cfg config.Config, bin string, detach bool) error {
 	}
 	inner := tmux.NewLocal(cfg.Inner.Socket).SetVersion(ver)
 	if _, err := inner.Run("list-sessions"); err != nil {
-		if _, err := inner.Run("new-session", "-d", "-s", "main"); err != nil {
+		if err := startInner(inner, cfg); err != nil {
 			return fmt.Errorf("start inner tmux server: %w", err)
 		}
 	}
@@ -229,6 +229,175 @@ func Up(cfg config.Config, bin string, detach bool) error {
 		return nil
 	}
 	return runAttach(outer, sess)
+}
+
+// bootstrapSession names the throwaway session that starts the inner server. tmux resolves a
+// session target that matches no session exactly by prefix, so while tmux-resurrect recreates a
+// saved session called "flok" its has-session/split-window calls would land in a bootstrap
+// called "flok-bootstrap" (and the panes die with it). The name therefore starts with a
+// character no session name starts with, and flok addresses it by id only.
+const bootstrapSession = "~flok"
+
+// startInner starts the inner server. tmux sources the user's config before it creates the
+// first session, and tmux-continuum launches the tmux-resurrect restore in the background from
+// that config, so the restore and the bootstrap session race. A bootstrap named like a saved
+// session ("main") used to take that session's first pane: tmux-resurrect treats a pane that
+// already exists as off limits and restores neither its directory nor its process, which
+// silently lost the agent that lived there. The bootstrap therefore carries a name no save file
+// uses, and the attach loop retires it (finishBootstrap) once the restore is over. The client
+// still attaches right away: tmux-resurrect relaunches programs with switch-client and
+// send-keys, which need an attached client.
+func startInner(inner tmux.Client, cfg config.Config) error {
+	_, err := inner.Run("new-session", "-d", "-s", bootstrapSession)
+	return err
+}
+
+// finishBootstrap retires the bootstrap session after a tmux-resurrect restore had its chance:
+// when other sessions exist the clients on the bootstrap move to one of them and it is killed,
+// otherwise it becomes the configured session (default main). It runs from the attach loop, so
+// it never writes to the terminal.
+func finishBootstrap(inner tmux.Client, cfg config.Config, id string) {
+	if id == "" {
+		return
+	}
+	if on, _ := inner.Run("show-options", "-gqv", "@continuum-restore"); strings.TrimSpace(on) == "on" {
+		waitForResurrectRestore(90*time.Second, resurrectRestoreRunning)
+	}
+	var others []sessionInfo
+	for _, si := range listSessions(inner) {
+		if si.ID != id {
+			others = append(others, si)
+		}
+	}
+	if len(others) == 0 {
+		_, _ = inner.Run("rename-session", "-t", id, bootstrapTarget(cfg))
+		return
+	}
+	home := pickHome(others, cfg.Inner.Session)
+	if clients, err := inner.Run("list-clients", "-t", id, "-F", "#{client_tty}"); err == nil {
+		for _, tty := range strings.Split(strings.TrimSpace(clients), "\n") {
+			if tty != "" {
+				_, _ = inner.Run("switch-client", "-c", tty, "-t", home)
+			}
+		}
+	}
+	_, _ = inner.Run("kill-session", "-t", id)
+}
+
+type sessionInfo struct {
+	ID, Name string
+	Activity int64
+}
+
+func listSessions(inner tmux.Client) []sessionInfo {
+	out, err := inner.Run("list-sessions", "-F", "#{session_id}\t#{session_name}\t#{session_activity}")
+	if err != nil {
+		return nil
+	}
+	var list []sessionInfo
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		f := strings.SplitN(line, "\t", 3)
+		if len(f) < 2 || f[0] == "" {
+			continue
+		}
+		si := sessionInfo{ID: f[0], Name: f[1]}
+		if len(f) == 3 {
+			si.Activity, _ = strconv.ParseInt(strings.TrimSpace(f[2]), 10, 64)
+		}
+		list = append(list, si)
+	}
+	return list
+}
+
+// bootstrapID returns the id of the bootstrap session, "" when there is none.
+func bootstrapID(inner tmux.Client) string {
+	for _, si := range listSessions(inner) {
+		if si.Name == bootstrapSession {
+			return si.ID
+		}
+	}
+	return ""
+}
+
+// pickHome chooses where clients leave the bootstrap for: the configured session when it
+// exists, else the most recently active one.
+func pickHome(sessions []sessionInfo, preferred string) string {
+	best := sessions[0]
+	for _, si := range sessions {
+		if preferred != "" && si.Name == preferred {
+			return si.ID
+		}
+		if si.Activity > best.Activity {
+			best = si
+		}
+	}
+	return best.ID
+}
+
+// bootstrapTarget is the name the bootstrap session keeps when nothing else was restored.
+func bootstrapTarget(cfg config.Config) string {
+	if cfg.Inner.Session != "" {
+		return cfg.Inner.Session
+	}
+	return "main"
+}
+
+// waitForResurrectRestore blocks while tmux-resurrect's restore script runs, up to max. The
+// script is spawned in the background while the config loads, so it normally already runs
+// when the bootstrap exists; a short grace covers its start-up, and a restore that
+// tmux-continuum decided against (another server running, too long since start) costs at most
+// that grace.
+func waitForResurrectRestore(max time.Duration, running func() bool) {
+	const grace, step = 2 * time.Second, 200 * time.Millisecond
+	start := time.Now()
+	seen := false
+	for {
+		active := running()
+		seen = seen || active
+		if !active && (seen || time.Since(start) > grace) {
+			return
+		}
+		if time.Since(start) > max {
+			return
+		}
+		time.Sleep(step)
+	}
+}
+
+// resurrectRestoreRunning reports whether a tmux-resurrect restore (or the tmux-continuum
+// wrapper that starts it) is alive.
+func resurrectRestoreRunning() bool {
+	out, err := exec.Command("ps", "-axo", "command=").Output()
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		if isResurrectRestore(line) {
+			return true
+		}
+	}
+	return false
+}
+
+// isResurrectRestore matches the restore script's own process line ("bash …/restore.sh" or the
+// script exec'd directly), not any command that merely mentions the file.
+func isResurrectRestore(cmdline string) bool {
+	f := strings.Fields(cmdline)
+	if len(f) == 0 {
+		return false
+	}
+	script := f[0]
+	switch filepath.Base(f[0]) {
+	case "bash", "sh", "zsh", "dash", "ksh":
+		if len(f) < 2 {
+			return false
+		}
+		script = f[1]
+	}
+	if !strings.HasSuffix(script, "/restore.sh") && !strings.HasSuffix(script, "/continuum_restore.sh") {
+		return false
+	}
+	return strings.Contains(script, "resurrect") || strings.Contains(script, "continuum")
 }
 
 func barPIDFile() string { return filepath.Join(config.StateDir(), "flok-bar.pid") }
@@ -394,9 +563,12 @@ func AttachLoop(cfg config.Config) error {
 		}
 		env = append(env, kv)
 	}
+	boot := bootstrapID(inner)           // a cold start's throwaway session, "" otherwise
+	go finishBootstrap(inner, cfg, boot) // retired once a resurrect restore is over
 	failures := 0
 	for {
 		before := sessionIDs(inner)
+		delete(before, boot) // its retirement is not a destroyed session, so a later detach still closes the outer
 		args := inner.Argv("attach-session")
 		if cfg.Inner.Session != "" {
 			if _, err := inner.Run("has-session", "-t", cfg.Inner.Session); err == nil {
