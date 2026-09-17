@@ -6,6 +6,8 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+## 0.4.2 (2026-09-17)
+
 - `flok doctor`'s double-configuration warning now checks that `~/.tmux.conf` really sources
   `~/.config/tmux/tmux.conf` unconditionally; a shim guarded by `if-shell` or `%if` (the README
   shows one) no longer trips it. tmux's `config_files` lists both files either way.
