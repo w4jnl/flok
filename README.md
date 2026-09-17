@@ -295,6 +295,16 @@ tmux-resurrect supports one `@resurrect-hook-post-save-layout` command. If that 
 used, chain both commands in the same shell value rather than replacing the existing hook. Run
 `flok doctor` to confirm the hook and process allowlist are visible to the inner tmux server.
 
+If a `~/.tmux.conf` from before tmux 3.1 still sources `~/.config/tmux/tmux.conf`, tmux 3.1+
+loads that file twice (it reads both paths itself): every plugin initialises twice and
+tmux-continuum starts two restores that type each restored command twice. `flok doctor` warns
+about it. Keep the shim for older machines but guard it:
+
+```tmux
+# tmux < 3.1 does not read ~/.config/tmux/tmux.conf itself; 3.1+ does, and would load it twice
+if-shell 'tmux -V | grep -qE "^tmux (1\.|2\.|3\.0)"' 'source-file ~/.config/tmux/tmux.conf'
+```
+
 Restart tmux through `flok up`: it starts the inner server with a throwaway `~flok` session
 (a name no saved session can be mistaken for), tmux-continuum restores the saved layout in the
 background, the client attaches at once (tmux-resurrect relaunches programs through that

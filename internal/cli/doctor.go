@@ -50,8 +50,8 @@ func runDoctor(cfg config.Config) int {
 		add("warn", "inner tmux server (%s) not running; `up` starts one", inner.Label())
 	} else {
 		add("ok", "inner tmux server %s reachable", inner.Label())
-		if files, err := inner.Run("display-message", "-p", "#{config_files}"); err == nil && doubleTmuxConfig(files) {
-			add("warn", "tmux loaded both ~/.tmux.conf and ~/.config/tmux/tmux.conf (%s): plugins initialise twice, and tmux-continuum then runs two tmux-resurrect restores that type every restored command twice; keep one file", strings.TrimSpace(files))
+		if files, err := inner.Run("display-message", "-p", "#{config_files}"); err == nil && doubleTmuxConfig(files, readLegacyTmuxConf(files)) {
+			add("warn", "~/.tmux.conf sources ~/.config/tmux/tmux.conf and tmux 3.1+ loads that file itself, so the configuration runs twice: plugins initialise twice, and tmux-continuum then runs two tmux-resurrect restores that type every restored command twice; guard the source-file with a version check (README, tmux-resurrect section) or remove the shim")
 		}
 		if hook, err := inner.Run("show-options", "-gv", "@resurrect-hook-post-save-layout"); err == nil &&
 			strings.Contains(hook, "flok") && strings.Contains(hook, "resurrect save") {
@@ -243,11 +243,12 @@ func findTmuxConf() string {
 	return ""
 }
 
-// doubleTmuxConfig reports whether tmux loaded both the legacy ~/.tmux.conf and the XDG
-// ~/.config/tmux/tmux.conf (the `config_files` format, tmux 3.2+, lists them comma-separated).
-// tmux 3.1+ reads both when both exist, so a ~/.tmux.conf kept only to `source-file` the XDG
-// one runs the whole configuration twice.
-func doubleTmuxConfig(configFiles string) bool {
+// doubleTmuxConfig reports whether the configuration runs twice: tmux 3.1+ loads both the
+// legacy ~/.tmux.conf and the XDG ~/.config/tmux/tmux.conf when both exist (the `config_files`
+// format, tmux 3.2+, lists what it found; files pulled in by source-file are not listed), and
+// a ~/.tmux.conf kept from pre-3.1 days that sources the XDG file unconditionally then loads it
+// a second time. A shim guarded by if-shell or %if is fine, so the file's content decides.
+func doubleTmuxConfig(configFiles, legacyConf string) bool {
 	legacy, xdg := false, false
 	for _, f := range strings.Split(configFiles, ",") {
 		f = strings.TrimSpace(f)
@@ -258,5 +259,47 @@ func doubleTmuxConfig(configFiles string) bool {
 			xdg = true
 		}
 	}
-	return legacy && xdg
+	return legacy && xdg && sourcesXDGUnconditionally(legacyConf)
+}
+
+// sourcesXDGUnconditionally finds a top-level `source-file …/tmux/tmux.conf` line: not commented,
+// not inside a %if block, not the argument of an if-shell.
+func sourcesXDGUnconditionally(conf string) bool {
+	depth := 0
+	for _, line := range strings.Split(conf, "\n") {
+		t := strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(t, "%if"):
+			depth++
+			continue
+		case strings.HasPrefix(t, "%endif"):
+			if depth > 0 {
+				depth--
+			}
+			continue
+		}
+		if depth > 0 || strings.HasPrefix(t, "#") {
+			continue
+		}
+		f := strings.Fields(t)
+		if len(f) < 2 || (f[0] != "source-file" && f[0] != "source") {
+			continue
+		}
+		if strings.Contains(t, "tmux/tmux.conf") {
+			return true
+		}
+	}
+	return false
+}
+
+// readLegacyTmuxConf returns the content of the ~/.tmux.conf entry in a config_files list.
+func readLegacyTmuxConf(configFiles string) string {
+	for _, f := range strings.Split(configFiles, ",") {
+		f = strings.TrimSpace(f)
+		if strings.HasSuffix(f, "/.tmux.conf") {
+			data, _ := os.ReadFile(f)
+			return string(data)
+		}
+	}
+	return ""
 }

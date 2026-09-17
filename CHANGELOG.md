@@ -6,6 +6,10 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+- `flok doctor`'s double-configuration warning now checks that `~/.tmux.conf` really sources
+  `~/.config/tmux/tmux.conf` unconditionally; a shim guarded by `if-shell` or `%if` (the README
+  shows one) no longer trips it. tmux's `config_files` lists both files either way.
+
 ## 0.4.1 (2026-09-17)
 
 - `flok up` no longer pre-empts a tmux-continuum restore. It used to start the inner server
