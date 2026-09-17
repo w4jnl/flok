@@ -1,11 +1,12 @@
 name: release
 
-# Linux binaries for each GitHub release (macOS comes from the Homebrew tap, which builds from
-# source; flok-bar is cgo and macOS-only, so it is not shipped here). scripts/release.sh creates
-# the release after pushing the tag; this runs on that event, or by hand for an existing tag.
+# Linux binaries for each tagged release (macOS comes from the Homebrew tap, which builds from
+# source; flok-bar is cgo and macOS-only, so it is not shipped here). The tag push creates the
+# GitHub release; workflow_dispatch can repair or rebuild an existing tag.
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
     inputs:
       tag:
@@ -20,7 +21,7 @@ jobs:
     name: linux tarballs
     runs-on: ubuntu-latest
     env:
-      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -40,6 +41,14 @@ jobs:
             tar -C dist -czf "$d.tar.gz" "$name" && rm -r "$d"
           done
           (cd dist && sha256sum *.tar.gz > sha256sums.txt && cat sha256sums.txt)
+      - name: create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            notes=$(awk -v v="${TAG#v}" '/^## /{p = ($2 == v)} p && !/^## /' CHANGELOG.md | sed '/./,$!d')
+            printf '%s\n' "$notes" | gh release create "$TAG" --title "flok $TAG" --notes-file -
+          fi
       - name: upload to the release
         env:
           GH_TOKEN: ${{ github.token }}

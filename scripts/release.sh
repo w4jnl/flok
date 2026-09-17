@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tag a flok release and bump the Homebrew formula in w4jnl/homebrew-tap.
 #   scripts/release.sh 0.1.1          (macOS: uses BSD sed -i '')
-# Requires: clean tree on main pushed to origin, ssh access to both repos, gh (optional, for the release notes).
+# Requires: clean tree on main pushed to origin and ssh access to both repos.
 set -euo pipefail
 ver=${1:?usage: scripts/release.sh <version>   e.g. 0.1.1}
 ver=${ver#v}
@@ -40,9 +40,7 @@ git -C "$TAP" commit -q -m "flok $ver"
 git -C "$TAP" push -q
 echo "tap bumped: $f"
 
-if command -v gh >/dev/null 2>&1; then
-  printf '%s\n' "$notes" | gh release create "v$ver" --title "flok v$ver" --notes-file - >/dev/null && echo "GitHub release v$ver created (notes from CHANGELOG.md)"
-  echo "linux tarballs: built by the release workflow, appear at https://github.com/w4jnl/flok/releases/tag/v$ver"
-fi
+echo "GitHub release and Linux tarballs: created by the tag workflow"
+echo "release: https://github.com/w4jnl/flok/releases/tag/v$ver"
 echo "CI:  https://github.com/w4jnl/flok/actions  and  https://github.com/w4jnl/homebrew-tap/actions"
 echo "users: brew update && brew upgrade flok"
