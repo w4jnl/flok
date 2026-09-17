@@ -825,6 +825,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			for _, c := range m.snap.Corrections {
 				m.persistCorrection(c)
 			}
+			for _, stale := range m.snap.StaleHooks {
+				_ = m.d.Store.DeleteAgentIfUnchanged(stale.PaneID, stale.AgentSessionID, stale.LastEventAt)
+			}
 		}
 		if m.publisher != nil { // for flok-bar and other out-of-process readers
 			_, _ = m.publisher.Publish(snapshot.FromMerge(m.snap), time.Now())

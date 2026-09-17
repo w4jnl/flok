@@ -25,6 +25,13 @@ type Correction struct {
 	Reason string      // registry idle | screen idle | prompt gone
 }
 
+// StaleHook identifies a hook record whose pane no longer runs that agent.
+type StaleHook struct {
+	PaneID         string
+	AgentSessionID string
+	LastEventAt    time.Time
+}
+
 // Focus is where the driven inner client currently looks.
 type Focus struct {
 	ClientTTY, SessionID, SessionName, WindowID, PaneID string
@@ -41,7 +48,10 @@ type Snapshot struct {
 	// Corrections are hook states the fallbacks overruled (stale working/blocked). The caller
 	// writes them back to the hook record so the correction sticks instead of flapping.
 	Corrections []Correction
-	TakenAt     time.Time
+	// StaleHooks are filtered immediately; the long-lived UI removes them from the store if
+	// no newer hook event arrived after this snapshot.
+	StaleHooks []StaleHook
+	TakenAt    time.Time
 }
 
 type Inputs struct {
@@ -168,6 +178,17 @@ func (t *Tracker) Build(in Inputs) Snapshot {
 			continue
 		}
 		if ad == nil && shells[p.Command] { // the agent exited; record or registry entry is stale
+			if hasHook && !hasReg {
+				out.StaleHooks = append(out.StaleHooks, staleHook(p.ID, h))
+			}
+			continue
+		}
+		if ad == nil && hasHook && !hasReg && (h.State == agent.Idle || h.State == agent.Done) {
+			// At rest, the agent itself must be tmux's foreground process. A different command
+			// (ssh, nvim, etc.) means the pane was reused after the agent exited without a
+			// sessionEnd hook. While working/blocked, keep trusting hooks because an agent may
+			// legitimately put any tool in the foreground.
+			out.StaleHooks = append(out.StaleHooks, staleHook(p.ID, h))
 			continue
 		}
 		kind := "claude"
@@ -384,6 +405,10 @@ func (t *Tracker) Build(in Inputs) Snapshot {
 	sortSpaces(out.Spaces, in.Tmux.Sessions, in.SessionOrder)
 	out.Agents = agents
 	return out
+}
+
+func staleHook(pane string, a agent.Agent) StaleHook {
+	return StaleHook{PaneID: pane, AgentSessionID: a.AgentSessionID, LastEventAt: a.LastEventAt}
 }
 
 // sortSpaces orders the sessions like tmux's choose-tree -O so the sidebar matches `prefix s`:

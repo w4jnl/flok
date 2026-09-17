@@ -87,6 +87,43 @@ func (s *Store) Delete(pane string) {
 	_ = os.Remove(s.seenPath(pane))
 }
 
+// DeleteAgentIfUnchanged removes a stale record only if no hook has updated it since the
+// caller's snapshot. It intentionally leaves the lock file in place so concurrent users keep
+// synchronizing on the same inode.
+func (s *Store) DeleteAgentIfUnchanged(pane, agentSessionID string, lastEventAt time.Time) error {
+	lock, err := os.OpenFile(s.agentPath(pane)+".lock", os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
+		return err
+	}
+	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+
+	data, err := os.ReadFile(s.agentPath(pane))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var a agent.Agent
+	if err := json.Unmarshal(data, &a); err != nil {
+		return err
+	}
+	if a.AgentSessionID != agentSessionID || !a.LastEventAt.Equal(lastEventAt) {
+		return nil
+	}
+	if err := os.Remove(s.agentPath(pane)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := os.Remove(s.seenPath(pane)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+
 // LoadAgents returns all hook-owned records keyed by pane id.
 func (s *Store) LoadAgents() map[string]agent.Agent {
 	out := map[string]agent.Agent{}

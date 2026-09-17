@@ -79,6 +79,28 @@ func TestFocusFallback(t *testing.T) {
 	}
 }
 
+func TestStaleHookOnReusedPaneIsFiltered(t *testing.T) {
+	now := time.Now()
+	snapshot := tmux.Snapshot{
+		Sessions: []tmux.Session{{ID: "$1", Name: "ops"}},
+		Panes: []tmux.Pane{
+			{ID: "%1", SessionID: "$1", SessionName: "ops", Command: "ssh"},
+			{ID: "%2", SessionID: "$1", SessionName: "ops", Command: "ssh"},
+		},
+	}
+	hooks := map[string]agent.Agent{
+		"%1": {PaneID: "%1", Kind: "copilot", State: agent.Done, HasHooks: true, AgentSessionID: "old", LastEventAt: now},
+		"%2": {PaneID: "%2", Kind: "copilot", State: agent.Working, HasHooks: true, AgentSessionID: "live", LastEventAt: now},
+	}
+	s := NewTracker().Build(Inputs{Tmux: snapshot, Hook: hooks, Adapters: agent.Enabled([]string{"copilot"}), Now: now})
+	if len(s.Agents) != 1 || s.Agents[0].PaneID != "%2" {
+		t.Fatalf("only working hook may own non-agent foreground process: %+v", s.Agents)
+	}
+	if len(s.StaleHooks) != 1 || s.StaleHooks[0].PaneID != "%1" || s.StaleHooks[0].AgentSessionID != "old" {
+		t.Fatalf("stale hook not reported: %+v", s.StaleHooks)
+	}
+}
+
 func TestSortAgents(t *testing.T) {
 	now := time.Now()
 	as := []agent.Agent{

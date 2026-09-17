@@ -109,6 +109,30 @@ func TestStoreRoundTrip(t *testing.T) {
 	}
 }
 
+func TestDeleteAgentIfUnchanged(t *testing.T) {
+	s := New(t.TempDir())
+	first := time.Now()
+	_, _, err := s.Update("%7", func(a *agent.Agent) Effects {
+		a.AgentSessionID, a.LastEventAt = "session", first
+		return Effects{}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteAgentIfUnchanged("%7", "session", first.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if len(s.LoadAgents()) != 1 {
+		t.Fatal("changed record must not be deleted")
+	}
+	if err := s.DeleteAgentIfUnchanged("%7", "session", first); err != nil {
+		t.Fatal(err)
+	}
+	if len(s.LoadAgents()) != 0 {
+		t.Fatal("unchanged stale record was not deleted")
+	}
+}
+
 // A Stop while background subagents run is a pause, not the end: the agent stays working
 // ("waiting"), idle_prompt does not end it, and the Stop after the wake-up turn does.
 func TestWaitingForBackgroundTasks(t *testing.T) {
