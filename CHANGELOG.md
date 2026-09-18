@@ -6,6 +6,8 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+## 0.4.3 (2026-09-18)
+
 - A working Claude no longer drops to idle for a moment in the middle of a turn. Claude Code's
   screen spinner also draws `✳`, a frame the bundled rules did not know, so three unlucky
   captures in a row read as a bare prompt box and ended the state until the next hook event.
