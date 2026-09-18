@@ -120,7 +120,7 @@ Four sources feed the merge, most authoritative first:
 
 The hook record is the source of truth for hook-driven agents. The other sources only refine it
 in two narrow cases: two consecutive registry samples saying idle (or, without a registry, the
-idle prompt box visible for three polls) end a *working* state that no hook closed; the idle
+idle prompt box visible for three polls, six while Claude's registry still reports it busy) end a *working* state that no hook closed; the idle
 prompt box visible for two polls clears a *blocked* state whose dialog is gone. A `~` before an
 agent's name means no hook data has arrived for that pane (restart the agent after `flok install`).
 

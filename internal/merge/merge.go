@@ -145,6 +145,17 @@ func ResolveFocus(s tmux.Snapshot, tty string) (Focus, string) {
 // may overrule it; both sources lag a new turn by a moment.
 const evidenceGrace = 3 * time.Second
 
+// screenIdleNeed is how many consecutive screen samples must show a bare idle prompt box before
+// they end a hook "working" state (~6 s at the default cadence). screenIdleNeedBusy applies while
+// a registry sample younger than registryBusyTrust still reports the agent busy: a misread
+// screen (a spinner frame the rules do not know, a redraw caught halfway) then needs twice the
+// evidence, and an interrupted turn still clears within a registry interval or two.
+const (
+	screenIdleNeed     = 3
+	screenIdleNeedBusy = 6
+	registryBusyTrust  = 30 * time.Second
+)
+
 var shells = map[string]bool{"zsh": true, "bash": true, "fish": true, "sh": true, "login": true, "nu": true, "tcsh": true, "ksh": true}
 
 // Build merges the inputs into a Snapshot, updating the tracker's history.
@@ -271,11 +282,16 @@ func (t *Tracker) Build(in Inputs) Snapshot {
 				// tmux. Trust Claude's own registry (idle in two consecutive samples, ~10-20 s at
 				// the default cadence) or the screen rules showing a bare idle prompt box for three
 				// polls (~6 s; herdr's rules rank the working status line above the prompt box, and
-				// panes in copy mode are not captured). Whichever comes first wins.
+				// panes in copy mode are not captured), six while a recent registry sample still
+				// says busy. Whichever comes first wins.
 				// While paused for background tasks the registry and the prompt box both look idle
 				// by design; only a very old waiting state (stale_working) is questioned.
 				waiting := a.Reason == "waiting" && now.Sub(a.StateSince) < in.StaleWorking
-				if !waiting && (tr.regIdle >= 2 || tr.screenIdle >= 3) {
+				needScreen := screenIdleNeed
+				if hasReg && reg.Status == "busy" && !in.RegistryAt.IsZero() && now.Sub(in.RegistryAt) <= registryBusyTrust {
+					needScreen = screenIdleNeedBusy
+				}
+				if !waiting && (tr.regIdle >= 2 || tr.screenIdle >= needScreen) {
 					why := "screen idle"
 					if tr.regIdle >= 2 {
 						why = "registry idle"

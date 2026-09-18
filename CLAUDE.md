@@ -94,7 +94,7 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
   callback because it costs a tmux call.
 - `internal/merge/merge.go` is the authority merge. For panes with `HasHooks` the hook record
   wins, with narrow escape hatches keyed on title/screen history kept in the per-pane `track`
-  (e.g. two idle registry samples or three idle-screen polls clear a stale `working`, two idle-screen polls clear a stale
+  (e.g. two idle registry samples or three idle-screen polls, six while the registry says busy, clear a stale `working`, two idle-screen polls clear a stale
   `blocked`). Panes without hooks fall back to title → registry → screen rules. `done` becomes
   `idle` the moment the user looks at the pane; the seen mark is persisted by the caller from
   `Snapshot.NewlySeen`. Change state semantics here and in `machine.go` together, and cover them

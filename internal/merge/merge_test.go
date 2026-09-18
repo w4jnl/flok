@@ -226,26 +226,46 @@ func TestScreenRules(t *testing.T) {
 		t.Fatalf("screen blocker over hook working: %+v", a)
 	}
 	// hooks say working (a turn interrupted with Esc emits no Stop), the registry still says busy,
-	// but the screen shows a bare idle prompt box in three fresh samples -> idle, without waiting
-	// for two 10 s registry samples
+	// but the screen shows a bare idle prompt box in fresh samples -> idle without waiting for two
+	// 10 s registry samples; while the registry says busy it takes six samples, so a misread
+	// screen (a spinner frame the rules do not know) cannot end a live turn
 	tr = NewTracker()
 	hook["%1"] = agent.Agent{PaneID: "%1", Kind: "claude", State: agent.Working, CurrentTool: "Bash", HasHooks: true, StateSince: now}
 	tm := snap("✳ j", "$2")
 	tm.Panes[0].TTY = "/dev/ttyagent"
 	reg := map[string]claudereg.Entry{"/dev/ttyagent": {PID: 42, Status: "busy", Name: "j"}}
 	scr["%1"] = rules.Result{Matched: true, State: agent.Idle, RuleID: "live_prompt_box", Region: "prompt_box_body"}
-	for i := 1; i <= 2; i++ {
+	for i := 1; i <= 5; i++ {
 		s = tr.Build(Inputs{Tmux: tm, ClientTTY: "/dev/ttys9", Adapters: ads, Hook: hook, Registry: reg, RegistrySeq: 1, RegistryAt: later, Screen: scr, ScreenSeq: i, ScreenAt: later, Now: now})
+		if a := s.Agents[0]; a.State != agent.Working {
+			t.Fatalf("sample %d: with a busy registry, fewer than six idle screens must not clear working: %+v", i, a)
+		}
+	}
+	s = tr.Build(Inputs{Tmux: tm, ClientTTY: "/dev/ttys9", Adapters: ads, Hook: hook, Registry: reg, RegistrySeq: 1, RegistryAt: later, Screen: scr, ScreenSeq: 6, ScreenAt: later, Now: now})
+	if a := s.Agents[0]; a.State != agent.Idle || a.CurrentTool != "" {
+		t.Fatalf("six idle screens should clear working even with a busy registry: %+v", a)
+	}
+	if len(s.Corrections) != 1 || s.Corrections[0].Reason != "screen idle" {
+		t.Fatalf("screen correction not reported: %+v", s.Corrections)
+	}
+	// without a registry entry (or with a stale one) three idle screens are enough
+	tr = NewTracker()
+	for i := 1; i <= 2; i++ {
+		s = tr.Build(Inputs{Tmux: tm, ClientTTY: "/dev/ttys9", Adapters: ads, Hook: hook, Screen: scr, ScreenSeq: i, ScreenAt: later, Now: now})
 		if a := s.Agents[0]; a.State != agent.Working {
 			t.Fatalf("sample %d: two idle screens must not clear working yet: %+v", i, a)
 		}
 	}
-	s = tr.Build(Inputs{Tmux: tm, ClientTTY: "/dev/ttys9", Adapters: ads, Hook: hook, Registry: reg, RegistrySeq: 1, RegistryAt: later, Screen: scr, ScreenSeq: 3, ScreenAt: later, Now: now})
-	if a := s.Agents[0]; a.State != agent.Idle || a.CurrentTool != "" {
-		t.Fatalf("three idle screens should clear working even with a registry: %+v", a)
+	s = tr.Build(Inputs{Tmux: tm, ClientTTY: "/dev/ttys9", Adapters: ads, Hook: hook, Screen: scr, ScreenSeq: 3, ScreenAt: later, Now: now})
+	if a := s.Agents[0]; a.State != agent.Idle {
+		t.Fatalf("three idle screens should clear working without a registry: %+v", a)
 	}
-	if len(s.Corrections) != 1 || s.Corrections[0].Reason != "screen idle" {
-		t.Fatalf("screen correction not reported: %+v", s.Corrections)
+	tr = NewTracker()
+	for i := 1; i <= 3; i++ {
+		s = tr.Build(Inputs{Tmux: tm, ClientTTY: "/dev/ttys9", Adapters: ads, Hook: hook, Registry: reg, RegistrySeq: 1, RegistryAt: now.Add(-time.Minute), Screen: scr, ScreenSeq: i, ScreenAt: later, Now: now})
+	}
+	if a := s.Agents[0]; a.State != agent.Idle {
+		t.Fatalf("a minute-old busy sample must not demand more screen evidence: %+v", a)
 	}
 	// the title-based idle rule is no evidence
 	tr = NewTracker()

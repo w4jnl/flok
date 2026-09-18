@@ -6,6 +6,13 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+- A working Claude no longer drops to idle for a moment in the middle of a turn. Claude Code's
+  screen spinner also draws `✳`, a frame the bundled rules did not know, so three unlucky
+  captures in a row read as a bare prompt box and ended the state until the next hook event.
+  The bundled Claude manifest is herdr's 2026.09.11.1, which knows the glyph, and a screen-idle
+  override now needs twice the samples while Claude's own registry still reports the session
+  busy.
+
 ## 0.4.2 (2026-09-17)
 
 - `flok doctor`'s double-configuration warning now checks that `~/.tmux.conf` really sources

@@ -55,6 +55,10 @@ func TestClaudeFixtures(t *testing.T) {
 		{"claude_prompt_box.txt", "✳ proj", agent.Idle, false, "live_prompt_box"},
 		{"claude_working.txt", "◑ proj", agent.Working, false, "osc_title_working"},
 		{"claude_working.txt", "plain title", agent.Working, false, "live_turn_working"},
+		// ✳ is one of Claude Code's screen spinner frames (and its idle title glyph): the working
+		// rule must accept it, else one capture in six reads as an idle prompt box
+		{"claude_working_star.txt", "✳ proj", agent.Working, false, "live_turn_working"},
+		{"claude_working_star.txt", "plain title", agent.Working, false, "live_turn_working"},
 		{"claude_model_picker.txt", "✳ proj", agent.Unknown, true, "model_picker_menu"},
 	}
 	for _, tc := range cases {
