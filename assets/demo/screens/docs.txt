@@ -1,0 +1,14 @@
+❯ write the release notes for 2.3 from the merged PRs
+
+⏺ Bash(gh pr list --state merged --search "milestone:2.3")
+  ⎿  14 pull requests
+
+⏺ Write(docs/releases/2.3.md)
+  ⎿  Wrote 61 lines
+
+⏺ Done. The notes are in docs/releases/2.3.md, grouped by area, with the two
+  breaking changes first. Two PRs had no description; I summarised their diffs.
+
+────────────────────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────────────────────

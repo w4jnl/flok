@@ -1,0 +1,41 @@
+name: Bug report
+description: Something flok does wrong, with enough to reproduce it.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+      description: One paragraph each. Say which pane or agent it concerns and what you were looking at.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. flok up
+        2. start claude in session X
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `flok doctor` and `tmux -V`
+      description: Paste both. `flok doctor` reports the versions, hooks, tmux.conf and outer session it sees.
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: OS and terminal
+      placeholder: macOS 15.1, Ghostty 1.2 / Ubuntu 24.04, kitty
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Relevant lines from `~/.local/state/flok/events.log`, a screenshot, your `[sidebar]` config.

@@ -1,0 +1,8 @@
+❯ run the test suite and fix whatever fails
+
+⏺ I'll run the tests first.
+
+⏺ Bash(npm test)
+  ⎿  Running…
+
+✶ Testing… (14s · ↓ 1.2k tokens · esc to interrupt)

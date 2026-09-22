@@ -6,6 +6,16 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+- README: a new top section (pitch, recording, menu bar, five-step setup, why flok) ahead
+  of the architecture; the old Install section is folded into it. The banner is re-rendered
+  from the brand lockup (`assets/brand/render-hero.sh`) with the plain tagline. The GIF comes from
+  `assets/demo/record.sh`, a vhs tape played against the e2e fake agent on isolated tmux
+  servers, so it can be re-recorded; `assets/demo/menubar.sh` captures the menu bar item and
+  its open menu from the same scene (`FLOK_BAR_SHOT` makes the bar open its menu and report the
+  frames).
+- `SECURITY.md` (private vulnerability reporting), `CONTRIBUTING.md`, a bug report form and a
+  Dependabot configuration for Go modules and GitHub Actions.
+
 ## 0.4.4 (2026-09-22)
 
 - Menu bar: the version row opens `CHANGELOG.md` on GitHub (all releases newest first, so it

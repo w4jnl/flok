@@ -1,0 +1,26 @@
+❯ run the test suite and fix whatever fails
+
+⏺ I'll run the tests first.
+
+⏺ Bash(npm test)
+  ⎿  > api@1.4.0 test
+     > vitest run
+     ✗ orders/refund.test.ts  (1 failed)
+
+⏺ The refund test fails on rounding. I'll patch the amount conversion.
+
+⏺ Bash(npm run db:reset && npm test)
+  ⎿  Running…
+
+────────────────────────────────────────────────────────────────────────────────
+Bash command
+
+  npm run db:reset && npm test
+  Reset the local database and rerun the suite
+
+Do you want to proceed?
+❯ 1. Yes
+  2. Yes, and don't ask again for: npm run db:reset && npm test
+  3. No
+
+Esc to cancel · Tab to amend · ctrl+e to explain

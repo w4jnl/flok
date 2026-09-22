@@ -116,6 +116,9 @@ func (b *menuBar) onReady() {
 	if os.Getenv("FLOK_BAR_DEBUG") != "" { // list the menu on stderr without opening it
 		time.AfterFunc(1500*time.Millisecond, debugDumpMenu)
 	}
+	if dir := os.Getenv("FLOK_BAR_SHOT"); dir != "" { // README screenshots: open the menu, report frames
+		debugShot(dir, 2.5)
+	}
 }
 
 func (b *menuBar) onExit() {}

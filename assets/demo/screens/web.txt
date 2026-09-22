@@ -1,0 +1,11 @@
+❯ the checkout page flashes on load, find out why
+
+⏺ Let me look at how the page hydrates.
+
+⏺ Read(src/pages/checkout.tsx)
+  ⎿  Read 212 lines
+
+⏺ WebFetch(https://react.dev/reference/react-dom/client/hydrateRoot)
+  ⎿  Fetching…
+
+✢ Reading… (41s · ↓ 6.4k tokens · esc to interrupt)
