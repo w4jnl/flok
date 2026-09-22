@@ -10,3 +10,8 @@ The notification sounds under internal/notify/sounds/ (done.wav, request.wav) ar
 assets/sounds/done.mp3 and request.mp3, under the same Apache License, Version 2.0,
 transcoded to 22.05 kHz mono WAV (afconvert) and otherwise unchanged.
 The full text of the Apache License 2.0 is in LICENSE-APACHE.
+
+assets/icons/github-mark@2x.png is GitHub's Invertocat mark (https://github.com/logos), reduced
+to a black-and-alpha template image and shown only next to the menu row that links to the flok
+repository on GitHub, as GitHub's logo usage guidelines allow. It is GitHub's trademark and is
+not covered by flok's license.

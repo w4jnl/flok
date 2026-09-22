@@ -11,6 +11,12 @@ static NSStatusItem *flokStatusItem(void) {
   return [owner valueForKey:@"statusItem"];
 }
 
+// flokMenu is systray's status menu, reached the same way (its `menu` ivar).
+static NSMenu *flokMenu(void) {
+  id owner = [NSApp delegate];
+  return [owner valueForKey:@"menu"];
+}
+
 // dark says whether the status item is drawn on a dark menu bar (the button's own appearance,
 // which follows the menu bar rather than the app).
 static BOOL flokDark(NSStatusItem *item) {
@@ -101,5 +107,48 @@ void refreshIconAppearance(void) {
     NSStatusItem *item = flokStatusItem();
     if (item == nil || lastIcon == nil || lastRGB[0] < 0) return;
     if (flokDark(item) != lastDark) flokApplyIcon();
+  });
+}
+
+// debugDumpMenu prints every item of the status menu with its image state to stderr
+// (FLOK_BAR_DEBUG=1), for checking the menu without opening it.
+void debugDumpMenu(void) {
+  dispatch_async(dispatch_get_main_queue(), ^{
+    NSMenu *menu = flokMenu();
+    if (menu == nil) { fprintf(stderr, "flok-bar debug: no menu via KVC\n"); return; }
+    for (NSMenuItem *it in menu.itemArray) {
+      fprintf(stderr, "flok-bar debug: tag=%ld hidden=%d title=%s image=%s attributed=%d\n",
+              (long)it.tag, it.hidden, it.title.UTF8String, it.image ? "yes" : "nil", it.attributedTitle != nil);
+    }
+  });
+}
+
+// setMenuItemTitleIcon puts a 15 pt icon in front of the title of the menu item with that title.
+// macOS 27 does not draw NSMenuItem.image in this menu (bitmap, drawn and SF Symbol images all
+// stay invisible; checked), so the icon travels inside the attributed title as a text attachment.
+// It is tinted with the label colour at draw time, so it follows light and dark menus. The
+// lookup is by title, so the item must exist (systray adds items synchronously) and keep its
+// title; systray's later updates only touch rows whose title changes.
+void setMenuItemTitleIcon(const char *title, const void *bytes, int length) {
+  NSString *t = [NSString stringWithUTF8String:title];
+  NSData *data = [NSData dataWithBytes:bytes length:length];
+  dispatch_async(dispatch_get_main_queue(), ^{
+    NSMenu *menu = flokMenu();
+    NSMenuItem *it = [menu itemWithTitle:t];
+    if (it == nil) return;
+    NSImage *src = [[NSImage alloc] initWithData:data];
+    NSImage *tinted = [NSImage imageWithSize:NSMakeSize(15, 15) flipped:NO drawingHandler:^BOOL(NSRect r) {
+      [src drawInRect:r fromRect:NSZeroRect operation:NSCompositingOperationSourceOver fraction:1];
+      [[NSColor labelColor] set];
+      NSRectFillUsingOperation(r, NSCompositingOperationSourceAtop); // keep the alpha, replace the ink
+      return YES;
+    }];
+    NSTextAttachment *att = [[NSTextAttachment alloc] init];
+    att.image = tinted;
+    att.bounds = CGRectMake(0, -3, 15, 15);
+    NSMutableAttributedString *as = [[NSAttributedString attributedStringWithAttachment:att] mutableCopy];
+    [as appendAttributedString:[[NSAttributedString alloc] initWithString:[@"  " stringByAppendingString:t]
+                                                                 attributes:@{NSFontAttributeName: [NSFont menuFontOfSize:0]}]];
+    it.attributedTitle = as;
   });
 }

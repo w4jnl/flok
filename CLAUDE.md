@@ -30,7 +30,7 @@ and a build on macOS and ubuntu, and the e2e suites on both as well.
 Releases: write the notes first — move the `## Unreleased` items in `CHANGELOG.md` under a new
 `## <version> (YYYY-MM-DD)` heading (user-facing wording, newest first); the script refuses to
 tag without that section and publishes it as the GitHub release notes; the menu bar's version
-row links to it. Then `scripts/release.sh <version>` tags `v<version>`, pushes, then bumps `url`/`sha256` in
+row opens `CHANGELOG.md` on GitHub. Then `scripts/release.sh <version>` tags `v<version>`, pushes, then bumps `url`/`sha256` in
 `Formula/flok.rb` of the tap clone (`$FLOK_TAP_DIR`, default `../homebrew-tap`, repo
 `w4jnl/homebrew-tap`) and creates the GitHub release. `internal/cli.Version` is a variable set via
 `-ldflags -X`; never hardcode a version there.

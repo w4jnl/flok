@@ -328,7 +328,8 @@ In tmux (your prefix; the snippet assumes `C-a`):
 Menu bar (when enabled): click an agent row to return to it, "Show flok" to bring the terminal
 window to the front, "Edit config…" to open `config.toml` (in a new tmux window with `[bar] editor`
 set, else with the default app), "Reload sidebar" to apply it, "Quit flok-bar" to remove the item
-(flok keeps running).
+(flok keeps running). The version row at the bottom opens the release notes (`CHANGELOG.md`,
+all releases newest first) and "GitHub repository" the source.
 
 Inside the sidebar (`prefix g`, a click, or `flok focus`):
 

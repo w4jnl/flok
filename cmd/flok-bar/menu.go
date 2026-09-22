@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -39,8 +38,8 @@ type menuBar struct {
 	dir  string
 	flok string // the flok CLI used for clicks
 
-	header, show, edit, reload, quit, about *systray.MenuItem
-	slots                                   []*slot
+	header, show, edit, reload, quit, about, repo *systray.MenuItem
+	slots                                         []*slot
 
 	mu        sync.Mutex
 	snap      snapshot.Snapshot
@@ -101,12 +100,22 @@ func (b *menuBar) onReady() {
 	systray.AddSeparator()
 	b.quit = systray.AddMenuItem("Quit flok-bar", "flok itself keeps running")
 	systray.AddSeparator()
-	b.about = systray.AddMenuItem("flok "+strings.TrimPrefix(version, "v"), "release notes on GitHub")
+	// two flat rows rather than a submenu: on macOS a row that owns a submenu never receives a
+	// click, and the version row should open the notes directly. Their icons sit inside the
+	// title (macOS 27 does not draw menu item images in this menu).
+	ver := "flok " + strings.TrimPrefix(version, "v")
+	b.about = systray.AddMenuItem(ver, "release notes: CHANGELOG.md on GitHub")
+	setMenuItemTitleIcon(ver, icons.Flok)
+	b.repo = systray.AddMenuItem("GitHub repository", repoURL)
+	setMenuItemTitleIcon("GitHub repository", icons.GitHubMark)
 	go b.staticClicks()
 	go b.watch()
 	go b.animate()
 	go b.blinkLoop()
 	b.refresh()
+	if os.Getenv("FLOK_BAR_DEBUG") != "" { // list the menu on stderr without opening it
+		time.AfterFunc(1500*time.Millisecond, debugDumpMenu)
+	}
 }
 
 func (b *menuBar) onExit() {}
@@ -347,7 +356,9 @@ func (b *menuBar) staticClicks() {
 		case <-b.reload.ClickedCh:
 			b.run("reload")
 		case <-b.about.ClickedCh:
-			_ = exec.Command("open", releaseNotesURL(version)).Start()
+			_ = exec.Command("open", changelogURL).Start()
+		case <-b.repo.ClickedCh:
+			_ = exec.Command("open", repoURL).Start()
 		case <-b.quit.ClickedCh:
 			systray.Quit()
 			return
@@ -355,15 +366,12 @@ func (b *menuBar) staticClicks() {
 	}
 }
 
-// releaseNotesURL is this build's entry in CHANGELOG.md as published on the GitHub release, or
-// the releases list for a build that is not a tagged version.
-func releaseNotesURL(v string) string {
-	v = strings.TrimPrefix(v, "v")
-	if ok, _ := regexp.MatchString(`^\d+\.\d+\.\d+$`, v); ok {
-		return "https://github.com/w4jnl/flok/releases/tag/v" + v
-	}
-	return "https://github.com/w4jnl/flok/releases"
-}
+// Links behind the version row. The changelog lists every release newest first, so it also
+// serves a HEAD or dev build, which has no release page of its own.
+const (
+	repoURL      = "https://github.com/w4jnl/flok"
+	changelogURL = repoURL + "/blob/main/CHANGELOG.md"
+)
 
 // run executes a flok subcommand detached from the bar.
 func (b *menuBar) run(args ...string) {

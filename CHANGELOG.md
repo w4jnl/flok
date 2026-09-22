@@ -6,6 +6,11 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+- Menu bar: the version row opens `CHANGELOG.md` on GitHub (all releases newest first, so it
+  also serves HEAD builds) instead of the running version's release page, and a new
+  "GitHub repository" row below it opens the source. Both rows carry an icon, the flok mark
+  and GitHub's, drawn into the row title because macOS 27 does not show menu item images.
+
 ## 0.4.3 (2026-09-18)
 
 - A working Claude no longer drops to idle for a moment in the middle of a turn. Claude Code's

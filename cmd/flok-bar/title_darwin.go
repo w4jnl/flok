@@ -5,6 +5,8 @@ package main
 /*
 #cgo CFLAGS: -x objective-c
 #cgo LDFLAGS: -framework Cocoa
+void debugDumpMenu(void);
+void setMenuItemTitleIcon(const char *title, const void *bytes, int length);
 #include <stdlib.h>
 void setTitleRuns(const char **texts, const double *rgb, const double *rgbLight, int n);
 void setTemplateIconSized(const void *bytes, int length, double points, const double *rgb, const double *rgbLight);
@@ -64,4 +66,15 @@ func setColoredTitle(runs []bar.Run) {
 	for _, t := range texts {
 		C.free(unsafe.Pointer(t))
 	}
+}
+
+// debugDumpMenu lists the menu items and their icons on stderr (FLOK_BAR_DEBUG=1).
+func debugDumpMenu() { C.debugDumpMenu() }
+
+// setMenuItemTitleIcon draws png (black + alpha) in front of the title of the menu item with
+// that title, tinted like the label; see the Objective-C side for why it is not an item image.
+func setMenuItemTitleIcon(title string, png []byte) {
+	ct := C.CString(title)
+	defer C.free(unsafe.Pointer(ct))
+	C.setMenuItemTitleIcon(ct, unsafe.Pointer(&png[0]), C.int(len(png)))
 }
