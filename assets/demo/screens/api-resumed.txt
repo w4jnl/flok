@@ -1,0 +1,13 @@
+❯ run the test suite and fix whatever fails
+
+⏺ I'll run the tests first.
+
+⏺ Bash(npm test)
+  ⎿  ✗ orders/refund.test.ts  (1 failed)
+
+⏺ The refund test fails on rounding. I'll patch the amount conversion.
+
+⏺ Bash(npm run db:reset && npm test)
+  ⎿  Running…
+
+✻ Rerunning… (3s · ↓ 2.8k tokens · esc to interrupt)

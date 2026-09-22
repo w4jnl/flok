@@ -152,3 +152,48 @@ void setMenuItemTitleIcon(const char *title, const void *bytes, int length) {
     it.attributedTitle = as;
   });
 }
+
+static void flokWriteJSON(NSString *path, NSDictionary *d) {
+  NSData *data = [NSJSONSerialization dataWithJSONObject:d options:0 error:nil];
+  [data writeToFile:path atomically:YES];
+}
+
+static NSTimer *flokCommonTimer(double after, void (^block)(void)) {
+  NSTimer *t = [NSTimer timerWithTimeInterval:after repeats:NO block:^(NSTimer *timer) { block(); }];
+  [[NSRunLoop mainRunLoop] addTimer:t forMode:NSRunLoopCommonModes]; // fires while the menu tracks
+  return t;
+}
+
+// debugShot (FLOK_BAR_SHOT=<dir>) is for the README screenshots: after `delay` seconds it writes
+// the status item's screen frame to <dir>/item.json (top-left origin, points, as screencapture
+// -R wants it), opens the menu the way a click does, writes the menu window's id and bounds to
+// <dir>/menu.json (for screencapture -l) and closes the menu again after three seconds.
+void debugShot(const char *dir, double delay) {
+  NSString *d = [NSString stringWithUTF8String:dir];
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+    NSStatusItem *item = flokStatusItem();
+    NSWindow *w = item.button.window;
+    if (w == nil) return;
+    NSRect f = w.frame;
+    CGFloat screenH = NSScreen.screens.firstObject.frame.size.height;
+    flokWriteJSON([d stringByAppendingPathComponent:@"item.json"],
+                  @{@"x": @(f.origin.x), @"y": @(screenH - f.origin.y - f.size.height),
+                    @"w": @(f.size.width), @"h": @(f.size.height), @"window": @(w.windowNumber)});
+    NSMenu *menu = flokMenu();
+    flokCommonTimer(1.0, ^{
+      CFArrayRef list = CGWindowListCopyWindowInfo(kCGWindowListOptionOnScreenOnly, kCGNullWindowID);
+      pid_t me = getpid();
+      for (NSDictionary *info in (__bridge NSArray *)list) {
+        if ([info[(id)kCGWindowOwnerPID] intValue] != me || [info[(id)kCGWindowLayer] intValue] < 100) continue;
+        NSDictionary *b = info[(id)kCGWindowBounds];
+        flokWriteJSON([d stringByAppendingPathComponent:@"menu.json"],
+                      @{@"window": info[(id)kCGWindowNumber], @"x": b[@"X"], @"y": b[@"Y"], @"w": b[@"Width"], @"h": b[@"Height"]});
+        break;
+      }
+      CFRelease(list);
+    });
+    flokCommonTimer(4.0, ^{ [menu cancelTracking]; });
+    item.menu = menu;             // systray detaches it again in menuDidClose:
+    [item.button performClick:nil];
+  });
+}

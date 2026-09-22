@@ -1,33 +1,186 @@
-<p align="center"><img src="assets/brand/flok-hero.png" alt="flok — a herdr-style agent sidebar for tmux" width="800"></p>
+<p align="center"><img src="assets/brand/flok-hero.png" alt="flok: see every Claude Code and Copilot CLI session in your tmux and jump to the one waiting on you" width="800"></p>
 
 [![ci](https://github.com/w4jnl/flok/actions/workflows/ci.yml/badge.svg)](https://github.com/w4jnl/flok/actions/workflows/ci.yml)
 
-A [herdr](https://herdr.dev)-style agent sidebar for tmux.
+See every Claude Code and Copilot CLI session in your tmux, which one is waiting on you, and jump
+there. Your tmux server, config and plugins stay untouched.
 
-flok adds one narrow pane to the left of your normal tmux: **sessions** on top (name, git branch,
-state dot), **agents** below (every Claude Code or Copilot CLI pane, with its state, current tool
-and unread count). It plays a sound when an agent needs your input or finishes while you are
-looking elsewhere, collapses to a six-column rail, hides completely, and opens a `prefix ?`
-keybinds help built from your live tmux bindings. Your tmux server, config, plugins and layouts
-are not touched.
+flok is a narrow sidebar pane next to your normal tmux: sessions on top, agents below, a sound
+when an agent needs you, and a `prefix ?` popup with your live keybinds. On macOS a menu bar
+item shows the same states while the terminal is behind other windows. The sidebar is modelled
+on [herdr](https://herdr.dev)'s.
 
+<p align="center"><img src="assets/demo.gif" alt="A 20-second recording of the sidebar next to three tmux sessions: api asks for a Bash permission and turns orange, prefix o jumps to it, the answer is typed, api works again; docs stays done with one unread completion" width="936"></p>
+
+<img src="assets/menubar-stack.png" alt="The macOS menu bar item with a working spinner and an orange badge for two agents waiting, and its dropdown listing the three agents with their states" width="168" align="left">
+
+The macOS menu bar companion, opt-in with `[bar] enabled = true`: the badge counts the agents
+waiting on you, the dropdown lists them all with the same state detail as the sidebar, and a
+click on a row brings the terminal to the front on that pane. The spinner turns while any agent
+works.
+
+<br clear="all">
+
+## Setup
+
+Current version: 0.4.4 · [release notes](CHANGELOG.md). Needs tmux 2.7 or newer (everything
+from 3.3) and Claude Code or Copilot CLI; details under [Requirements](#requirements).
+
+1. Install the binary. Homebrew, on macOS or Linux:
+   ```sh
+   brew install w4jnl/tap/flok
+   ```
+   Or a prebuilt static Linux binary from the [releases page](https://github.com/w4jnl/flok/releases)
+   (`amd64` and `arm64`, no Go, no root):
+   ```sh
+   ver=0.4.4; arch=$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')
+   curl -fsSLO "https://github.com/w4jnl/flok/releases/download/v$ver/flok_${ver}_linux_${arch}.tar.gz"
+   curl -fsSLO "https://github.com/w4jnl/flok/releases/download/v$ver/sha256sums.txt"
+   sha256sum -c --ignore-missing sha256sums.txt
+   mkdir -p ~/.local/bin && tar -xzf "flok_${ver}_linux_${arch}.tar.gz" --strip-components=1 -C ~/.local/bin "flok_${ver}_linux_${arch}/flok"
+   ```
+2. Wire it up. This writes a commented `config.toml` with the defaults, installs the Claude Code
+   hooks in `~/.claude/settings.json`, writes the Copilot CLI hooks when `~/.copilot` exists, and
+   prints a tmux snippet:
+   ```sh
+   flok install
+   ```
+3. Paste the printed snippet below the tpm `run` line of your tmux.conf (bindings above it get
+   overwritten by plugins), then reload tmux:
+   ```sh
+   tmux source-file ~/.config/tmux/tmux.conf     # or ~/.tmux.conf
+   ```
+4. Restart the Claude Code and Copilot sessions that are already running. Hooks load at start.
+5. Start flok from a plain terminal, not from inside tmux:
+   ```sh
+   flok up
+   ```
+
+`flok doctor` checks every step: tmux version, hooks and the binary they call, sounds,
+manifests, tmux.conf, the running outer session.
+
+### More install options
+
+- From source (Go 1.27): `git clone https://github.com/w4jnl/flok.git && cd flok && make install`
+  builds `bin/flok` and copies it to `~/.local/bin`.
+- One part at a time: `flok install --claude`, `--copilot`, `--tmux` or `--config` do only that
+  step; `--tmux-resurrect` prints the opt-in snippet described below.
+- Shell completion (commands, flags, pane ids for `explain`, client ttys for `--client`):
+  ```sh
+  echo 'eval "$(flok completion bash)"' >> ~/.bashrc
+  echo 'eval "$(flok completion zsh)"'  >> ~/.zshrc     # after compinit; or: flok completion zsh > ~/.zfunc/_flok
+  ```
+- From a window manager or a terminal binding: `flok up` exits 0 after a detach or `flok down`,
+  so `flok up || tmux attach || tmux new-session` falls back to plain tmux only when flok cannot
+  start. `flok up` starts the inner tmux server itself when needed.
+
+### Restore agents with tmux-resurrect
+
+tmux-resurrect restores panes and directories by default, but only restarts programs on its
+allowlist. Adding `claude` and `copilot` to that list would restart the CLIs without reliably
+selecting the same conversation when several sessions share a directory.
+
+Flok can annotate each tmux-resurrect save with the exact session ID of the conversation in
+each pane. Print the opt-in snippet and paste it below the tmux-resurrect/tpm configuration:
+
+```sh
+flok install --tmux-resurrect
 ```
-┌──────────────────────────┬────────────────────────────────────────┐
-│ sessions                 │                                        │
-│  ◑ Claude          main  │   your normal tmux server, untouched   │
-│  ○ Hugo            main  │   (sessions, windows, plugins, keys)   │
-│  ● flok            main  │                                        │
-│                          │                                        │
-│ agents · 1     priority  │                                        │
-│  ● flok        perm:Bash │                                        │
-│    claude · feasibility  │                                        │
-│  ◑ trading-jou… Bash 0:42│                                        │
-│    claude · add-settle…  │                                        │
-│  ○ mwrelay               │                                        │
-│    claude · store-forwa… │                                        │
-│ j/k ⏎ ⇥ 1-9      ? help  │                                        │
-└──────────────────────────┴────────────────────────────────────────┘
+
+The generated configuration is equivalent to:
+
+```tmux
+if-shell -F '#{m:*claude*,#{@resurrect-processes}}' '' "set -ag @resurrect-processes ' claude'"
+if-shell -F '#{m:*copilot*,#{@resurrect-processes}}' '' "set -ag @resurrect-processes ' copilot'"
+set -g @resurrect-hook-post-save-layout "'/path/to/flok' resurrect save"
 ```
+
+On every save, `flok resurrect save` rewrites only Claude/Copilot process fields in the new
+tmux-resurrect state file:
+
+- Claude Code becomes `claude --resume <exact-session-id>`. The ID comes from Claude Code's own
+  registry of running sessions (`claude agents --json`, matched to the pane by tty), which
+  describes the live process, and otherwise from the hook record, so a pane whose hooks never
+  fired is still saved exactly.
+- Copilot CLI becomes `copilot --resume=<exact-session-id>`, from its hook record.
+- A recognized agent without a usable session ID is deliberately saved with no process, so its
+  restored pane remains a shell instead of opening the wrong conversation. `resurrect.log` in
+  the state dir says which panes were skipped and why.
+
+tmux-resurrect still owns pane creation, layout, working-directory restoration and process
+launch. This means there is no post-restore race and no dependency on pane IDs being reused.
+Conversation history resumes, but a tool that was in flight when tmux died is not rerun. With
+tmux-continuum, the restored pane set is as current as its latest save (15 minutes by default).
+Trigger a manual tmux-resurrect save after enabling the integration if you want an immediate
+baseline.
+
+tmux-resurrect supports one `@resurrect-hook-post-save-layout` command. If that option is already
+used, chain both commands in the same shell value rather than replacing the existing hook. Run
+`flok doctor` to confirm the hook and process allowlist are visible to the inner tmux server.
+
+If a `~/.tmux.conf` from before tmux 3.1 still sources `~/.config/tmux/tmux.conf`, tmux 3.1+
+loads that file twice (it reads both paths itself): every plugin initialises twice and
+tmux-continuum starts two restores that type each restored command twice. `flok doctor` warns
+about it. Keep the shim for older machines but guard it:
+
+```tmux
+# tmux < 3.1 does not read ~/.config/tmux/tmux.conf itself; 3.1+ does, and would load it twice
+if-shell 'tmux -V | grep -qE "^tmux (1\.|2\.|3\.0)"' 'source-file ~/.config/tmux/tmux.conf'
+```
+
+Restart tmux through `flok up`: it starts the inner server with a throwaway `~flok` session
+(a name no saved session can be mistaken for), tmux-continuum restores the saved layout in the
+background, the client attaches at once (tmux-resurrect relaunches programs through that
+client) and the throwaway session is dropped when the restore is over. Kill both servers (`flok down`, then the inner
+`tmux kill-server`) when you want a restore; tmux-continuum skips its automatic restore while
+another tmux server, such as flok's outer one, is running.
+
+## Why flok
+
+The problem:
+
+- Several agents run at once, one per tmux session or window, and each shows only its own state.
+- There is no glance-level overview. To learn which one finished you cycle through sessions.
+- An agent waiting for a permission answer stays unnoticed while you work in another session.
+
+What flok does about it:
+
+- A nested outer tmux server frames your own server with a sidebar. Your server, its config,
+  plugins and layouts are never modified; a detach returns you to plain tmux.
+- Four state sources are merged, with the agents' own hooks as the source of truth: hooks,
+  Claude's session registry, pane titles and herdr's screen rules.
+- Sounds play only for panes you are not looking at, and are debounced.
+- Why not herdr: herdr is its own sidebar application that hosts the terminals; flok wraps the
+  tmux you already have. herdr's detection manifests and notification sounds are reused under
+  Apache-2.0, see [Credits](#credits-and-license).
+
+## Features
+
+- **Sessions panel**: every tmux session with the git branch of its active pane, the current one
+  highlighted, a state dot rolled up from the agents inside it.
+- **Agents panel**: every agent pane across all sessions, sorted by attention (blocked, then done,
+  then working, then idle), two lines per agent: project and state detail, agent kind and its own
+  session title.
+- **Live states** from hooks: working with the current tool and elapsed time (`Bash 0:42`),
+  blocked (`perm:Bash`, `question`, `elicit`), done with an unread count, idle.
+- **Sounds** when an agent gets blocked or finishes in a pane you are not looking at; never for
+  the pane in front of you; debounced so ten agents finishing together beep once.
+- **Jump**: click or `Enter` on a row to go to that pane.
+- **`prefix o`** goes to the agent that needs you: the newest one waiting for input, else the
+  newest one that finished.
+- **Rail** mode at six columns, one keystroke away. The `[flok]` wordmark sits on top of the wide
+  sidebar, the mark on the rail.
+- **Hide** mode at zero columns, also one keystroke away; the sidebar polls slowly while hidden
+  and comes back at its previous width.
+- **Keybinds help**: `prefix ?` opens a popup listing all live bindings of your tmux server,
+  grouped (flok, prefix, no prefix, copy-mode, plugins), with tmux's own notes as labels and `/`
+  to filter.
+- **Menu bar companion** (macOS, opt-in): a flok icon in the menu bar that spins while agents
+  work, a badge for agents waiting for you, and a dropdown of agents; a click brings the terminal
+  window to the front and puts you on that agent's pane.
+- **Zero footprint by default** on your tmux: no plugin and no pane injected into your windows.
+- **tmux-resurrect** (opt-in): saves each Claude Code and Copilot pane with its exact session ID,
+  so a restore resumes the same conversations.
 
 ## Scope and status
 
@@ -47,30 +200,30 @@ What that means in practice:
   `brew upgrade`.
 - Bug reports with a reproduction are welcome; support is best effort.
 
-## Features
-
-- **Sessions panel**: every tmux session with the git branch of its active pane, the current one
-  highlighted, a state dot rolled up from the agents inside it.
-- **Agents panel**: every agent pane across all sessions, sorted by attention (blocked, then done,
-  then working, then idle), two lines per agent: project and state detail, agent kind and its own
-  session title.
-- **Live states** from hooks: working with the current tool and elapsed time (`Bash 0:42`),
-  blocked (`perm:Bash`, `question`, `elicit`), done with an unread count, idle.
-- **Sounds** when an agent gets blocked or finishes in a pane you are not looking at; never for
-  the pane in front of you; debounced so ten agents finishing together beep once.
-- **Navigation**: click or `Enter` on a row to jump there; `prefix o` jumps to whatever needs you.
-- **Rail** mode at six columns, hide mode at zero, both a keystroke away. The `[flok]` wordmark
-  sits on top of the wide sidebar, the mark on the rail.
-- **Keybinds help**: `prefix ?` opens a popup listing all live bindings of your tmux server,
-  grouped (flok, prefix, no prefix, copy-mode, plugins), with tmux's own notes as labels and `/`
-  to filter.
-- **Menu bar companion** (macOS, opt-in): a flok icon in the menu bar that spins while agents
-  work, a badge for agents waiting for you, and a dropdown of agents; a click brings the terminal
-  window to the front and puts you on that agent's pane.
-- **Zero footprint by default** on your tmux: no plugin and no pane injected into your windows.
-  An optional tmux-resurrect integration can save exact agent resume commands.
+flok is at 0.4.4 (2026-09-22). [`CHANGELOG.md`](CHANGELOG.md) lists what changed in every
+release, newest first; the same text is on each GitHub release.
 
 ## How it works
+
+What the sidebar shows next to your tmux:
+
+```
+┌──────────────────────────┬────────────────────────────────────────┐
+│ sessions                 │                                        │
+│  ◑ Claude          main  │   your normal tmux server, untouched   │
+│  ○ Hugo            main  │   (sessions, windows, plugins, keys)   │
+│  ● flok            main  │                                        │
+│                          │                                        │
+│ agents · 1     priority  │                                        │
+│  ● flok        perm:Bash │                                        │
+│    claude · feasibility  │                                        │
+│  ◑ trading-jou… Bash 0:42│                                        │
+│    claude · add-settle…  │                                        │
+│  ○ mwrelay               │                                        │
+│    claude · store-forwa… │                                        │
+│ j/k ⏎ ⇥ 1-9      ? help  │                                        │
+└──────────────────────────┴────────────────────────────────────────┘
+```
 
 ### Two tmux servers
 
@@ -196,121 +349,6 @@ Nothing is hand-maintained: what the popup shows is what your server has bound r
 
 Below 2.7 `flok up` refuses to start. The gates live in `internal/tmux/version.go`; CI runs the
 end-to-end suites on macOS (3.7), Ubuntu (3.4), Rocky 9 (3.2a) and Rocky 8 (2.7).
-
-## Install
-
-Homebrew, from the `w4jnl/tap` tap:
-
-```sh
-brew install w4jnl/tap/flok
-```
-
-On Linux, a prebuilt static binary from the [releases page](https://github.com/w4jnl/flok/releases)
-(no Go, no root; `x86_64`/`amd64` and `aarch64`/`arm64`):
-
-```sh
-ver=0.3.0; arch=$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')
-curl -fsSLO "https://github.com/w4jnl/flok/releases/download/v$ver/flok_${ver}_linux_${arch}.tar.gz"
-curl -fsSLO "https://github.com/w4jnl/flok/releases/download/v$ver/sha256sums.txt"
-sha256sum -c --ignore-missing sha256sums.txt
-mkdir -p ~/.local/bin && tar -xzf "flok_${ver}_linux_${arch}.tar.gz" --strip-components=1 -C ~/.local/bin "flok_${ver}_linux_${arch}/flok"
-flok install && flok doctor            # hooks into Claude Code / Copilot, tmux snippet, version report
-```
-
-Or from source:
-
-```sh
-git clone git@github.com:w4jnl/flok.git && cd flok
-make install                       # builds bin/flok and copies it to ~/.local/bin
-```
-
-Then wire it up once:
-
-```sh
-flok install                       # Claude Code hooks, Copilot hooks (if ~/.copilot exists), a commented
-                                   # config.toml with the defaults, and it prints the tmux snippet
-```
-
-Paste the printed snippet **below the tpm `run` line** of your tmux.conf (bindings placed above
-it get overwritten by plugins), reload tmux, and restart running agent sessions so they load the
-hooks. Start flok from a plain terminal, not from inside tmux:
-
-```sh
-flok up
-```
-
-`flok doctor` checks tmux, hooks, sounds, manifests and the running outer session. Shell
-completion (commands, flags, pane ids for `explain`, client ttys for `--client`):
-
-```sh
-echo 'eval "$(flok completion bash)"' >> ~/.bashrc
-echo 'eval "$(flok completion zsh)"'  >> ~/.zshrc     # after compinit; or: flok completion zsh > ~/.zfunc/_flok
-```
-
-Launching from a window manager or a terminal binding: `flok up` exits 0 after a detach or
-`flok down`, so a command like `flok up || tmux attach || tmux new-session` falls back to plain
-tmux only when flok cannot start. `flok up` starts the inner tmux server itself when needed.
-
-### Restore agents with tmux-resurrect
-
-tmux-resurrect restores panes and directories by default, but only restarts programs on its
-allowlist. Adding `claude` and `copilot` to that list would restart the CLIs without reliably
-selecting the same conversation when several sessions share a directory.
-
-Flok can annotate each tmux-resurrect save with the exact session ID of the conversation in
-each pane. Print the opt-in snippet and paste it below the tmux-resurrect/tpm configuration:
-
-```sh
-flok install --tmux-resurrect
-```
-
-The generated configuration is equivalent to:
-
-```tmux
-if-shell -F '#{m:*claude*,#{@resurrect-processes}}' '' "set -ag @resurrect-processes ' claude'"
-if-shell -F '#{m:*copilot*,#{@resurrect-processes}}' '' "set -ag @resurrect-processes ' copilot'"
-set -g @resurrect-hook-post-save-layout "'/path/to/flok' resurrect save"
-```
-
-On every save, `flok resurrect save` rewrites only Claude/Copilot process fields in the new
-tmux-resurrect state file:
-
-- Claude Code becomes `claude --resume <exact-session-id>`. The ID comes from Claude Code's own
-  registry of running sessions (`claude agents --json`, matched to the pane by tty), which
-  describes the live process, and otherwise from the hook record, so a pane whose hooks never
-  fired is still saved exactly.
-- Copilot CLI becomes `copilot --resume=<exact-session-id>`, from its hook record.
-- A recognized agent without a usable session ID is deliberately saved with no process, so its
-  restored pane remains a shell instead of opening the wrong conversation. `resurrect.log` in
-  the state dir says which panes were skipped and why.
-
-tmux-resurrect still owns pane creation, layout, working-directory restoration and process
-launch. This means there is no post-restore race and no dependency on pane IDs being reused.
-Conversation history resumes, but a tool that was in flight when tmux died is not rerun. With
-tmux-continuum, the restored pane set is as current as its latest save (15 minutes by default).
-Trigger a manual tmux-resurrect save after enabling the integration if you want an immediate
-baseline.
-
-tmux-resurrect supports one `@resurrect-hook-post-save-layout` command. If that option is already
-used, chain both commands in the same shell value rather than replacing the existing hook. Run
-`flok doctor` to confirm the hook and process allowlist are visible to the inner tmux server.
-
-If a `~/.tmux.conf` from before tmux 3.1 still sources `~/.config/tmux/tmux.conf`, tmux 3.1+
-loads that file twice (it reads both paths itself): every plugin initialises twice and
-tmux-continuum starts two restores that type each restored command twice. `flok doctor` warns
-about it. Keep the shim for older machines but guard it:
-
-```tmux
-# tmux < 3.1 does not read ~/.config/tmux/tmux.conf itself; 3.1+ does, and would load it twice
-if-shell 'tmux -V | grep -qE "^tmux (1\.|2\.|3\.0)"' 'source-file ~/.config/tmux/tmux.conf'
-```
-
-Restart tmux through `flok up`: it starts the inner server with a throwaway `~flok` session
-(a name no saved session can be mistaken for), tmux-continuum restores the saved layout in the
-background, the client attaches at once (tmux-resurrect relaunches programs through that
-client) and the throwaway session is dropped when the restore is over. Kill both servers (`flok down`, then the inner
-`tmux kill-server`) when you want a restore; tmux-continuum skips its automatic restore while
-another tmux server, such as flok's outer one, is running.
 
 ## Keys
 

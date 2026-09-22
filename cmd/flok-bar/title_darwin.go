@@ -6,6 +6,7 @@ package main
 #cgo CFLAGS: -x objective-c
 #cgo LDFLAGS: -framework Cocoa
 void debugDumpMenu(void);
+void debugShot(const char *dir, double delay);
 void setMenuItemTitleIcon(const char *title, const void *bytes, int length);
 #include <stdlib.h>
 void setTitleRuns(const char **texts, const double *rgb, const double *rgbLight, int n);
@@ -77,4 +78,12 @@ func setMenuItemTitleIcon(title string, png []byte) {
 	ct := C.CString(title)
 	defer C.free(unsafe.Pointer(ct))
 	C.setMenuItemTitleIcon(ct, unsafe.Pointer(&png[0]), C.int(len(png)))
+}
+
+// debugShot opens the menu and records the frames to capture (FLOK_BAR_SHOT=<dir>); see the
+// Objective-C side. Used by assets/demo/menubar.sh for the README.
+func debugShot(dir string, delay float64) {
+	cd := C.CString(dir)
+	defer C.free(unsafe.Pointer(cd))
+	C.debugShot(cd, C.double(delay))
 }
