@@ -6,6 +6,8 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+## 0.4.4 (2026-09-22)
+
 - Menu bar: the version row opens `CHANGELOG.md` on GitHub (all releases newest first, so it
   also serves HEAD builds) instead of the running version's release page, and a new
   "GitHub repository" row below it opens the source. Both rows carry an icon, the flok mark
