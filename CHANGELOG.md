@@ -6,6 +6,9 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+- `[sounds] when_focused = true` now works: an agent pane you are looking at sounds when it
+  finishes or waits for you, like one in the background. The option was documented but ignored.
+
 - README: a new top section (pitch, recording, menu bar, five-step setup, why flok) ahead
   of the architecture; the old Install section is folded into it. The banner is re-rendered
   from the brand lockup (`assets/brand/render-hero.sh`) with the plain tagline. The GIF comes from

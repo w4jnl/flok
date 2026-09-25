@@ -19,4 +19,25 @@ hook claude '{"hook_event_name":"Stop","session_id":"b"}'
 for _ in $(seq 1 30); do [ -f "$T/bell" ] && break; sleep 0.1; done
 expect "Stop (unfocused agent) rang the terminal bell through the outer server" '^yes$' "$([ -f "$T/bell" ] && echo yes || echo no)"
 expect "doctor reports the bell mode" 'bell: always' "$("$BIN" doctor 2>&1 || true)"
+
+# Looking at the agent pane: silent by default, rings like an unfocused one with when_focused.
+IN switch-client -c "$(IN list-clients -F '#{client_tty}' | head -1)" -t Alpha:agent
+sleep 2.1   # past the per-pane repeat guard of the first bell
+rm -f "$T/bell"
+hook claude '{"hook_event_name":"UserPromptSubmit","session_id":"b"}'
+hook claude '{"hook_event_name":"Stop","session_id":"b"}'
+sleep 1
+expect "Stop (focused agent) stays silent by default" '^no$' "$([ -f "$T/bell" ] && echo yes || echo no)"
+python3 - "$FLOK_CONFIG" <<'PY'
+import sys
+p=sys.argv[1]; s=open(p).read()
+s=s.replace('[sounds]\nenabled = true\n', '[sounds]\nenabled = true\nwhen_focused = true\n', 1)
+open(p,'w').write(s)
+PY
+hook claude '{"hook_event_name":"UserPromptSubmit","session_id":"b"}'
+hook claude '{"hook_event_name":"Stop","session_id":"b"}'
+for _ in $(seq 1 30); do [ -f "$T/bell" ] && break; sleep 0.1; done
+expect "Stop (focused agent, when_focused) rang the bell" '^yes$' "$([ -f "$T/bell" ] && echo yes || echo no)"
+wait_for "○ $PROJ *$" 3 || true
+expect "... and the watched pane still shows idle, nothing unseen" "○ $PROJ *$" "$(capture)"
 finish

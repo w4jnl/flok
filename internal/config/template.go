@@ -62,7 +62,7 @@ const Template = `# flok configuration - https://github.com/w4jnl/flok
                               # hosts, the bell reaches your local terminal); always: bell and sound; never
 # volume = 0.6
 # min_interval_ms = 750
-# when_focused = false
+# when_focused = false        # true: sound (and mark done) also for the agent pane you are looking at
 # done = ""                   # empty = bundled sound; or e.g. "/System/Library/Sounds/Glass.aiff"
 # blocked = ""
 # error = ""

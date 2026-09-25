@@ -481,8 +481,8 @@ func CaptureArgs(pane string, extra int) []string {
 }
 
 // soundTransitions plays sounds for agents the hooks do not cover (title/screen/registry
-// sources) when they turn blocked or done unseen, and, with player = "sidebar", for hook
-// notifications the hook left unsounded.
+// sources) when they turn blocked or done unseen (or, with when_focused, also while watched),
+// and, with player = "sidebar", for hook notifications the hook left unsounded.
 func (m *Model) soundTransitions() {
 	cfg := m.d.Cfg.Sounds
 	present := map[string]bool{}
@@ -513,7 +513,11 @@ func (m *Model) soundTransitions() {
 			}
 			continue
 		}
-		if prev == a.State || focused && !m.lastUnfocused() {
+		if prev == a.State {
+			continue
+		}
+		watched := focused && !m.lastUnfocused()
+		if watched && !cfg.WhenFocused {
 			continue
 		}
 		switch a.State {
@@ -521,6 +525,10 @@ func (m *Model) soundTransitions() {
 			m.playIfAllowed(a.PaneID, "blocked")
 		case agent.Done:
 			m.playIfAllowed(a.PaneID, "done")
+		case agent.Idle:
+			if watched && prev == agent.Working { // a watched turn ends idle, never done
+				m.playIfAllowed(a.PaneID, "done")
+			}
 		}
 	}
 	for pane := range m.prevState {

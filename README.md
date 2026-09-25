@@ -149,7 +149,7 @@ What flok does about it:
   plugins and layouts are never modified; a detach returns you to plain tmux.
 - Four state sources are merged, with the agents' own hooks as the source of truth: hooks,
   Claude's session registry, pane titles and herdr's screen rules.
-- Sounds play only for panes you are not looking at, and are debounced.
+- Sounds play only for panes you are not looking at (unless `when_focused`), and are debounced.
 - Why not herdr: herdr is its own sidebar application that hosts the terminals; flok wraps the
   tmux you already have. herdr's detection manifests and notification sounds are reused under
   Apache-2.0, see [Credits](#credits-and-license).
@@ -163,8 +163,9 @@ What flok does about it:
   session title.
 - **Live states** from hooks: working with the current tool and elapsed time (`Bash 0:42`),
   blocked (`perm:Bash`, `question`, `elicit`), done with an unread count, idle.
-- **Sounds** when an agent gets blocked or finishes in a pane you are not looking at; never for
-  the pane in front of you; debounced so ten agents finishing together beep once.
+- **Sounds** when an agent gets blocked or finishes in a pane you are not looking at; not for
+  the pane in front of you unless `[sounds] when_focused = true`; debounced so ten agents
+  finishing together beep once.
 - **Jump**: click or `Enter` on a row to go to that pane.
 - **`prefix o`** goes to the agent that needs you: the newest one waiting for input, else the
   newest one that finished.
@@ -290,7 +291,8 @@ agent's name means no hook data has arrived for that pane (restart the agent aft
 A *done* agent keeps an unread counter (`done · 2` = one block plus one completion you did not
 see). Looking at the pane, `Enter`, a click or `prefix o` marks it seen. Sounds: blocked and done
 play their own sound, error a third; nothing plays for the pane that is currently in front of
-you, and repeats within 750 ms are dropped.
+you (set `[sounds] when_focused = true` to hear it there too), and repeats within 750 ms are
+dropped.
 
 ### The menu bar companion (macOS)
 
@@ -461,7 +463,8 @@ bell = "auto"               # auto: ring the terminal bell instead when no playe
                             # ssh hosts; the bell reaches your local terminal); always: bell and sound; never
 volume = 0.6
 min_interval_ms = 750
-when_focused = false
+when_focused = false        # true: also for the agent pane you are looking at (done, badge and sound
+                            # as if you were elsewhere); default: a watched pane ends idle, silently
 done = ""                   # empty = bundled done.wav; or e.g. "/System/Library/Sounds/Glass.aiff"
 blocked = ""                # empty = bundled request.wav (also used for error)
 error = ""

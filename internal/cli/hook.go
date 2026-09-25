@@ -26,6 +26,16 @@ func hookLog(format string, args ...any) {
 	fmt.Fprintf(f, time.Now().Format(time.RFC3339)+" "+format+"\n", args...)
 }
 
+// hookFocus returns the focus check state.Apply uses. With [sounds] when_focused a pane you are
+// looking at is treated like any other: it turns done or blocked with a notification and a sound,
+// and the sidebar clears the done mark at once because the pane is in view.
+func hookFocus(cfg config.Config, check func() bool) func() bool {
+	if cfg.Sounds.Enabled && cfg.Sounds.WhenFocused {
+		return func() bool { return false }
+	}
+	return check
+}
+
 // runHook is the receiver behind `flok hook <agent> [--event name]`. It must be fast,
 // silent and always exit 0: Copilot denies tools when a hook fails.
 func runHook(cfg config.Config, args []string) (code int) {
@@ -70,13 +80,13 @@ func runHook(cfg config.Config, args []string) (code int) {
 	ev.At = now
 	st := state.New(config.StateDir())
 	inner := tmux.FromEnv()
-	focused := func() bool {
+	focused := hookFocus(cfg, func() bool {
 		if inner == nil || !st.TerminalFocused() {
 			return false
 		}
 		v, err := tmux.Display(inner, pane, "#{?session_attached,1,0}#{window_active}#{pane_active}")
 		return err == nil && v == "111"
-	}
+	})
 	var sounder notify.Sounder = notify.Noop{}
 	plays := cfg.Sounds.Enabled && cfg.Sounds.Player == "hook"
 	if plays {
