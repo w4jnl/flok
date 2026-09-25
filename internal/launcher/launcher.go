@@ -471,6 +471,7 @@ func createOuter(cfg config.Config, bin, confPath string, outer *tmux.Local, ses
 	_ = UpdateRuntime(func(r *Runtime) { r.TmuxVersion = ver.String() }) // the sidebar reads it at start
 	_ = SetTerminalFocus(true)                                           // a fresh outer is visible and, until a hook says otherwise, focused
 	_ = SetSidebarHidden(false)
+	resetKeepAwake() // every session starts with keep-awake off
 	if _, err := outer.Run("-f", confPath, "new-session", "-d", "-s", sess, "-n", "main", "-x", strconv.Itoa(cols), "-y", strconv.Itoa(rows),
 		"-c", home, attachLoopCommand(bin)); err != nil {
 		return fmt.Errorf("create outer session: %w", err)
@@ -612,6 +613,7 @@ func AttachLoop(cfg config.Config) error {
 	}
 	_ = os.Remove(RuntimePath())
 	snapshot.Remove(config.StateDir())
+	resetKeepAwake()
 	StopBar()
 	if outer != nil {
 		_, _ = outer.Run("kill-server")
@@ -627,6 +629,7 @@ func Down(cfg config.Config) error {
 	_ = os.Remove(quitMarker())
 	_ = os.Remove(RuntimePath())
 	snapshot.Remove(config.StateDir())
+	resetKeepAwake()
 	StopBar()
 	if err != nil && strings.Contains(err.Error(), "no server running") {
 		return nil
@@ -666,3 +669,6 @@ func ActivePalette(cfg config.Config) config.Palette {
 func SetSidebarHidden(hidden bool) error {
 	return state.New(config.StateDir()).SetSidebarHidden(hidden)
 }
+
+// resetKeepAwake turns keep-awake off with the session: it is not carried over to the next one.
+func resetKeepAwake() { _ = state.New(config.StateDir()).SetKeepAwake(false) }

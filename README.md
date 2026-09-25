@@ -179,6 +179,9 @@ What flok does about it:
 - **Menu bar companion** (macOS, opt-in): a flok icon in the menu bar that spins while agents
   work, a badge for agents waiting for you, and a dropdown of agents; a click brings the terminal
   window to the front and puts you on that agent's pane.
+- **Keep awake** (macOS, off by default): `flok keep-awake` or the menu bar's "Keep awake" row stops
+  the Mac from idle-sleeping and keeps the display on while agents run unattended, until you
+  turn it off or flok stops; a ⚡ in the menu bar shows it is on.
 - **Zero footprint by default** on your tmux: no plugin and no pane injected into your windows.
 - **tmux-resurrect** (opt-in): saves each Claude Code and Copilot pane with its exact session ID,
   so a restore resumes the same conversations.
@@ -309,7 +312,8 @@ sidebar ──publishes──► ~/.local/state/flok/snapshot.json ──fsnotif
 only. It never talks to tmux itself: the sidebar publishes its merged view as a JSON snapshot
 (rewritten on change and every 5 s as a heartbeat), the bar renders it and forwards clicks to
 `flok goto`. The title text is `○` when everything is idle, an animated `◐◓◑◒` while an agent
-works, and `● N` when N agents are waiting for you (the icon gains a dot as well). The dropdown
+works, and `● N` when N agents are waiting for you (the icon gains a dot as well); `⚡` follows
+the glyph while keep-awake is on (`◑ ⚡ ● 2`). The dropdown
 lists agents in the sidebar's order with the same state detail. With `[bar] enabled = true`,
 `flok up` starts the bar (single instance) and `flok down` or a detach ends it; the bar also quits
 by itself 30 s after flok disappears.
@@ -320,6 +324,32 @@ app that ran `flok up` (recorded from `TERM_PROGRAM`: Ghostty, iTerm2, Terminal,
 best effort, raises the `TMUX…` window. Raising a specific window goes through System Events and
 needs Accessibility permission for `osascript`; without it the app comes to the front with its
 last-used window, which is usually the right one anyway.
+
+### Keep awake (macOS)
+
+```
+flok keep-awake / "Keep awake" ──writes──► ~/.local/state/flok/keep-awake (0|1)
+                                                 │ fsnotify
+                                                 ▼
+                  sidebar: IOPMAssertionCreateWithName  ──► snapshot.json "keep_awake" ──► ⚡, ✓ row
+```
+
+`flok keep-awake` does what `caffeinate -d -i` does, without running another program: the sidebar
+takes the two IOKit power assertions itself, `PreventUserIdleDisplaySleep` (the display stays on,
+so neither the screen saver nor the idle lock kicks in) and `PreventUserIdleSystemSleep`. They
+are called through [purego](https://github.com/ebitengine/purego), so the flok binary stays
+cgo-free. Because the sidebar holds them, they cannot outlive the session: macOS drops them the
+moment the sidebar exits, including a crash or a killed tmux server, and `flok down` or the
+end of the session turns keep-awake off; the next `flok up` starts with it off. `flok reload`
+keeps it (the new sidebar takes the assertions again).
+
+`flok keep-awake` with no argument toggles; `on`, `off` and `status` do what they say. It waits
+until the sidebar confirms the change and prints the result. While it is on, `flok status`
+adds a `keep-awake: on` line (`"KeepAwake": true` in `--json`), `flok doctor` reports it, and
+`pmset -g assertions` lists both assertions for the sidebar's pid under the name
+`flok keep-awake`. It needs flok to be running and is macOS only; on Linux the command says so.
+Closing the lid of a MacBook on battery still puts it to sleep; no user-space program can
+prevent that.
 
 ### The help popup
 
@@ -366,7 +396,8 @@ In tmux (your prefix; the snippet assumes `C-a`):
 | `prefix ?` | keybinds help popup (`?` inside the sidebar opens the same) |
 
 Menu bar (when enabled): click an agent row to return to it, "Show flok" to bring the terminal
-window to the front, "Edit config…" to open `config.toml` (in a new tmux window with `[bar] editor`
+window to the front, "Keep awake" to toggle it (checked while it is on), "Edit config…" to
+open `config.toml` (in a new tmux window with `[bar] editor`
 set, else with the default app), "Reload sidebar" to apply it, "Quit flok-bar" to remove the item
 (flok keeps running). The version row at the bottom opens the release notes (`CHANGELOG.md`,
 all releases newest first) and "GitHub repository" the source.
@@ -393,6 +424,7 @@ only `prefix b` keeps the cursor in the sidebar so you can collapse it and conti
 ```
 flok up [--detach]          start or re-attach the outer session (your server keeps running)
 flok down                   stop the outer session
+flok keep-awake [on|off|toggle|status]   keep the Mac awake, display on, while flok runs (macOS)
 flok status [--json]        one-shot dump of sessions and agents
 flok jump | next | prev     navigation, used by the bindings           [--client <tty>]
 flok toggle | hide | focus  sidebar layout and keyboard focus
@@ -509,6 +541,7 @@ brand = "#12999D"
 | `~/.local/state/flok/runtime.json` | the running outer session: panes, sockets, client tty, terminal app |
 | `~/.local/state/flok/snapshot.json` | the sidebar's merged view, read by flok-bar |
 | `~/.local/state/flok/flok-bar.pid` | the menu bar process started by `flok up` |
+| `~/.local/state/flok/keep-awake` | `1` while `flok keep-awake` asks the sidebar to keep the Mac awake |
 | `~/.local/state/flok/outer.conf` | the generated outer tmux config |
 | `~/.claude/settings.json` | the hook entries `flok install --claude` adds (a backup is written) |
 | `~/.copilot/hooks/flok.json` | the Copilot CLI hook file |
@@ -532,7 +565,7 @@ brand = "#12999D"
 ```sh
 make build             # bin/flok with the version stamped from git describe
 make test              # unit tests
-scripts/e2e/m1.sh      # headless end-to-end suites on isolated tmux servers, m1..m6
+scripts/e2e/m1.sh      # headless end-to-end suites on isolated tmux servers, m1..m9
 make icons             # regenerate the menu bar template icons (assets/icons/gen)
 scripts/spike/m0-outer.sh check   # nested-outer passthrough checks
 scripts/spike/m0-outer.sh up      # interactive checklist against your real server
@@ -552,6 +585,7 @@ internal/ui            Bubble Tea sidebar, rail, help overlay
 internal/snapshot      snapshot.json the sidebar publishes for flok-bar
 internal/bar           menu bar title/rows logic (pure, tested)
 internal/focus         bring the terminal window to the front (aerospace, applescript)
+internal/awake         keep-awake power assertions (IOKit through purego, no cgo; macOS only)
 internal/merge         authority merge of all state sources into one snapshot
 internal/state         hook state machine and the file store (flock, atomic writes)
 internal/agent         model, events, adapters (claude, copilot)
@@ -578,5 +612,6 @@ Apache License 2.0; see `NOTICE` and `LICENSE-APACHE`. herdr also set the bar fo
 sidebar should feel like. The terminal UI uses
 [Bubble Tea](https://github.com/charmbracelet/bubbletea) and
 [Lip Gloss](https://github.com/charmbracelet/lipgloss); the menu bar companion uses
-[fyne.io/systray](https://github.com/fyne-io/systray). The menu bar icon (a flock of monoline
-chevrons) is generated by `assets/icons/gen` in the style of the W4J mark.
+[fyne.io/systray](https://github.com/fyne-io/systray), and keep-awake calls IOKit through
+[purego](https://github.com/ebitengine/purego) (Apache License 2.0). The menu bar icon (a flock
+of monoline chevrons) is generated by `assets/icons/gen` in the style of the W4J mark.

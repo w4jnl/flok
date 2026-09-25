@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/w4jnl/flok/internal/agent"
@@ -55,6 +56,7 @@ type Snapshot struct {
 	Agents     []Agent   `json:"agents"`
 	Sessions   []Session `json:"sessions"`
 	Unseen     int       `json:"unseen"`
+	KeepAwake  bool      `json:"keep_awake,omitempty"` // the sidebar holds the power assertions (flok keep-awake)
 }
 
 // Freshness tells a reader how much to trust a loaded snapshot.
@@ -136,6 +138,16 @@ func (p *Publisher) Publish(s Snapshot, now time.Time) (bool, error) {
 
 // Remove deletes the snapshot (called when the sidebar or the outer goes away).
 func Remove(dir string) { _ = os.Remove(filepath.Join(dir, FileName)) }
+
+// SidebarAlive reports whether the sidebar that wrote the snapshot still runs.
+func (s Snapshot) SidebarAlive() bool {
+	return s.SidebarPID > 0 && syscall.Kill(s.SidebarPID, 0) == nil
+}
+
+// KeepAwakeHeld reports whether the sidebar that wrote the snapshot holds the keep-awake
+// assertions: it says so and it is still alive. macOS drops the assertions with the process,
+// while its last snapshot lingers until it goes stale.
+func (s Snapshot) KeepAwakeHeld() bool { return s.KeepAwake && s.SidebarAlive() }
 
 // Load reads the snapshot and judges its freshness.
 func Load(dir string, now time.Time) (Snapshot, Freshness) {

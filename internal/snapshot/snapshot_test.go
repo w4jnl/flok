@@ -2,6 +2,7 @@ package snapshot
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -58,5 +59,21 @@ func TestHeartbeatRepublishesLastSnapshot(t *testing.T) {
 	}
 	if s, _ := Load(p.Dir, now.Add(heartbeat+time.Second)); s.Unseen != 1 {
 		t.Fatalf("heartbeat must rewrite the last snapshot, got %+v", s)
+	}
+}
+
+func TestKeepAwakeHeldNeedsALiveSidebar(t *testing.T) {
+	if !(Snapshot{KeepAwake: true, SidebarPID: os.Getpid()}).KeepAwakeHeld() {
+		t.Fatal("a live sidebar that says so holds keep-awake")
+	}
+	if (Snapshot{KeepAwake: false, SidebarPID: os.Getpid()}).KeepAwakeHeld() || (Snapshot{KeepAwake: true}).KeepAwakeHeld() {
+		t.Fatal("off, or no sidebar pid: not held")
+	}
+	cmd := exec.Command("true")
+	if err := cmd.Run(); err != nil {
+		t.Skip(err)
+	}
+	if (Snapshot{KeepAwake: true, SidebarPID: cmd.Process.Pid}).KeepAwakeHeld() {
+		t.Fatal("a dead sidebar holds nothing")
 	}
 }

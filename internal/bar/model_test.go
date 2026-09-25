@@ -75,6 +75,26 @@ func TestTitleRunsColours(t *testing.T) {
 	}
 }
 
+func TestTitleKeepAwake(t *testing.T) {
+	o := Options{Animate: true, Badge: true}
+	s := snapshot.Snapshot{KeepAwake: true, Agents: []snapshot.Agent{{PaneID: "%1", State: agent.Working}, {PaneID: "%2", State: agent.Blocked}}}
+	if got := Title(s, snapshot.Fresh, 2, o); got != "◑ ⚡ ● 1" {
+		t.Fatalf("title %q", got)
+	}
+	runs := TitleRuns(s, snapshot.Fresh, 2, o)
+	if len(runs) != 3 || runs[1].Text != " "+KeepAwakeSign || runs[1].Color != "" || Join(runs) != Title(s, snapshot.Fresh, 2, o) {
+		t.Fatalf("runs %+v", runs)
+	}
+	if got := Title(snapshot.Snapshot{KeepAwake: true}, snapshot.Fresh, 0, o); got != "○ ⚡" {
+		t.Fatalf("idle title %q", got)
+	}
+	for _, f := range []snapshot.Freshness{snapshot.Stale, snapshot.Gone} { // not running: the dash stays alone
+		if got := Title(s, f, 0, o); got != "–" {
+			t.Fatalf("freshness %v: %q", f, got)
+		}
+	}
+}
+
 func TestSolidBlink(t *testing.T) {
 	if Solid(false, true, false, 0) || Solid(false, true, false, 1) {
 		t.Fatal("nothing pending: outline")

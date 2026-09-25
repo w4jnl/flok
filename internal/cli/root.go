@@ -21,6 +21,8 @@ usage: flok <command>
   up          start (or re-attach) the sidebar + your tmux server in a nested outer session
               (--detach: create it without attaching)
   down        stop the outer session (your tmux server keeps running)
+  keep-awake  [on|off|toggle|status]: keep the Mac awake with the display on while flok runs
+              (off by default, no argument toggles; macOS only)
   sidebar     run the sidebar UI in the current pane (used by up)
   status      print sessions and agents once (--json for machine output)
   jump        switch the inner client to the newest agent needing input (else newest done)
@@ -65,6 +67,8 @@ func Main(args []string) int {
 		return report(launcher.Up(cfg, binPath(), detach))
 	case "down":
 		return report(launcher.Down(cfg))
+	case "keep-awake":
+		return runKeepAwake(cfg, args[1:])
 	case "sidebar":
 		return runSidebar(cfg)
 	case "status":

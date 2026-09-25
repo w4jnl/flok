@@ -43,6 +43,8 @@ type Deps struct {
 	Rules       *rules.Set          // screen-rule manifests; nil disables capture-pane detection
 	OnSwitch    func(paneID string) // called after switching to an agent pane
 	Feat        tmux.Features       // what the tmux both servers run on can do (popups, …)
+	// Awake takes the power assertion while the keep-awake marker is on; nil disables keep-awake.
+	Awake func() (Releaser, error)
 }
 
 const (
@@ -98,6 +100,7 @@ type Model struct {
 	prefixKey     string
 	prefixPending bool
 	debug         bool
+	keep          *awakeHold // keep-awake: the power assertion, shared by every Model copy
 }
 
 type (
@@ -113,6 +116,7 @@ type (
 		seen      map[string]time.Time
 		unfocused bool
 		hidden    bool
+		keepAwake *bool  // keep-awake marker, only when this message read it (a stale copy would undo a change)
 		theme     string // terminal theme record ("dark", "light", "")
 		rebuilt   bool   // produced by rebuild from cached tmux data, not by a tmux poll
 		err       error
@@ -156,6 +160,7 @@ func New(d Deps) Model {
 	if d.Store != nil {
 		go watchStore(d.Store.Dir, m.changes)
 		m.publisher = &snapshot.Publisher{Dir: d.Store.Dir}
+		m.keep = &awakeHold{hold: d.Awake}
 	}
 	m.debug = os.Getenv("FLOK_DEBUG") != ""
 	m.readPrefix()
@@ -207,8 +212,8 @@ func (m *Model) forwardChord(msg tea.KeyMsg) tea.Cmd {
 }
 
 // watchStore pushes a (coalesced) signal whenever a hook record or seen mark changes, or the
-// sidebar-hidden marker flips. The state dir root also sees our own snapshot.json writes;
-// those are ignored by name.
+// sidebar-hidden or keep-awake marker flips. The state dir root also sees our own snapshot.json
+// writes; those are ignored by name.
 func watchStore(dir string, ch chan struct{}) {
 	w, err := fsnotify.NewWatcher()
 	if err != nil {
@@ -270,13 +275,14 @@ func (m Model) borderCmd() tea.Cmd {
 }
 
 // storeEventWanted filters fsnotify events: hook records and seen marks under agents/ and seen/,
-// plus the sidebar-hidden marker in the root (un-hide must resume the spinner at once);
+// plus the sidebar-hidden marker in the root (un-hide must resume the spinner at once) and the
+// keep-awake marker (`flok keep-awake` waits for the snapshot to confirm);
 // everything else in the root (our own snapshot.json temp+rename writes, terminal-focus, which
 // the next poll reads anyway, events.log, pid files) is noise.
 func storeEventWanted(root, name string) bool {
 	base := filepath.Base(name)
 	if filepath.Dir(name) == root {
-		return base == "sidebar-hidden" || base == "terminal-theme"
+		return base == "sidebar-hidden" || base == "terminal-theme" || base == state.KeepAwakeFile
 	}
 	return strings.HasSuffix(base, ".json")
 }
@@ -639,7 +645,8 @@ func (m Model) poll() tea.Cmd {
 		}
 		if store != nil {
 			msg.hook, msg.seen = store.LoadAgents(), store.LoadSeen()
-			msg.unfocused, msg.hidden = !store.TerminalFocused(), store.SidebarHidden()
+			keepAwake := store.KeepAwake()
+			msg.unfocused, msg.hidden, msg.keepAwake = !store.TerminalFocused(), store.SidebarHidden(), &keepAwake
 			msg.theme, _ = store.TerminalTheme()
 		}
 		msg.fp = fingerprint(raw, msg.hook, msg.seen, msg.unfocused)
@@ -672,12 +679,14 @@ func (m Model) rebuild(reloadStore bool) tea.Cmd {
 	snap, raw := m.tmuxSnap, m.lastRaw
 	hook, seen, unfocused, hidden, theme := m.lastHook, m.lastSeen, m.unfocused, m.hidden, m.themeRec
 	return func() tea.Msg {
+		var keepAwake *bool
 		if reloadStore && store != nil {
 			hook, seen = store.LoadAgents(), store.LoadSeen()
-			unfocused, hidden = !store.TerminalFocused(), store.SidebarHidden()
+			k := store.KeepAwake()
+			unfocused, hidden, keepAwake = !store.TerminalFocused(), store.SidebarHidden(), &k
 			theme, _ = store.TerminalTheme()
 		}
-		return snapshotMsg{snap: snap, raw: raw, hook: hook, seen: seen, unfocused: unfocused, hidden: hidden, theme: theme,
+		return snapshotMsg{snap: snap, raw: raw, hook: hook, seen: seen, unfocused: unfocused, hidden: hidden, theme: theme, keepAwake: keepAwake,
 			fp: fingerprint(raw, hook, seen, unfocused), rebuilt: true}
 	}
 }
@@ -772,8 +781,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, func() tea.Msg { _, _ = outer.Run("select-layout", "-t", sb, "main-vertical"); return nil }
 	case snapshotMsg:
+		var keepChanged bool
+		var keepErr error
+		if msg.keepAwake != nil {
+			keepChanged, keepErr = m.keep.sync(*msg.keepAwake)
+		}
+		if keepErr != nil {
+			m.debugf("keep-awake: %v", keepErr)
+		} else if keepChanged {
+			m.debugf("keep-awake=%v", m.keep.on())
+		}
 		if msg.err != nil {
 			m.errText = msg.err.Error()
+			if keepChanged {
+				m.publish()
+			}
 			return m, nil
 		}
 		focusChanged := false
@@ -807,7 +829,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.fp == m.lastFP && m.registrySeq == m.lastRegSeq && m.screenSeq == m.lastScrSeq && m.errText == "" {
 			m.vc.valid = !focusChanged && !themeChanged // identical inputs: keep the frame, skip the merge
-			if m.publisher != nil {                     // the merge did not run, so keep flok-bar's liveness signal going
+			if keepChanged {
+				m.publish()
+			} else if m.publisher != nil { // the merge did not run, so keep flok-bar's liveness signal going
 				_, _ = m.publisher.Heartbeat(time.Now())
 			}
 			return m, batch(append(cmds, m.animCmd())...)
@@ -837,9 +861,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				_ = m.d.Store.DeleteAgentIfUnchanged(stale.PaneID, stale.AgentSessionID, stale.LastEventAt)
 			}
 		}
-		if m.publisher != nil { // for flok-bar and other out-of-process readers
-			_, _ = m.publisher.Publish(snapshot.FromMerge(m.snap), time.Now())
-		}
+		m.publish() // for flok-bar and other out-of-process readers
 		m.soundTransitions()
 		m.clamp()
 		return m, batch(append(cmds, m.animCmd())...)

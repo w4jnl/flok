@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/w4jnl/flok/internal/agent"
+	"github.com/w4jnl/flok/internal/awake"
 	"github.com/w4jnl/flok/internal/config"
 	"github.com/w4jnl/flok/internal/git"
 	"github.com/w4jnl/flok/internal/launcher"
@@ -25,6 +26,9 @@ func sidebarDeps(cfg config.Config) ui.Deps {
 	}
 	d := ui.Deps{Cfg: cfg, Inner: tmux.NewLocal(cfg.Inner.Socket).SetVersion(ver), Feat: tmux.FeaturesFor(ver),
 		Adapters: agent.Enabled(cfg.Agents.Enabled), BranchOf: git.Branch, Store: state.New(config.StateDir())}
+	if awake.Supported() {
+		d.Awake = func() (ui.Releaser, error) { return awake.Hold(awake.Name) }
+	}
 	for _, id := range cfg.Agents.Enabled {
 		if id == "claude" {
 			d.Registry = true
@@ -68,7 +72,9 @@ func runSidebar(cfg config.Config) int {
 	// The renderer wakes fps times per second to compare the frame buffer; 60 (Bubble Tea's
 	// default) is far more than a sidebar animating at 4 Hz needs and costs idle wakeups.
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion(), tea.WithFPS(fps), tea.WithReportFocus())
-	if _, err := p.Run(); err != nil {
+	_, err := p.Run()
+	m.ReleaseKeepAwake()
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "flok sidebar:", err)
 		return 1
 	}

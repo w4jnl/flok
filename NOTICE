@@ -9,6 +9,10 @@ Version 2.0. They are redistributed unchanged apart from an attribution header.
 The notification sounds under internal/notify/sounds/ (done.wav, request.wav) are herdr's
 assets/sounds/done.mp3 and request.mp3, under the same Apache License, Version 2.0,
 transcoded to 22.05 kHz mono WAV (afconvert) and otherwise unchanged.
+
+The macOS build of flok includes github.com/ebitengine/purego
+(https://github.com/ebitengine/purego), licensed under the Apache License, Version 2.0, which
+flok uses to call IOKit for `flok keep-awake` without cgo.
 The full text of the Apache License 2.0 is in LICENSE-APACHE.
 
 assets/icons/github-mark@2x.png is GitHub's Invertocat mark (https://github.com/logos), reduced

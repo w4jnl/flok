@@ -54,8 +54,11 @@ func attention(a snapshot.Agent) bool {
 	return a.State == agent.Blocked || (a.State == agent.Done && a.Unseen > 0) || a.Unseen > 0
 }
 
-// Title is the text next to the icon: idle "○", an animation frame while working, and a badge
-// "● N" for pending agents. "–" when flok is not running.
+// KeepAwakeSign follows the state glyph while `flok keep-awake` keeps the Mac awake.
+const KeepAwakeSign = "⚡"
+
+// Title is the text next to the icon: idle "○", an animation frame while working, then ⚡ while
+// keep-awake is on and a badge "● N" for pending agents. "–" when flok is not running.
 func Title(s snapshot.Snapshot, f snapshot.Freshness, frame int, o Options) string {
 	if f != snapshot.Fresh {
 		return "–"
@@ -66,6 +69,9 @@ func Title(s snapshot.Snapshot, f snapshot.Freshness, frame int, o Options) stri
 		if o.Animate {
 			glyph = Frames[((frame%len(Frames))+len(Frames))%len(Frames)]
 		}
+	}
+	if s.KeepAwake {
+		glyph += " " + KeepAwakeSign
 	}
 	if n := Pending(s); o.Badge && n > 0 {
 		return fmt.Sprintf("%s ● %d", glyph, n)

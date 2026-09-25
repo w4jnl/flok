@@ -23,6 +23,21 @@ func TestMarkerFlags(t *testing.T) {
 	}
 }
 
+func TestKeepAwakeMarker(t *testing.T) {
+	s := New(t.TempDir())
+	if s.KeepAwake() {
+		t.Fatal("missing marker means off")
+	}
+	_ = s.SetKeepAwake(true)
+	if !s.KeepAwake() {
+		t.Fatal("on must round-trip")
+	}
+	_ = s.SetKeepAwake(false)
+	if s.KeepAwake() {
+		t.Fatal("off must round-trip")
+	}
+}
+
 func TestTerminalTheme(t *testing.T) {
 	s := New(t.TempDir())
 	if th, bg := s.TerminalTheme(); th != "" || bg != "" {

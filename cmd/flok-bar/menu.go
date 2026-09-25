@@ -38,21 +38,24 @@ type menuBar struct {
 	dir  string
 	flok string // the flok CLI used for clicks
 
-	header, show, edit, reload, quit, about, repo *systray.MenuItem
-	slots                                         []*slot
+	header, show, keepAwake, edit, reload, quit, about, repo *systray.MenuItem
+	slots                                                    []*slot
 
-	mu        sync.Mutex
-	snap      snapshot.Snapshot
-	fresh     snapshot.Freshness
-	frame     int
-	solidIcon bool   // the solid (waiting) icon is on screen
-	iconColor string // palette token the icon is tinted with ("" = template)
-	blink     int    // blink phase, advanced by the blink loop while something waits
-	goneSince time.Time
-	lastTitle string
-	lastHead  string
-	showOn    bool
-	cfgMtime  time.Time
+	mu          sync.Mutex
+	snap        snapshot.Snapshot
+	fresh       snapshot.Freshness
+	frame       int
+	solidIcon   bool   // the solid (waiting) icon is on screen
+	iconColor   string // palette token the icon is tinted with ("" = template)
+	blink       int    // blink phase, advanced by the blink loop while something waits
+	goneSince   time.Time
+	lastTitle   string
+	lastHead    string
+	showOn      bool
+	keepChecked bool // "Keep awake" row as pushed to AppKit
+	keepEnabled bool
+	lastTip     string
+	cfgMtime    time.Time
 }
 
 func newBar(cfg config.Config, dir string) *menuBar {
@@ -85,6 +88,7 @@ func (b *menuBar) onReady() {
 	setTemplateIcon(icons.Flok, b.cfg.Bar.IconSize, "")
 	systray.SetTitle("–")
 	systray.SetTooltip("flok")
+	b.lastTip = "flok"
 	b.header = systray.AddMenuItem("flok", "")
 	b.header.Disable()
 	for i := 0; i < b.maxRows(); i++ {
@@ -95,6 +99,8 @@ func (b *menuBar) onReady() {
 	}
 	systray.AddSeparator()
 	b.show = systray.AddMenuItem("Show flok", "bring the flok terminal window to the front")
+	b.keepAwake = systray.AddMenuItemCheckbox("Keep awake", "keep the Mac awake with the display on while flok runs (flok keep-awake)", false)
+	b.keepEnabled = true
 	b.edit = systray.AddMenuItem("Edit config…", "open ~/.config/flok/config.toml; the bar re-reads it, the sidebar needs Reload")
 	b.reload = systray.AddMenuItem("Reload sidebar", "restart the sidebar pane to apply config.toml changes")
 	systray.AddSeparator()
@@ -154,6 +160,8 @@ func (b *menuBar) watch() {
 func (b *menuBar) refresh() {
 	now := time.Now()
 	s, f := snapshot.Load(b.dir, now)
+	// a crashed sidebar's last snapshot must not show ⚡ until it goes stale
+	s.KeepAwake = s.KeepAwakeHeld()
 	if fi, err := os.Stat(config.ConfigFile()); err == nil && !fi.ModTime().Equal(b.cfgMtime) { // hot edits of [bar]
 		if cfg, err := config.Load(""); err == nil {
 			b.cfg, b.cfgMtime = cfg, fi.ModTime()
@@ -235,6 +243,36 @@ func (b *menuBar) render(now time.Time) {
 			b.show.Disable()
 		}
 		b.showOn = on
+	}
+	b.renderKeepAwake(f == snapshot.Fresh, f == snapshot.Fresh && s.KeepAwake)
+}
+
+// renderKeepAwake mirrors what the sidebar holds on the "Keep awake" row and in the tooltip; the
+// row is disabled while flok is not running (there is no sidebar to hold anything).
+func (b *menuBar) renderKeepAwake(running, on bool) {
+	if on != b.keepChecked {
+		if on {
+			b.keepAwake.Check()
+		} else {
+			b.keepAwake.Uncheck()
+		}
+		b.keepChecked = on
+	}
+	if running != b.keepEnabled {
+		if running {
+			b.keepAwake.Enable()
+		} else {
+			b.keepAwake.Disable()
+		}
+		b.keepEnabled = running
+	}
+	tip := "flok"
+	if on {
+		tip = "flok · keeping the Mac awake"
+	}
+	if tip != b.lastTip {
+		systray.SetTooltip(tip)
+		b.lastTip = tip
 	}
 }
 
@@ -354,6 +392,8 @@ func (b *menuBar) staticClicks() {
 		select {
 		case <-b.show.ClickedCh:
 			b.goto_("")
+		case <-b.keepAwake.ClickedCh:
+			b.run("keep-awake", "toggle") // the row follows once the sidebar confirms via the snapshot
 		case <-b.edit.ClickedCh:
 			b.run("edit-config")
 		case <-b.reload.ClickedCh:

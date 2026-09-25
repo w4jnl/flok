@@ -36,6 +36,9 @@ func TitleRuns(s snapshot.Snapshot, f snapshot.Freshness, frame int, o Options) 
 		}
 	}
 	runs := []Run{glyph}
+	if s.KeepAwake {
+		runs = append(runs, Run{Text: " " + KeepAwakeSign})
+	}
 	if n := Pending(s); o.Badge && n > 0 {
 		runs = append(runs, Run{Text: fmt.Sprintf(" ● %d", n), Color: "attention"})
 	}

@@ -116,9 +116,11 @@ void debugDumpMenu(void) {
   dispatch_async(dispatch_get_main_queue(), ^{
     NSMenu *menu = flokMenu();
     if (menu == nil) { fprintf(stderr, "flok-bar debug: no menu via KVC\n"); return; }
+    NSStatusItem *item = flokStatusItem();
+    if (item != nil) fprintf(stderr, "flok-bar debug: status title=%s\n", item.button.title.UTF8String);
     for (NSMenuItem *it in menu.itemArray) {
-      fprintf(stderr, "flok-bar debug: tag=%ld hidden=%d title=%s image=%s attributed=%d\n",
-              (long)it.tag, it.hidden, it.title.UTF8String, it.image ? "yes" : "nil", it.attributedTitle != nil);
+      fprintf(stderr, "flok-bar debug: tag=%ld hidden=%d enabled=%d checked=%d title=%s image=%s attributed=%d\n",
+              (long)it.tag, it.hidden, it.enabled, it.state == NSControlStateValueOn, it.title.UTF8String, it.image ? "yes" : "nil", it.attributedTitle != nil);
     }
   });
 }

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/w4jnl/flok/internal/awake"
 	"github.com/w4jnl/flok/internal/claudereg"
 	"github.com/w4jnl/flok/internal/config"
 	"github.com/w4jnl/flok/internal/install"
@@ -200,6 +201,18 @@ func runDoctor(cfg config.Config) int {
 			if !found {
 				add("warn", "no inner client on %s (right pane detached?)", tty)
 			}
+		}
+	}
+
+	// keep-awake (macOS: the sidebar holds the power assertions)
+	if awake.Supported() {
+		switch k := readKeepAwake(dir); {
+		case k.on:
+			add("ok", "keep-awake: on (the sidebar holds the power assertions; `pmset -g assertions` lists them)")
+		case k.running && k.requested:
+			add("warn", "keep-awake: requested, but the sidebar does not hold the power assertions (FLOK_DEBUG=1 logs the reason to sidebar.log)")
+		default:
+			add("ok", "keep-awake: off")
 		}
 	}
 

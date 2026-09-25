@@ -182,6 +182,16 @@ func (s *Store) SetSidebarHidden(hidden bool) error {
 	return writeFlag(s.Dir, "sidebar-hidden", hidden)
 }
 
+// KeepAwake reports whether `flok keep-awake` asked the sidebar to keep the machine awake (default
+// false). It is the request; whether the sidebar holds the assertions is in snapshot.json.
+func (s *Store) KeepAwake() bool { return readFlag(s.Dir, KeepAwakeFile) == "1" }
+
+// SetKeepAwake writes the keep-awake request the sidebar watches.
+func (s *Store) SetKeepAwake(on bool) error { return writeFlag(s.Dir, KeepAwakeFile, on) }
+
+// KeepAwakeFile is the keep-awake request marker in the state dir.
+const KeepAwakeFile = "keep-awake"
+
 // TerminalTheme is the terminal theme `flok up` detected ("dark", "light", or "" when unknown) and
 // the background colour it came from ("" when set by hand with `flok theme`).
 func (s *Store) TerminalTheme() (theme, bg string) {

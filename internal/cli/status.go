@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"time"
 
@@ -33,31 +34,45 @@ func runStatus(cfg config.Config, args []string) int {
 		}
 	}
 	s := merge.NewTracker().Build(in)
+	keep := readKeepAwake(config.StateDir())
 	if len(args) > 0 && args[0] == "--json" {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
-		return report(enc.Encode(s))
+		return report(enc.Encode(statusJSON{Snapshot: s, KeepAwake: keep.on}))
 	}
-	fmt.Println("sessions")
+	printStatus(os.Stdout, s, keep)
+	return 0
+}
+
+// statusJSON is `flok status --json`: the merge snapshot, plus KeepAwake while keep-awake is on.
+type statusJSON struct {
+	merge.Snapshot
+	KeepAwake bool `json:",omitempty"`
+}
+
+func printStatus(w io.Writer, s merge.Snapshot, keep keepAwakeState) {
+	fmt.Fprintln(w, "sessions")
 	for _, sp := range s.Spaces {
 		cur := " "
 		if sp.Current {
 			cur = "*"
 		}
-		fmt.Printf("  %s %-32s %-20s %-8s agents=%d\n", cur, sp.SessionName, sp.Branch, sp.Rollup, sp.AgentCount)
+		fmt.Fprintf(w, "  %s %-32s %-20s %-8s agents=%d\n", cur, sp.SessionName, sp.Branch, sp.Rollup, sp.AgentCount)
 	}
-	fmt.Printf("agents (%d unseen)\n", s.Unseen)
+	fmt.Fprintf(w, "agents (%d unseen)\n", s.Unseen)
 	for _, a := range s.Agents {
-		fmt.Printf("  %-8s %-8s %-20s %-28s %s:%d.%d %s since %s src=%s tool=%s unseen=%d\n", a.State, a.Kind, a.Name, a.Title, a.SessionName,
+		fmt.Fprintf(w, "  %-8s %-8s %-20s %-28s %s:%d.%d %s since %s src=%s tool=%s unseen=%d\n", a.State, a.Kind, a.Name, a.Title, a.SessionName,
 			a.WindowIndex, a.PaneIndex, a.PaneID, a.StateSince.Format(time.Kitchen), a.Source, a.CurrentTool, a.Unseen)
 	}
 	if !s.Focus.Found {
-		fmt.Println("focus: no inner client")
+		fmt.Fprintln(w, "focus: no inner client")
 	} else {
-		fmt.Printf("focus: client %s session %s window %s pane %s\n", s.Focus.ClientTTY, s.Focus.SessionName, s.Focus.WindowID, s.Focus.PaneID)
+		fmt.Fprintf(w, "focus: client %s session %s window %s pane %s\n", s.Focus.ClientTTY, s.Focus.SessionName, s.Focus.WindowID, s.Focus.PaneID)
 	}
-	for _, w := range s.Warnings {
-		fmt.Println("warning:", w)
+	if keep.on {
+		fmt.Fprintln(w, "keep-awake: on (display and idle sleep blocked)")
 	}
-	return 0
+	for _, wa := range s.Warnings {
+		fmt.Fprintln(w, "warning:", wa)
+	}
 }

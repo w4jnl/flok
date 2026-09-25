@@ -20,7 +20,7 @@ make test                  # go test ./...
 make vet                   # go vet ./...
 go test ./internal/merge -run TestHookAuthorityAndSeen -v   # one test
 go test ./internal/rules -run TestClaudeFixtures -v         # screen-rule fixtures
-scripts/e2e/m1.sh          # headless end-to-end suites, m1..m7 (see below)
+scripts/e2e/m1.sh          # headless end-to-end suites, m1..m9 (see below)
 scripts/spike/m0-outer.sh check   # nested-outer passthrough checks on isolated servers
 ```
 
@@ -45,7 +45,8 @@ Each `mN.sh` sources lib.sh and asserts on `capture-pane` output of the sidebar 
 pane. Suites: m1 title-driven states, m2 hook-driven states, m3 nav/toggle/keys, m4 screen
 rules for hook-less agents, m5 launcher lifecycle (detach, killed session, reattach), m6
 snapshot.json / goto / flok-bar plumbing, m7 the terminal bell (an outer `alert-bell` hook
-observes the BEL). They need a real `tmux` on PATH and `python3` (to read `runtime.json`).
+observes the BEL), m8 `flok resurrect save`, m9 keep-awake (`pmset -g assertions` against the
+sidebar pid on macOS, the macOS-only message elsewhere). They need a real `tmux` on PATH and `python3` (to read `runtime.json`).
 `lib.sh` exports `TMUX_VER`/`tmux_at_least MAJ MIN` for checks older servers cannot pass.
 
 ## Architecture
@@ -68,6 +69,14 @@ One binary, several roles selected by subcommand (`internal/cli/root.go`):
 - `flok jump|next|prev|toggle|hide|focus|reload` (`internal/cli/nav.go`): one-shot commands
   bound in the user's tmux.conf. They build a throwaway merge snapshot (no registry poll, too
   slow) and read `runtime.json` to find the outer panes and the inner client tty.
+- `flok keep-awake [on|off|toggle|status]` (`internal/cli/keepawake.go`, macOS only): writes the
+  `keep-awake` marker in the state dir and waits for the sidebar to confirm through
+  `snapshot.json`. The **sidebar** holds the power assertions (`internal/awake`: IOKit's
+  `IOPMAssertionCreateWithName` through `ebitengine/purego`, so no cgo; `ui/keepawake.go` follows
+  the marker via the store's fsnotify watch and publishes `KeepAwake`), which is why they end with
+  the sidebar process even on a crash. `createOuter`, `Down` and the attach-loop teardown reset
+  the marker; `flok status`, `doctor` and flok-bar read the state with
+  `Snapshot.SidebarAlive`/`KeepAwakeHeld` so a dead sidebar's lingering snapshot never shows it on.
 
 ### State pipeline (the part that spans files)
 
@@ -132,7 +141,8 @@ under `internal/` cgo-free. The bar reads `snapshot.json`, which `internal/ui` p
 `internal/snapshot.Publisher` after every merge (changed content or a 5 s heartbeat), renders it
 with the pure functions in `internal/bar`, and forwards clicks to `flok goto <pane>`
 (`internal/cli/goto.go` → `nav.Go`, `Store.MarkSeen`, `internal/focus.Terminal`). The bar's "Edit config…" runs `flok edit-config` (new tmux window with `[bar] editor`, else
-`open`) and "Reload sidebar" runs `flok reload`. `flok up`
+`open`), "Reload sidebar" runs `flok reload` and the "Keep awake" checkbox runs
+`flok keep-awake toggle` (checked and ⚡ in the title from the snapshot's `KeepAwake`). `flok up`
 spawns it when `[bar] enabled` (`launcher.StartBar`, pid in `flok-bar.pid`), `flok down` and the
 attach-loop teardown stop it, and it quits by itself 30 s after `runtime.json`/the snapshot
 vanish (`FLOK_BAR_GONE_AFTER` shortens that for tests). systray gotchas: menus cannot grow (slots
