@@ -6,6 +6,8 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+## 0.4.5 (2026-09-25)
+
 - `flok keep-awake` (macOS): keeps the Mac awake with the display on while flok runs, for agents
   working unattended. Off by default; `flok keep-awake` toggles it, `on`/`off`/`status` also work,
   and the menu bar gets a "Keep awake" checkbox and shows ⚡ next to the state glyph while it is
@@ -15,7 +17,6 @@ updates this file first. Dates are the tag dates.
   still sleeps the Mac.
 - `[sounds] when_focused = true` now works: an agent pane you are looking at sounds when it
   finishes or waits for you, like one in the background. The option was documented but ignored.
-
 - README: a new top section (pitch, recording, menu bar, five-step setup, why flok) ahead
   of the architecture; the old Install section is folded into it. The banner is re-rendered
   from the brand lockup (`assets/brand/render-hero.sh`) with the plain tagline. The GIF comes from
