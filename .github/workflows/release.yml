@@ -2,7 +2,8 @@ name: release
 
 # Linux binaries for each tagged release (macOS comes from the Homebrew tap, which builds from
 # source; flok-bar is cgo and macOS-only, so it is not shipped here). The tag push creates the
-# GitHub release; workflow_dispatch can repair or rebuild an existing tag.
+# GitHub release, or refreshes its notes when the tag was moved; workflow_dispatch can repair or
+# rebuild an existing tag.
 on:
   push:
     tags:
@@ -41,12 +42,15 @@ jobs:
             tar -C dist -czf "$d.tar.gz" "$name" && rm -r "$d"
           done
           (cd dist && sha256sum *.tar.gz > sha256sums.txt && cat sha256sums.txt)
-      - name: create release
+      - name: create release (or refresh its notes from CHANGELOG.md)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if ! gh release view "$TAG" >/dev/null 2>&1; then
-            notes=$(awk -v v="${TAG#v}" '/^## /{p = ($2 == v)} p && !/^## /' CHANGELOG.md | sed '/./,$!d')
+          set -euo pipefail
+          notes=$(awk -v v="${TAG#v}" '/^## /{p = ($2 == v)} p && !/^## /' CHANGELOG.md | sed '/./,$!d')
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            printf '%s\n' "$notes" | gh release edit "$TAG" --title "flok $TAG" --notes-file -
+          else
             printf '%s\n' "$notes" | gh release create "$TAG" --title "flok $TAG" --notes-file -
           fi
       - name: upload to the release
