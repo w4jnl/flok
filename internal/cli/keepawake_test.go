@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/w4jnl/flok/internal/awake"
 	"github.com/w4jnl/flok/internal/merge"
 	"github.com/w4jnl/flok/internal/snapshot"
 	"github.com/w4jnl/flok/internal/state"
@@ -146,6 +147,47 @@ func TestStatusShowsKeepAwakeOnlyWhenOn(t *testing.T) {
 		}
 		if _, ok := m["Spaces"]; !ok {
 			t.Errorf("the snapshot fields must stay at the top level: %s", data)
+		}
+	}
+}
+
+func TestKeepAwakePresenceReporting(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "runtime.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pub := &snapshot.Publisher{Dir: dir}
+	for _, tc := range []struct {
+		snap           snapshot.Snapshot
+		presence       awake.Presence
+		state, status  string
+		jsonHasPresent bool
+	}{
+		{snapshot.Snapshot{KeepAwake: true, KeepAwakePresence: "active"}, awake.PresenceActive,
+			"you stay active", "keep-awake: on (display and idle sleep blocked, you stay active)\n", true},
+		{snapshot.Snapshot{KeepAwake: true, KeepAwakePresence: "blocked"}, awake.PresenceBlocked,
+			"presence is blocked", "presence blocked, see flok doctor", true},
+		{snapshot.Snapshot{KeepAwake: true}, awake.PresenceOff,
+			"keep-awake: on (display and idle sleep blocked until", "keep-awake: on (display and idle sleep blocked)\n", false},
+		// presence left over in a snapshot that says keep-awake is off does not count
+		{snapshot.Snapshot{KeepAwakePresence: "active"}, awake.PresenceOff, "keep-awake: off", "", false},
+	} {
+		tc.snap.SidebarPID = os.Getpid()
+		if _, err := pub.Publish(tc.snap, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		k := readKeepAwake(dir)
+		if k.presence != tc.presence || !strings.Contains(k.String(), tc.state) {
+			t.Errorf("%+v: state %+v %q", tc.snap, k, k)
+		}
+		var out bytes.Buffer
+		printStatus(&out, merge.Snapshot{}, k)
+		if tc.status == "" && strings.Contains(out.String(), "keep-awake") || !strings.Contains(out.String(), tc.status) {
+			t.Errorf("%+v: status output:\n%s", tc.snap, out.String())
+		}
+		data, _ := json.Marshal(statusJSON{KeepAwake: k.on, KeepAwakePresence: string(k.presence)})
+		if has := strings.Contains(string(data), `"KeepAwakePresence"`); has != tc.jsonHasPresent {
+			t.Errorf("%+v: JSON %s", tc.snap, data)
 		}
 	}
 }

@@ -50,13 +50,31 @@ PID=$NEW
 "$BIN" down
 if gone_after "$PID" 3; then ok "flok down releases keep-awake"; else bad "assertions left after down: $(held "$PID")"; fi
 expect "keep-awake needs a running flok" 'start it with flok up' "$("$BIN" keep-awake on 2>&1 || true)"
+# ... with [keep_awake] presence, which the new sidebar reads at start
+printf '\n[keep_awake]\npresence = true\n' >> "$T/config.toml"
 "$BIN" up --detach; sleep 1.5
 for _ in $(seq 1 30); do [ -f "$SNAP" ] && break; sleep 0.1; done
 expect "a new session starts with keep-awake off" '^keep-awake: off$' "$("$BIN" keep-awake status)"
 
+# presence needs Accessibility for the app these servers run under (the terminal on a desktop;
+# CI runners have none): doctor judges it from its own process, the sidebar must agree
+doc=$("$BIN" doctor || true)
+if printf '%s\n' "$doc" | grep -q 'keep-awake presence: set (applies'; then TRUSTED=1; else TRUSTED=0; fi
+expect "doctor reports the presence setting" 'keep-awake presence: set' "$doc"
+
 # the outer server dying (no teardown) takes the assertions with the sidebar
 expect "keep-awake on in the new session" '^keep-awake: on' "$("$BIN" keep-awake on)"
 PID=$(sidebar_pid)
+if [ "$TRUSTED" = 1 ]; then
+  expect "presence is active with Accessibility" '"KeepAwakePresence": "active"' "$("$BIN" status --json)"
+  expect "keep-awake status says you stay active" 'you stay active' "$("$BIN" keep-awake status)"
+  expect "doctor reports presence active" 'ok +keep-awake presence: active' "$("$BIN" doctor || true)"
+else
+  expect "presence is blocked without Accessibility" '"KeepAwakePresence": "blocked"' "$("$BIN" status --json)"
+  expect "keep-awake status explains the blocked presence" 'presence is blocked' "$("$BIN" keep-awake status)"
+  expect "doctor warns about the blocked presence" 'warn +keep-awake presence: blocked' "$("$BIN" doctor || true)"
+fi
+expect "the sidebar still holds both assertions with presence" "^$BOTH\$" "$(held "$PID")"
 OUT kill-server
 if gone_after "$PID" 3; then ok "killing the outer server releases keep-awake"; else bad "assertions survive the outer: $(held "$PID")"; fi
 expect "keep-awake status says flok is not running once the sidebar died" '^keep-awake: off \(flok is not running\)$' "$("$BIN" keep-awake status)"

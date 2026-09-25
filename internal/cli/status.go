@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/w4jnl/flok/internal/awake"
 	"github.com/w4jnl/flok/internal/claudereg"
 	"github.com/w4jnl/flok/internal/config"
 	"github.com/w4jnl/flok/internal/merge"
@@ -38,16 +39,18 @@ func runStatus(cfg config.Config, args []string) int {
 	if len(args) > 0 && args[0] == "--json" {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
-		return report(enc.Encode(statusJSON{Snapshot: s, KeepAwake: keep.on}))
+		return report(enc.Encode(statusJSON{Snapshot: s, KeepAwake: keep.on, KeepAwakePresence: string(keep.presence)}))
 	}
 	printStatus(os.Stdout, s, keep)
 	return 0
 }
 
-// statusJSON is `flok status --json`: the merge snapshot, plus KeepAwake while keep-awake is on.
+// statusJSON is `flok status --json`: the merge snapshot, plus KeepAwake while keep-awake is on
+// and KeepAwakePresence ("active"/"blocked") while it also keeps the user active.
 type statusJSON struct {
 	merge.Snapshot
-	KeepAwake bool `json:",omitempty"`
+	KeepAwake         bool   `json:",omitempty"`
+	KeepAwakePresence string `json:",omitempty"`
 }
 
 func printStatus(w io.Writer, s merge.Snapshot, keep keepAwakeState) {
@@ -69,7 +72,12 @@ func printStatus(w io.Writer, s merge.Snapshot, keep keepAwakeState) {
 	} else {
 		fmt.Fprintf(w, "focus: client %s session %s window %s pane %s\n", s.Focus.ClientTTY, s.Focus.SessionName, s.Focus.WindowID, s.Focus.PaneID)
 	}
-	if keep.on {
+	switch {
+	case keep.on && keep.presence == awake.PresenceActive:
+		fmt.Fprintln(w, "keep-awake: on (display and idle sleep blocked, you stay active)")
+	case keep.on && keep.presence == awake.PresenceBlocked:
+		fmt.Fprintln(w, "keep-awake: on (display and idle sleep blocked; presence blocked, see flok doctor)")
+	case keep.on:
 		fmt.Fprintln(w, "keep-awake: on (display and idle sleep blocked)")
 	}
 	for _, wa := range s.Warnings {

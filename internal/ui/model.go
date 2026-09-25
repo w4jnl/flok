@@ -791,6 +791,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else if keepChanged {
 			m.debugf("keep-awake=%v", m.keep.on())
 		}
+		if m.keep.presenceMoved() {
+			keepChanged = true
+			m.debugf("keep-awake presence=%q", m.keep.presence())
+		}
 		if msg.err != nil {
 			m.errText = msg.err.Error()
 			if keepChanged {

@@ -57,6 +57,9 @@ type Snapshot struct {
 	Sessions   []Session `json:"sessions"`
 	Unseen     int       `json:"unseen"`
 	KeepAwake  bool      `json:"keep_awake,omitempty"` // the sidebar holds the power assertions (flok keep-awake)
+	// KeepAwakePresence is "active" while keep-awake also keeps the user active ([keep_awake]
+	// presence), "blocked" when macOS drops those events (no Accessibility permission).
+	KeepAwakePresence string `json:"keep_awake_presence,omitempty"`
 }
 
 // Freshness tells a reader how much to trust a loaded snapshot.

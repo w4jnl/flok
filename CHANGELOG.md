@@ -6,6 +6,13 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+- `[keep_awake] presence = true`: while keep-awake is on, Teams, Slack and other apps that
+  watch for input keep showing you as active. After 60 s without input flok posts an empty
+  modifier-key event (no key press, no cursor movement), which resets the idle clock those apps
+  read; the power assertions alone keep the display on but not your presence. It needs
+  Accessibility permission for your terminal app; `flok doctor`, `flok keep-awake status`,
+  `flok status` and the menu bar tooltip say when macOS blocks the events.
+
 ## 0.4.5 (2026-09-25)
 
 - `flok keep-awake` (macOS): keeps the Mac awake with the display on while flok runs, for agents

@@ -244,12 +244,12 @@ func (b *menuBar) render(now time.Time) {
 		}
 		b.showOn = on
 	}
-	b.renderKeepAwake(f == snapshot.Fresh, f == snapshot.Fresh && s.KeepAwake)
+	b.renderKeepAwake(f == snapshot.Fresh, f == snapshot.Fresh && s.KeepAwake, s.KeepAwakePresence)
 }
 
 // renderKeepAwake mirrors what the sidebar holds on the "Keep awake" row and in the tooltip; the
 // row is disabled while flok is not running (there is no sidebar to hold anything).
-func (b *menuBar) renderKeepAwake(running, on bool) {
+func (b *menuBar) renderKeepAwake(running, on bool, presence string) {
 	if on != b.keepChecked {
 		if on {
 			b.keepAwake.Check()
@@ -267,7 +267,12 @@ func (b *menuBar) renderKeepAwake(running, on bool) {
 		b.keepEnabled = running
 	}
 	tip := "flok"
-	if on {
+	switch {
+	case on && presence == "active":
+		tip = "flok · keeping the Mac awake and you active"
+	case on && presence == "blocked":
+		tip = "flok · keeping the Mac awake (presence blocked: see flok doctor)"
+	case on:
 		tip = "flok · keeping the Mac awake"
 	}
 	if tip != b.lastTip {

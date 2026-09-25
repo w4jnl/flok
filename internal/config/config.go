@@ -67,6 +67,11 @@ type Sounds struct {
 	Error         string  `toml:"error"`
 }
 
+// KeepAwake tunes `flok keep-awake` (macOS).
+type KeepAwake struct {
+	Presence bool `toml:"presence"` // also keep you active in Teams, Slack & co. (needs Accessibility)
+}
+
 // Bar configures the optional macOS menu bar companion (flok-bar).
 type Bar struct {
 	Enabled   bool   `toml:"enabled"`
@@ -131,14 +136,15 @@ func (t Theme) Resolve(dark bool) Palette {
 }
 
 type Config struct {
-	Inner   Inner   `toml:"inner"`
-	Outer   Outer   `toml:"outer"`
-	Sidebar Sidebar `toml:"sidebar"`
-	Agents  Agents  `toml:"agents"`
-	Keys    Keys    `toml:"keys"`
-	Sounds  Sounds  `toml:"sounds"`
-	Bar     Bar     `toml:"bar"`
-	Theme   Theme   `toml:"theme"`
+	Inner     Inner     `toml:"inner"`
+	Outer     Outer     `toml:"outer"`
+	Sidebar   Sidebar   `toml:"sidebar"`
+	Agents    Agents    `toml:"agents"`
+	Keys      Keys      `toml:"keys"`
+	Sounds    Sounds    `toml:"sounds"`
+	Bar       Bar       `toml:"bar"`
+	KeepAwake KeepAwake `toml:"keep_awake"`
+	Theme     Theme     `toml:"theme"`
 }
 
 // Default is the configuration used when no file exists; every key in the file overrides one field.

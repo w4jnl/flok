@@ -74,9 +74,15 @@ One binary, several roles selected by subcommand (`internal/cli/root.go`):
   `snapshot.json`. The **sidebar** holds the power assertions (`internal/awake`: IOKit's
   `IOPMAssertionCreateWithName` through `ebitengine/purego`, so no cgo; `ui/keepawake.go` follows
   the marker via the store's fsnotify watch and publishes `KeepAwake`), which is why they end with
-  the sidebar process even on a crash. `createOuter`, `Down` and the attach-loop teardown reset
-  the marker; `flok status`, `doctor` and flok-bar read the state with
-  `Snapshot.SidebarAlive`/`KeepAwakeHeld` so a dead sidebar's lingering snapshot never shows it on.
+  the sidebar process even on a crash. `[keep_awake] presence` adds a nudger goroutine to the
+  held `awake.Assertion`: every 30 s, after 60 s of HID idle time, it posts an empty
+  `flagsChanged` event through CoreGraphics (idle detectors like Teams read that clock, power
+  assertions do not); it needs Accessibility (`AXIsProcessTrusted`, granted to the terminal app),
+  and its state (`active`/`blocked`) is published as `keep_awake_presence`, with a republish
+  when it changes between polls (`awakeHold.presenceMoved`). `createOuter`, `Down` and the
+  attach-loop teardown reset the marker; `flok status`, `doctor` and flok-bar read the state
+  with `Snapshot.SidebarAlive`/`KeepAwakeHeld` so a dead sidebar's lingering snapshot never
+  shows it on.
 
 ### State pipeline (the part that spans files)
 

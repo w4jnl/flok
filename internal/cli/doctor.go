@@ -206,13 +206,26 @@ func runDoctor(cfg config.Config) int {
 
 	// keep-awake (macOS: the sidebar holds the power assertions)
 	if awake.Supported() {
-		switch k := readKeepAwake(dir); {
+		k := readKeepAwake(dir)
+		switch {
 		case k.on:
 			add("ok", "keep-awake: on (the sidebar holds the power assertions; `pmset -g assertions` lists them)")
 		case k.running && k.requested:
 			add("warn", "keep-awake: requested, but the sidebar does not hold the power assertions (FLOK_DEBUG=1 logs the reason to sidebar.log)")
 		default:
 			add("ok", "keep-awake: off")
+		}
+		switch {
+		case k.on && k.presence == awake.PresenceActive:
+			add("ok", "keep-awake presence: active (an empty modifier-key event after 60 s without input keeps Teams, Slack and other idle watchers from seeing you idle)")
+		case k.on && k.presence == awake.PresenceBlocked:
+			add("warn", "keep-awake presence: blocked, macOS drops flok's input events; "+accessibilityHint)
+		case k.on && cfg.KeepAwake.Presence:
+			add("warn", "keep-awake presence: set in config.toml but not running; flok reload applies it")
+		case cfg.KeepAwake.Presence && !awake.Trusted():
+			add("warn", "keep-awake presence: set, but this terminal has no Accessibility permission, so macOS would drop the events; "+accessibilityHint)
+		case cfg.KeepAwake.Presence:
+			add("ok", "keep-awake presence: set (applies while keep-awake is on; this terminal has Accessibility)")
 		}
 	}
 

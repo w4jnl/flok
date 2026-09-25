@@ -27,7 +27,8 @@ func sidebarDeps(cfg config.Config) ui.Deps {
 	d := ui.Deps{Cfg: cfg, Inner: tmux.NewLocal(cfg.Inner.Socket).SetVersion(ver), Feat: tmux.FeaturesFor(ver),
 		Adapters: agent.Enabled(cfg.Agents.Enabled), BranchOf: git.Branch, Store: state.New(config.StateDir())}
 	if awake.Supported() {
-		d.Awake = func() (ui.Releaser, error) { return awake.Hold(awake.Name) }
+		opts := awake.Options{Presence: cfg.KeepAwake.Presence}
+		d.Awake = func() (ui.Releaser, error) { return awake.Hold(awake.Name, opts) }
 	}
 	for _, id := range cfg.Agents.Enabled {
 		if id == "claude" {

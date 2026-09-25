@@ -33,19 +33,32 @@ func runKeepAwake(_ config.Config, args []string) int {
 // keepAwakeState is what the sidebar reports: on when a fresh snapshot from a live sidebar says it
 // holds the assertions. Shared by `flok keep-awake status`, `flok status` and `flok doctor`.
 type keepAwakeState struct {
-	running   bool // flok is running: its sidebar is alive and published recently
-	on        bool // the sidebar holds the assertions
-	requested bool // the keep-awake marker asks for them
+	running   bool           // flok is running: its sidebar is alive and published recently
+	on        bool           // the sidebar holds the assertions
+	requested bool           // the keep-awake marker asks for them
+	presence  awake.Presence // while on: what [keep_awake] presence achieves
 }
+
+// accessibilityHint says how to let the presence nudges through.
+const accessibilityHint = "give your terminal app Accessibility in System Settings > Privacy & Security > Accessibility"
 
 func readKeepAwake(dir string) keepAwakeState {
 	s, f := snapshot.Load(dir, time.Now())
 	running := f == snapshot.Fresh && s.SidebarAlive()
-	return keepAwakeState{running: running, on: running && s.KeepAwake, requested: state.New(dir).KeepAwake()}
+	k := keepAwakeState{running: running, on: running && s.KeepAwake, requested: state.New(dir).KeepAwake()}
+	if k.on {
+		k.presence = awake.Presence(s.KeepAwakePresence)
+	}
+	return k
 }
 
 func (k keepAwakeState) String() string {
 	switch {
+	case k.on && k.presence == awake.PresenceActive:
+		return "keep-awake: on (display and idle sleep blocked, you stay active, until keep-awake off or flok down)"
+	case k.on && k.presence == awake.PresenceBlocked:
+		return "keep-awake: on (display and idle sleep blocked until keep-awake off or flok down)\n" +
+			"keep-awake: presence is blocked (macOS drops flok's input events): " + accessibilityHint
 	case k.on:
 		return "keep-awake: on (display and idle sleep blocked until keep-awake off or flok down)"
 	case !k.running:

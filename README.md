@@ -181,7 +181,8 @@ What flok does about it:
   window to the front and puts you on that agent's pane.
 - **Keep awake** (macOS, off by default): `flok keep-awake` or the menu bar's "Keep awake" row stops
   the Mac from idle-sleeping and keeps the display on while agents run unattended, until you
-  turn it off or flok stops; a ⚡ in the menu bar shows it is on.
+  turn it off or flok stops; a ⚡ in the menu bar shows it is on. With
+  `[keep_awake] presence = true` Teams, Slack & co. keep showing you as active as well.
 - **Zero footprint by default** on your tmux: no plugin and no pane injected into your windows.
 - **tmux-resurrect** (opt-in): saves each Claude Code and Copilot pane with its exact session ID,
   so a restore resumes the same conversations.
@@ -351,6 +352,19 @@ adds a `keep-awake: on` line (`"KeepAwake": true` in `--json`), `flok doctor` re
 Closing the lid of a MacBook on battery still puts it to sleep; no user-space program can
 prevent that.
 
+**Staying active in Teams, Slack & co.** The power assertions keep the Mac and its display
+awake, but apps that show your presence watch the time since your last key press or mouse
+move, so Teams still turns you Away after five minutes. With `[keep_awake] presence = true`
+the sidebar also resets that clock while keep-awake is on: after 60 s without input it posts
+an empty modifier-key event (a "flags changed" event that carries the modifiers already held,
+so no app sees a key press and the cursor does not move; checked every 30 s). It skips the
+nudge while the display sleeps, so a display you put to sleep yourself stays asleep. macOS
+only accepts synthetic input from apps with Accessibility permission: grant it to the terminal
+app you run `flok up` in (System Settings › Privacy & Security › Accessibility). `flok doctor`
+says whether that is in place; `flok keep-awake status`, `flok status` (`"KeepAwakePresence"`
+in `--json`) and the menu bar tooltip report the presence as active, or blocked when macOS
+drops the events. The key is read when the sidebar starts; `flok reload` applies a change.
+
 ### The help popup
 
 `prefix ?` runs `flok keys` in a tmux popup. It reads `list-keys` for the prefix, root and
@@ -516,6 +530,11 @@ focus = "auto"              # click-to-return: auto | aerospace | applescript | 
 app = ""                    # terminal to focus; empty = the one `flok up` ran in (TERM_PROGRAM)
 max_rows = 16
 editor = ""                 # "Edit config…" in the bar: "nvim" opens it in a new tmux window; "" = `open`
+
+[keep_awake]                # macOS: `flok keep-awake` / the menu bar's "Keep awake" row
+presence = false            # true: while keep-awake is on, also keep you "active" in Teams, Slack and
+                            # other apps that watch input idle time (an empty modifier-key event after
+                            # 60 s without input; needs Accessibility for your terminal app)
 
 [theme]                     # Dracula by default; state tokens may name a colour or a hex value
 mode = "auto"               # auto: follow the terminal's background, asked at `flok up` | dark | light

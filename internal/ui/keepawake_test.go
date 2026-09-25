@@ -6,7 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/w4jnl/flok/internal/awake"
 	"github.com/w4jnl/flok/internal/config"
 	"github.com/w4jnl/flok/internal/snapshot"
 	"github.com/w4jnl/flok/internal/state"
@@ -17,9 +19,18 @@ type fakeAssertion struct{ released *int }
 
 func (f fakeAssertion) Release() { *f.released++ }
 
+// presenceAssertion also reports a presence state, like awake.Assertion with Options.Presence.
+type presenceAssertion struct {
+	fakeAssertion
+	p *awake.Presence
+}
+
+func (f presenceAssertion) Presence() awake.Presence { return *f.p }
+
 type fakeAwake struct {
 	holds, releases int
 	err             error
+	presence        *awake.Presence // non-nil: the holder keeps the user active
 }
 
 func (f *fakeAwake) hold() (Releaser, error) {
@@ -27,6 +38,9 @@ func (f *fakeAwake) hold() (Releaser, error) {
 		return nil, f.err
 	}
 	f.holds++
+	if f.presence != nil {
+		return presenceAssertion{fakeAssertion{&f.releases}, f.presence}, nil
+	}
 	return fakeAssertion{&f.releases}, nil
 }
 
@@ -57,6 +71,12 @@ func publishedKeepAwake(t *testing.T, m Model) bool {
 		t.Fatal(err)
 	}
 	return strings.Contains(string(data), `"keep_awake": true`)
+}
+
+func publishedPresence(t *testing.T, m Model) string {
+	t.Helper()
+	s, _ := snapshot.Load(m.d.Store.Dir, time.Now())
+	return s.KeepAwakePresence
 }
 
 func TestKeepAwakeFollowsTheMarker(t *testing.T) {
@@ -122,5 +142,27 @@ func TestKeepAwakeStaleRebuildKeepsTheChange(t *testing.T) {
 	m = next.(Model)
 	if !m.keep.on() || fa.releases != 0 || !publishedKeepAwake(t, m) {
 		t.Fatalf("a stale rebuild released keep-awake: on=%v releases=%d", m.keep.on(), fa.releases)
+	}
+}
+
+// The nudger's state changes on its own goroutine (Accessibility granted later, events dropped);
+// the next message republishes it even when nothing else changed.
+func TestKeepAwakePresenceIsPublished(t *testing.T) {
+	m, fa := newKeepAwakeModel(t)
+	p := awake.PresenceBlocked
+	fa.presence = &p
+	m = step(t, m, true)
+	if got := publishedPresence(t, m); got != "blocked" {
+		t.Fatalf("presence published %q, want blocked", got)
+	}
+	p = awake.PresenceActive
+	next, _ := m.Update(m.rebuild(false)()) // a screen sample: same inputs, marker not read
+	m = next.(Model)
+	if got := publishedPresence(t, m); got != "active" {
+		t.Fatalf("presence change not republished: %q", got)
+	}
+	m = step(t, m, false)
+	if got := publishedPresence(t, m); got != "" || publishedKeepAwake(t, m) {
+		t.Fatalf("off must clear presence: %q", got)
 	}
 }

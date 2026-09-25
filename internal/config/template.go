@@ -84,6 +84,11 @@ const Template = `# flok configuration - https://github.com/w4jnl/flok
 # editor = ""                 # "Edit config" in the bar: "nvim" opens it in a new tmux window of your
                               # server; empty opens the file with the macOS default app
 
+[keep_awake]                  # macOS: flok keep-awake / the menu bar's "Keep awake" row
+# presence = false            # true: while keep-awake is on, also keep you "active" in Teams, Slack
+                              # and other apps that watch input idle time, with an empty modifier-key
+                              # event after 60 s without input; needs Accessibility for your terminal
+
 [theme]                       # Dracula; state tokens may name a colour or a hex value
 # mode = "auto"               # auto: follow the terminal background, asked at flok up | dark | light
 # working = "cyan"
