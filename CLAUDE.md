@@ -20,7 +20,7 @@ make test                  # go test ./...
 make vet                   # go vet ./...
 go test ./internal/merge -run TestHookAuthorityAndSeen -v   # one test
 go test ./internal/rules -run TestClaudeFixtures -v         # screen-rule fixtures
-scripts/e2e/m1.sh          # headless end-to-end suites, m1..m9 (see below)
+scripts/e2e/m1.sh          # headless end-to-end suites, m1..m10 (see below)
 scripts/spike/m0-outer.sh check   # nested-outer passthrough checks on isolated servers
 ```
 
@@ -85,8 +85,13 @@ One binary, several roles selected by subcommand (`internal/cli/root.go`):
   joins the local merge and the hosts' views (`m.fed` published, `m.snap` rendered with the
   front host's sessions); `swapCmd` swaps a host's parked pane with the one next to the sidebar
   (`swap-pane`, zoom preserved) and records `right_pane`/`front_host` in runtime.json; `gotoCmd`
-  swaps first when the target host is not in front. Without a host in `hosts.json` every one of
-  these is a no-op and the single-host code paths, frames and JSON stay byte-identical.
+  swaps first when the target host is not in front. One-shot commands aimed at a remote host
+  (`flok goto beta:%12`, `flok jump`/`next`/`prev` with hosts, `flok host front`) cannot open ssh
+  themselves: they file a JSON request in `$FLOK_STATE/requests/` (`state.WriteRequest`), which
+  the store watcher delivers and `ui/requests.go` runs (older than 10 s are dropped). `flok doctor`
+  probes every registered host with one fixed command (`internal/cli/doctor_hosts.go`). Without a
+  host in `hosts.json` every one of these is a no-op and the single-host code paths, frames and
+  JSON stay byte-identical.
 - `flok jump|next|prev|toggle|hide|focus|reload` (`internal/cli/nav.go`): one-shot commands
   bound in the user's tmux.conf. They build a throwaway merge snapshot (no registry poll, too
   slow) and read `runtime.json` to find the outer panes and the inner client tty.
@@ -179,7 +184,9 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
 under `internal/` cgo-free. The bar reads `snapshot.json`, which `internal/ui` publishes through
 `internal/snapshot.Publisher` after every merge (changed content or a 5 s heartbeat), renders it
 with the pure functions in `internal/bar`, and forwards clicks to `flok goto <pane>`
-(`internal/cli/goto.go` → `nav.Go`, `Store.MarkSeen`, `internal/focus.Terminal`). The bar's "Edit config…" runs `flok edit-config` (new tmux window with `[bar] editor`, else
+(`internal/cli/goto.go` → `nav.Go`, `Store.MarkSeen`, `internal/focus.Terminal`; the pane is a
+`PaneRef` string, `beta:%12` for a remote agent, which goes through the sidebar's request mailbox)
+and clicks on the pre-created host rows to `flok host front <name> --focus`. The bar's "Edit config…" runs `flok edit-config` (new tmux window with `[bar] editor`, else
 `open`), "Reload sidebar" runs `flok reload` and the "Keep awake" checkbox runs
 `flok keep-awake toggle` (checked and ⚡ in the title from the snapshot's `KeepAwake`). `flok up`
 spawns it when `[bar] enabled` (`launcher.StartBar`, pid in `flok-bar.pid`), `flok down` and the
