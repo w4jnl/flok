@@ -28,6 +28,7 @@ var commands = []command{
 	{"doctor", "check the installation", nil},
 	{"theme", "show or switch the light/dark palette", nil},
 	{"install", "wire agent hooks and print the tmux snippet", []string{"--claude", "--copilot", "--tmux"}},
+	{"host", "manage remote tmux servers (add, remove, connect, disconnect, list)", nil},
 	{"completion", "print a shell completion script", nil},
 	{"version", "print the version", nil},
 	{"help", "show usage", nil},
@@ -85,9 +86,24 @@ func bashCompletion() string {
 	b.WriteString("            else\n                COMPREPLY=( $(compgen -W \"--client\" -- \"$cur\") )\n            fi ;;\n")
 	b.WriteString("        keys)\n            if [ \"$prev\" = --filter ]; then return 0; fi\n")
 	b.WriteString("            COMPREPLY=( $(compgen -W \"--print --filter\" -- \"$cur\") ) ;;\n")
+	b.WriteString(`        host)
+            if [ "$COMP_CWORD" -eq 2 ]; then
+                COMPREPLY=( $(compgen -W "add remove connect disconnect list" -- "$cur") )
+            else
+                case "${COMP_WORDS[2]}" in
+                    remove|connect|disconnect) COMPREPLY=( $(compgen -W "$(flok host list --names 2>/dev/null)" -- "$cur") ) ;;
+                    add) case "$prev" in
+                             --mode) COMPREPLY=( $(compgen -W "full plain" -- "$cur") ) ;;
+                             --socket|--session|--flok) ;;
+                             *) COMPREPLY=( $(compgen -W "--mode --socket --session --flok --disabled" -- "$cur") ) ;;
+                         esac ;;
+                    list) COMPREPLY=( $(compgen -W "--json --names" -- "$cur") ) ;;
+                esac
+            fi ;;
+`)
 	for _, c := range commands {
 		switch c.name {
-		case "completion", "explain", "jump", "next", "prev", "keys":
+		case "completion", "explain", "jump", "next", "prev", "keys", "host":
 			continue
 		}
 		if len(c.flags) > 0 {
@@ -114,9 +130,23 @@ func zshCompletion() string {
 	b.WriteString("        explain)\n            local -a panes\n            panes=(${(f)\"$(tmux list-panes -a -F '#{pane_id}' 2>/dev/null)\"})\n            _describe -t panes 'pane' panes ;;\n")
 	b.WriteString("        jump|next|prev)\n            _arguments '--client[inner client tty to drive]:tty:($(tmux list-clients -F \"#{client_tty}\" 2>/dev/null))' ;;\n")
 	b.WriteString("        keys)\n            _arguments '--print[dump the help as text]' '--filter[keep bindings matching a substring]:filter' ;;\n")
+	b.WriteString(`        host)
+            if (( CURRENT == 3 )); then
+                _values 'host command' 'add[register a remote tmux server]' 'remove[forget a host]'                     'connect[enable a host]' 'disconnect[disable a host]' 'list[show the hosts]'
+            else
+                case ${words[3]} in
+                    remove|connect|disconnect)
+                        local -a hosts
+                        hosts=(${(f)"$(flok host list --names 2>/dev/null)"})
+                        _describe -t hosts 'host' hosts ;;
+                    add) _arguments '--mode[full (flok serve on the host) or plain (tmux only)]:mode:(full plain)'                             '--socket[remote tmux socket name]:socket' '--session[session to attach or create]:session'                             '--flok[remote flok binary]:path:_files' '--disabled[register without connecting]' ;;
+                    list) _arguments '--json[machine-readable output]' '--names[one name per line]' ;;
+                esac
+            fi ;;
+`)
 	for _, c := range commands {
 		switch c.name {
-		case "completion", "explain", "jump", "next", "prev", "keys":
+		case "completion", "explain", "jump", "next", "prev", "keys", "host":
 			continue
 		}
 		if len(c.flags) == 0 {

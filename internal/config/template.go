@@ -89,6 +89,18 @@ const Template = `# flok configuration - https://github.com/w4jnl/flok
                               # and other apps that watch input idle time, with an empty modifier-key
                               # event after 60 s without input; needs Accessibility for your terminal
 
+[hosts]                       # remote tmux servers shown next to the local one; the list itself is
+                              # dynamic: flok host add <name> <user@host> (flok host --help)
+# ssh = "ssh"                 # ssh binary; aliases, jump hosts and keys come from ~/.ssh/config
+# ssh_options = []            # extra ssh arguments, e.g. ["-o", "IdentitiesOnly=yes"]
+# connect_timeout_s = 10
+# backoff_max_s = 30          # reconnect backoff 1, 2, 4 … up to this many seconds
+# multiplex = true            # one ControlMaster connection per host, shared by the data channel,
+                              # tmux calls and the work pane (sockets under the state dir)
+# serve_command = "flok serve --stdio"
+                              # what mode full runs on the host; flok host add --flok <path> names
+                              # the binary per host when it is not on the non-interactive PATH
+
 [theme]                       # Dracula; state tokens may name a colour or a hex value
 # mode = "auto"               # auto: follow the terminal background, asked at flok up | dark | light
 # working = "cyan"

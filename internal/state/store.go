@@ -59,6 +59,10 @@ func (s *Store) Update(pane string, fn func(a *agent.Agent) Effects) (agent.Agen
 	return a, fx, writeJSON(s.agentPath(pane), a)
 }
 
+// WriteJSONAtomic marshals v (indented) and replaces path with a temp file + rename, so readers
+// never see a partial file. Other packages' registries (hosts.json) use it too.
+func WriteJSONAtomic(path string, v any) error { return writeJSON(path, v) }
+
 func writeJSON(path string, v any) error {
 	data, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {

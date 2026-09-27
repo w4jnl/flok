@@ -27,13 +27,16 @@ func TestBashCompletionCompletesCommands(t *testing.T) {
 	probe := bashCompletion() + `
 COMP_WORDS=(flok st); COMP_CWORD=1; _flok; echo "${COMPREPLY[*]}"
 COMP_WORDS=(flok install --c); COMP_CWORD=2; _flok; echo "${COMPREPLY[*]}"
+COMP_WORDS=(flok host ""); COMP_CWORD=2; _flok; echo "${COMPREPLY[*]}"
+COMP_WORDS=(flok host add beta beta --mode ""); COMP_CWORD=6; _flok; echo "${COMPREPLY[*]}"
 `
 	out, err := exec.Command("bash", "-c", probe).CombinedOutput()
 	if err != nil {
 		t.Fatalf("bash: %v\n%s", err, out)
 	}
 	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-	if len(lines) != 2 || lines[0] != "status" || !strings.Contains(lines[1], "--claude") || !strings.Contains(lines[1], "--copilot") {
+	if len(lines) != 4 || lines[0] != "status" || !strings.Contains(lines[1], "--claude") || !strings.Contains(lines[1], "--copilot") ||
+		lines[2] != "add remove connect disconnect list" || lines[3] != "full plain" {
 		t.Fatalf("unexpected completions: %q", lines)
 	}
 	for _, c := range commands {

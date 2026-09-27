@@ -87,6 +87,17 @@ type Bar struct {
 	Blink     bool   `toml:"blink"`      // alternate outline and solid icon every ~1.15 s while an agent waits, until the terminal is focused
 }
 
+// Hosts holds the defaults for reaching remote tmux servers over ssh. The hosts themselves live
+// in $FLOK_STATE/hosts.json (`flok host add|remove|connect|disconnect|list`), not in the config.
+type Hosts struct {
+	SSH             string   `toml:"ssh"`               // ssh binary; aliases, jump hosts and keys come from ~/.ssh/config
+	SSHOptions      []string `toml:"ssh_options"`       // extra arguments before the target
+	ConnectTimeoutS int      `toml:"connect_timeout_s"` // ssh ConnectTimeout
+	BackoffMaxS     int      `toml:"backoff_max_s"`     // reconnect backoff 1, 2, 4 … up to this
+	Multiplex       bool     `toml:"multiplex"`         // one ControlMaster connection per host
+	ServeCommand    string   `toml:"serve_command"`     // what mode full runs on the host
+}
+
 // Palette is one set of sidebar colours.
 type Palette struct {
 	BG          string `toml:"bg"`
@@ -145,6 +156,7 @@ type Config struct {
 	Bar       Bar       `toml:"bar"`
 	KeepAwake KeepAwake `toml:"keep_awake"`
 	Theme     Theme     `toml:"theme"`
+	Hosts     Hosts     `toml:"hosts"`
 }
 
 // Default is the configuration used when no file exists; every key in the file overrides one field.
@@ -157,7 +169,8 @@ func Default() Config {
 		Keys:    Keys{Tables: []string{"prefix", "root", "copy-mode-vi"}},
 		Sounds: Sounds{Enabled: true, Player: "hook", Bell: "auto", Volume: 0.6, MinIntervalMs: 750,
 			Done: "", Blocked: "", Error: ""}, // empty = the bundled herdr sounds (done.wav / request.wav)
-		Bar: Bar{Enabled: false, Animate: true, Badge: true, Focus: "auto", MaxRows: 16, AnimateMs: 0, Color: true, IconSize: 18, Blink: true},
+		Bar:   Bar{Enabled: false, Animate: true, Badge: true, Focus: "auto", MaxRows: 16, AnimateMs: 0, Color: true, IconSize: 18, Blink: true},
+		Hosts: Hosts{SSH: "ssh", ConnectTimeoutS: 10, BackoffMaxS: 30, Multiplex: true, ServeCommand: "flok serve --stdio"},
 		Theme: Theme{Mode: "auto",
 			Palette: Palette{BG: "#282a36", CurrentLine: "#44475a", FG: "#f8f8f2", Comment: "#6272a4", Cyan: "#8be9fd", Green: "#50fa7b",
 				Orange: "#ffb86c", Pink: "#ff79c6", Purple: "#bd93f9", Red: "#ff5555", Yellow: "#f1fa8c",
