@@ -7,8 +7,11 @@ updates this file first. Dates are the tag dates.
 ## Unreleased
 
 - `flok host add|remove|connect|disconnect|list` keeps a registry of remote tmux servers
-  (`hosts.json` in the state dir) and `[hosts]` in config.toml holds the ssh defaults. This is
-  groundwork for showing local and remote agents in one sidebar; nothing connects yet.
+  (`hosts.json` in the state dir) and `[hosts]` in config.toml holds the ssh defaults.
+  `flok host status` connects to each enabled host once over ssh and reports what answers;
+  `flok serve --stdio` is what it runs on a host in full mode (a headless flok streaming its
+  agents; hooks there stay silent while it runs). Groundwork for showing local and remote
+  agents in one sidebar; the sidebar itself does not connect yet.
 - `prefix u` in the tmux snippet toggles keep-awake; `flok keep-awake --notify` shows the new
   state on tmux's status line instead of printing it, and the keybinds popup labels the key
   "keep the Mac awake (toggle)". Existing installs add the line by hand (`flok install --tmux`

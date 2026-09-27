@@ -13,6 +13,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/fsnotify/fsnotify"
 	"hash/fnv"
 	"time"
 
@@ -77,6 +78,7 @@ type Poller struct {
 	tracker                *merge.Tracker
 	snap                   merge.Snapshot
 	changes                chan struct{} // nil without a store
+	watcher                *fsnotify.Watcher
 	registry               map[string]claudereg.Entry
 	registrySeq            int
 	registryAt             time.Time
@@ -103,9 +105,21 @@ func New(d Deps) *Poller {
 	p := &Poller{d: d, tracker: merge.NewTracker(), prevState: map[string]agent.State{}, started: time.Now()}
 	if d.Store != nil {
 		p.changes = make(chan struct{}, 1)
-		go WatchStore(d.Store.Dir, p.changes)
+		if w, err := watchStore(d.Store.Dir); err == nil {
+			p.watcher = w
+			go watchLoop(w, d.Store.Dir, p.changes)
+		}
 	}
 	return p
+}
+
+// Close stops the store watcher. The sidebar's poller lives as long as the process; a remote
+// host's poller is rebuilt on every reconnect and must not leak watchers.
+func (p *Poller) Close() {
+	if p.watcher != nil {
+		_ = p.watcher.Close()
+		p.watcher = nil
+	}
 }
 
 func (p *Poller) debugf(format string, args ...any) {
@@ -426,6 +440,13 @@ func (p *Poller) ScreenInterval(idle bool) time.Duration {
 // screen tickers and the store watch, each applied the way the sidebar applies them. onChange
 // runs after every merge with the merged view.
 func Run(ctx context.Context, p *Poller, onChange func(merge.Snapshot)) error {
+	return RunLoop(ctx, p, onChange, nil)
+}
+
+// RunLoop is Run with a command channel: each function received on cmds runs on the loop's
+// goroutine (the poller is not safe for concurrent use) and is followed by a rebuild, so a
+// serve session can apply seen marks and read the focus from other goroutines.
+func RunLoop(ctx context.Context, p *Poller, onChange func(merge.Snapshot), cmds <-chan func()) error {
 	apply := func(msg SnapshotMsg, force bool) {
 		if msg.Err != nil {
 			p.debugf("poll: %v", msg.Err)
@@ -469,6 +490,9 @@ func Run(ctx context.Context, p *Poller, onChange func(merge.Snapshot)) error {
 			}
 		case <-p.changes:
 			apply(p.Rebuild(true)(), false)
+		case f := <-cmds:
+			f()
+			apply(p.Rebuild(false)(), false)
 		}
 	}
 }

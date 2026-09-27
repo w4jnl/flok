@@ -28,7 +28,7 @@ var commands = []command{
 	{"doctor", "check the installation", nil},
 	{"theme", "show or switch the light/dark palette", nil},
 	{"install", "wire agent hooks and print the tmux snippet", []string{"--claude", "--copilot", "--tmux"}},
-	{"host", "manage remote tmux servers (add, remove, connect, disconnect, list)", nil},
+	{"host", "manage remote tmux servers (add, remove, connect, disconnect, list, status)", nil},
 	{"completion", "print a shell completion script", nil},
 	{"version", "print the version", nil},
 	{"help", "show usage", nil},
@@ -88,7 +88,7 @@ func bashCompletion() string {
 	b.WriteString("            COMPREPLY=( $(compgen -W \"--print --filter\" -- \"$cur\") ) ;;\n")
 	b.WriteString(`        host)
             if [ "$COMP_CWORD" -eq 2 ]; then
-                COMPREPLY=( $(compgen -W "add remove connect disconnect list" -- "$cur") )
+                COMPREPLY=( $(compgen -W "add remove connect disconnect list status" -- "$cur") )
             else
                 case "${COMP_WORDS[2]}" in
                     remove|connect|disconnect) COMPREPLY=( $(compgen -W "$(flok host list --names 2>/dev/null)" -- "$cur") ) ;;
@@ -98,6 +98,7 @@ func bashCompletion() string {
                              *) COMPREPLY=( $(compgen -W "--mode --socket --session --flok --disabled" -- "$cur") ) ;;
                          esac ;;
                     list) COMPREPLY=( $(compgen -W "--json --names" -- "$cur") ) ;;
+                    status) COMPREPLY=( $(compgen -W "--json" -- "$cur") ) ;;
                 esac
             fi ;;
 `)
@@ -132,7 +133,7 @@ func zshCompletion() string {
 	b.WriteString("        keys)\n            _arguments '--print[dump the help as text]' '--filter[keep bindings matching a substring]:filter' ;;\n")
 	b.WriteString(`        host)
             if (( CURRENT == 3 )); then
-                _values 'host command' 'add[register a remote tmux server]' 'remove[forget a host]'                     'connect[enable a host]' 'disconnect[disable a host]' 'list[show the hosts]'
+                _values 'host command' 'add[register a remote tmux server]' 'remove[forget a host]'                     'connect[enable a host]' 'disconnect[disable a host]' 'list[show the hosts]' 'status[connect once and report]'
             else
                 case ${words[3]} in
                     remove|connect|disconnect)
@@ -141,6 +142,7 @@ func zshCompletion() string {
                         _describe -t hosts 'host' hosts ;;
                     add) _arguments '--mode[full (flok serve on the host) or plain (tmux only)]:mode:(full plain)'                             '--socket[remote tmux socket name]:socket' '--session[session to attach or create]:session'                             '--flok[remote flok binary]:path:_files' '--disabled[register without connecting]' ;;
                     list) _arguments '--json[machine-readable output]' '--names[one name per line]' ;;
+                    status) _arguments '--json[machine-readable output]' ;;
                 esac
             fi ;;
 `)

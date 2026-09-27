@@ -44,7 +44,9 @@ usage: flok <command>
               the opt-in tmux-resurrect integration)
   resurrect   tmux-resurrect integration (save <state-file>; called by its save hook)
   host        remote tmux servers shown next to the local one: add <name> <user@host>
-              [--mode full|plain], remove, connect, disconnect, list (flok host --help)
+              [--mode full|plain], remove, connect, disconnect, list, status (flok host --help)
+  serve       --stdio: run headless on this host for a flok on another machine (started over
+              ssh by that flok; --hello prints the greeting and exits)
   hook        hook receiver used by the agents (stdin JSON; never call by hand)
   completion  print a bash or zsh completion script (flok completion bash|zsh)
   version     print the version
@@ -99,6 +101,8 @@ func Main(args []string) int {
 		return runResurrect(cfg, args[1:])
 	case "host":
 		return runHost(cfg, args[1:])
+	case "serve":
+		return runServe(cfg, args[1:])
 	case "_attach-loop":
 		return report(launcher.AttachLoop(cfg))
 	case "_focus":

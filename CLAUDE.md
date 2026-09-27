@@ -66,6 +66,15 @@ One binary, several roles selected by subcommand (`internal/cli/root.go`):
   every event. It must stay fast, silent and always exit 0 (Copilot denies tools when a hook
   fails). It identifies the pane from `TMUX_PANE`, maps the raw JSON through the agent adapter,
   applies the state machine under a per-pane flock, plays sounds, and appends to `events.log`.
+- `flok serve --stdio` (`internal/cli/serve.go` → `remote.Serve`): the headless role a local flok
+  starts over ssh on a remote host (`hosts.json`, mode `full`). It runs the same poller as the
+  sidebar and streams JSON-lines frames (`internal/remote/proto`: hello/snap/event/pong/error
+  out, goto/seen/visible/ping in); it holds `serve.lock` (flock) so `flok hook` on that host
+  stays silent while served, and ends on stdin EOF. `remote.Manager` is the local end: one
+  goroutine per enabled host, `full` over `serve`, `plain` driving `tmux.Remote` (ssh + quoted
+  tmux command) with a per-host store under `$FLOK_STATE/hosts/<name>/`; states and backoff in
+  `internal/remote/ssh.go`. ssh argv is always exec'd, never a shell; remote strings come from
+  `hosts.Validate`-checked fields through `tmux.ShellQuote`.
 - `flok jump|next|prev|toggle|hide|focus|reload` (`internal/cli/nav.go`): one-shot commands
   bound in the user's tmux.conf. They build a throwaway merge snapshot (no registry poll, too
   slow) and read `runtime.json` to find the outer panes and the inner client tty.
