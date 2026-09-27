@@ -14,14 +14,28 @@ import (
 // sidebar-hidden, terminal-theme or keep-awake marker flips. The state dir root also sees the
 // sidebar's own snapshot.json writes; those are ignored by name.
 func WatchStore(dir string, ch chan struct{}) {
-	w, err := fsnotify.NewWatcher()
+	w, err := watchStore(dir)
 	if err != nil {
 		return
+	}
+	watchLoop(w, dir, ch)
+}
+
+// watchStore opens the watcher; watchLoop runs until the watcher is closed (Poller.Close).
+func watchStore(dir string) (*fsnotify.Watcher, error) {
+	w, err := fsnotify.NewWatcher()
+	if err != nil {
+		return nil, err
 	}
 	dir = filepath.Clean(dir)
 	_ = w.Add(filepath.Join(dir, "agents"))
 	_ = w.Add(filepath.Join(dir, "seen"))
 	_ = w.Add(dir)
+	return w, nil
+}
+
+func watchLoop(w *fsnotify.Watcher, dir string, ch chan struct{}) {
+	dir = filepath.Clean(dir)
 	for ev := range w.Events {
 		if !StoreEventWanted(dir, ev.Name) {
 			continue

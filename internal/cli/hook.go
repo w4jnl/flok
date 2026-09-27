@@ -88,7 +88,8 @@ func runHook(cfg config.Config, args []string) (code int) {
 		return err == nil && v == "111"
 	})
 	var sounder notify.Sounder = notify.Noop{}
-	plays := cfg.Sounds.Enabled && cfg.Sounds.Player == "hook"
+	_, served := st.Served() // a local flok drives this host over ssh: it plays the sounds there
+	plays := cfg.Sounds.Enabled && cfg.Sounds.Player == "hook" && !served
 	if plays {
 		player := notify.Player{Files: notify.Resolve(st.Dir, map[string]string{"done": cfg.Sounds.Done, "blocked": cfg.Sounds.Blocked, "error": cfg.Sounds.Error}), Volume: cfg.Sounds.Volume, Command: cfg.Sounds.Command}
 		// the bell goes into the outer's work pane (the inner client's pty from runtime.json),

@@ -9,8 +9,10 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/w4jnl/flok/internal/agent"
 	"github.com/w4jnl/flok/internal/config"
 	"github.com/w4jnl/flok/internal/hosts"
+	"github.com/w4jnl/flok/internal/remote"
 )
 
 const hostUsage = `usage: flok host <command>
@@ -25,18 +27,23 @@ const hostUsage = `usage: flok host <command>
   disconnect <name>   disable the host: disconnect and stay disconnected across restarts
   list [--json|--names]
               show the registered hosts
+  status [--json]
+              connect to every enabled host once and report what answers (flok on the host,
+              its tmux, agents); the sidebar keeps its own connections, this is a check
 
 Hosts live in the state dir (hosts.json); [hosts] in config.toml holds the ssh defaults.`
 
 // hostCmd is `flok host` with its environment injected for tests.
 type hostCmd struct {
 	dir       string
+	cfg       config.Config
 	now       func() time.Time
 	out, errw io.Writer
+	manager   func(remote.Deps) *remote.Manager // nil = remote.New
 }
 
-func runHost(_ config.Config, args []string) int {
-	return hostCmd{dir: config.StateDir(), now: time.Now, out: os.Stdout, errw: os.Stderr}.run(args)
+func runHost(cfg config.Config, args []string) int {
+	return hostCmd{dir: config.StateDir(), cfg: cfg, now: time.Now, out: os.Stdout, errw: os.Stderr}.run(args)
 }
 
 func (c hostCmd) run(args []string) int {
@@ -58,6 +65,8 @@ func (c hostCmd) run(args []string) int {
 		return c.setEnabled(args[1:], false)
 	case "list", "ls":
 		return c.list(args[1:])
+	case "status":
+		return c.status(args[1:])
 	}
 	fmt.Fprintf(c.errw, "flok host: unknown command %q\n\n%s\n", args[0], hostUsage)
 	return 2
@@ -219,4 +228,98 @@ func (c hostCmd) list(args []string) int {
 	}
 	_ = tw.Flush()
 	return 0
+}
+
+// status connects to every enabled host once, waits for each to answer (a hello and a first
+// snapshot) or fail, and prints the result.
+func (c hostCmd) status(args []string) int {
+	asJSON := len(args) == 1 && args[0] == "--json"
+	if len(args) > 0 && !asJSON {
+		fmt.Fprintf(c.errw, "flok host status: unknown argument %s\n\n%s\n", args[0], hostUsage)
+		return 2
+	}
+	set, err := hosts.Load(c.dir)
+	if err != nil {
+		return c.fail(err)
+	}
+	enabled := set.Enabled()
+	if len(enabled) == 0 {
+		if asJSON {
+			fmt.Fprintln(c.out, "[]")
+		} else {
+			fmt.Fprintln(c.out, "no enabled hosts (flok host list)")
+		}
+		return 0
+	}
+	sink := make(chan remote.Msg, 256)
+	deps := remote.Deps{Cfg: c.cfg, StateDir: c.dir, Sink: sink, Adapters: agent.Enabled(c.cfg.Agents.Enabled)}
+	var m *remote.Manager
+	if c.manager != nil {
+		m = c.manager(deps)
+	} else {
+		m = remote.New(deps)
+	}
+	m.Apply(set)
+	pending := map[string]bool{}
+	for _, h := range enabled {
+		pending[h.Name] = true
+	}
+	timeout := time.Duration(c.cfg.Hosts.ConnectTimeoutS+10) * time.Second
+	deadline := time.After(timeout)
+	for len(pending) > 0 {
+		select {
+		case msg := <-sink:
+			if !pending[msg.Host] {
+				continue
+			}
+			if msg.Snap != nil || (msg.State != remote.Connecting && msg.State != remote.Connected && msg.State != remote.Stale) {
+				delete(pending, msg.Host)
+			}
+		case <-deadline:
+			pending = nil
+		}
+	}
+	status := m.Status()
+	m.Close()
+	rc := 0
+	var rows []remote.Status
+	for _, h := range enabled {
+		st := status[h.Name]
+		if st.State != remote.Connected {
+			rc = 1
+		}
+		rows = append(rows, st)
+	}
+	if asJSON {
+		enc := json.NewEncoder(c.out)
+		enc.SetIndent("", "  ")
+		_ = enc.Encode(rows)
+		return rc
+	}
+	tw := tabwriter.NewWriter(c.out, 0, 8, 2, ' ', 0)
+	fmt.Fprintln(tw, "NAME\tMODE\tSTATE\tREMOTE\tAGENTS\tDETAIL")
+	for i, st := range rows {
+		h := enabled[i]
+		remoteCol, agents := "-", "-"
+		if st.Hello != nil {
+			remoteCol = "tmux " + st.Hello.TmuxVersion
+			if st.Hello.Version != "" && st.Hello.Version != "plain" {
+				remoteCol = "flok " + strings.TrimPrefix(st.Hello.Version, "v") + ", " + remoteCol
+			}
+		}
+		if st.State == remote.Connected {
+			agents = fmt.Sprint(st.Agents)
+		}
+		detail := st.Detail
+		if st.State == remote.Connecting {
+			detail = "no answer within " + timeout.String()
+		}
+		if hint := st.State.Hint(h); hint != "" {
+			detail = strings.TrimSpace(detail + "; " + hint)
+			detail = strings.TrimPrefix(detail, "; ")
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", st.Host, h.Mode, st.State.Label(), remoteCol, agents, detail)
+	}
+	_ = tw.Flush()
+	return rc
 }
