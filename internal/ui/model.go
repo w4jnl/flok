@@ -67,7 +67,8 @@ type Model struct {
 	hostSet      hosts.Set           // the registry as last applied
 	hostList     []hosts.Host
 	hostsApplied bool
-	front        string // host whose work pane is next to the sidebar; "" = local
+	restartPanes []string // hosts whose parked pane must be rebuilt (attach target changed)
+	front        string   // host whose work pane is next to the sidebar; "" = local
 	clientTTY    string
 	width        int
 	height       int
@@ -103,8 +104,9 @@ type (
 	// the outer server, each only when this poll checked it (see focusCheckEvery).
 	snapshotMsg struct {
 		poller.SnapshotMsg
-		focus  *bool // outer active pane == sidebar
-		zoomed *bool // outer window zoomed (flok hide)
+		focus  *bool   // outer active pane == sidebar
+		zoomed *bool   // outer window zoomed (flok hide)
+		right  *string // the pane next to the sidebar as tmux sees it ("" when the sidebar is alone)
 	}
 	switchedMsg     struct{ err error }
 	repinMsg        struct{}
@@ -338,14 +340,19 @@ func (m Model) poll() tea.Cmd {
 		msg := snapshotMsg{SnapshotMsg: inner()}
 		if checkFocus && outer != nil && sb != "" {
 			// pane_active: keyboard-focus fallback; window_zoomed_flag: the work pane is zoomed over
-			// us (flok hide), which overrules a stale sidebar-hidden marker
-			v, e := outer.Run("display-message", "-p", "-t", sb, "#{pane_active} #{window_zoomed_flag}")
-			f := strings.Fields(v)
+			// us (flok hide), which overrules a stale sidebar-hidden marker; the pane list of our
+			// window says which work pane is really in front (swaps can race, panes can die)
+			v, e := outer.Run("display-message", "-p", "-t", sb, "#{pane_active} #{window_zoomed_flag}", ";",
+				"list-panes", "-t", sb, "-F", "#{pane_id}")
+			first, rest, _ := strings.Cut(v, "\n")
+			f := strings.Fields(first)
 			focus := e == nil && len(f) == 2 && f[0] == "1"
 			msg.focus = &focus
 			if e == nil && len(f) == 2 {
 				zoomed := f[1] == "1"
 				msg.zoomed = &zoomed
+				right := siblingPane(rest, sb)
+				msg.right = &right
 			}
 		}
 		return msg
@@ -477,6 +484,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.focus != nil && *msg.focus != m.focused {
 			m.focused, focusChanged = *msg.focus, true
 		}
+		var resync tea.Cmd
+		if msg.right != nil {
+			resync = m.resyncFront(*msg.right)
+		}
 		themeChanged := false
 		if dark := m.d.Cfg.Theme.IsDark(msg.Theme); dark != m.dark {
 			m.setTheme(dark)
@@ -499,6 +510,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.debugf("idle=%v (unfocused=%v hidden=%v)", m.idle(), m.unfocused, m.hidden)
 		}
 		var cmds []tea.Cmd
+		if resync != nil {
+			cmds = append(cmds, resync)
+		}
 		if themeChanged {
 			cmds = append(cmds, m.borderCmd())
 		}

@@ -30,10 +30,67 @@ func hostAttachLoopCommand(bin, name string) string {
 	return "env FLOK_OUTER=1 " + shellQuote(bin) + " _attach-loop --host " + name
 }
 
-// EnsureHostPane finds or creates the parked window of a host and records it in runtime.json.
+// WorkPanes is what the outer's panes run: the local attach loop and one loop per host,
+// wherever the swaps have put them. Panes are known by their start command, never by the window
+// they sit in: swaps move panes between the windows named after the hosts, so after a few
+// switches a host's pane may sit in another host's window. Extra holds duplicates (a second
+// loop for the same host, from a race or an older build), which are stray and get killed.
+type WorkPanes struct {
+	Local  string              // pane of `flok _attach-loop`
+	Hosts  map[string]string   // host name -> pane of `flok _attach-loop --host <name>`
+	Extra  map[string][]string // host name -> further panes running the same loop
+	Window map[string]string   // pane id -> window id
+}
+
+// ScanWorkPanes lists the outer's panes once and sorts them by what they run. The format has
+// no control characters (tmux 3.4 vis-escapes list-* output) and the answer is decoded like a
+// snapshot: ids never contain spaces, so the command is everything after the second one.
+func ScanWorkPanes(outer tmux.Client) (WorkPanes, error) {
+	out, err := outer.Run("list-panes", "-a", "-F", "#{pane_id} #{window_id} #{pane_start_command}")
+	if err != nil {
+		return WorkPanes{}, err
+	}
+	return parseWorkPanes(tmux.Decode(out, tmux.Escapes(outer))), nil
+}
+
+func parseWorkPanes(out string) WorkPanes {
+	w := WorkPanes{Hosts: map[string]string{}, Extra: map[string][]string{}, Window: map[string]string{}}
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		f := strings.SplitN(line, " ", 3)
+		if len(f) != 3 {
+			continue
+		}
+		id, win := f[0], f[1]
+		cmd := strings.Trim(strings.TrimSpace(f[2]), `"`) // tmux prints the command in double quotes
+		w.Window[id] = win
+		switch {
+		case strings.HasSuffix(cmd, " _attach-loop"):
+			w.Local = id
+		case strings.Contains(cmd, " _attach-loop --host "):
+			name := strings.TrimSpace(cmd[strings.Index(cmd, " _attach-loop --host ")+len(" _attach-loop --host "):])
+			if _, dup := w.Hosts[name]; dup {
+				w.Extra[name] = append(w.Extra[name], id)
+			} else {
+				w.Hosts[name] = id
+			}
+		}
+	}
+	return w
+}
+
+// EnsureHostPane finds or creates the work pane of a host and records it in runtime.json. An
+// existing pane is recognised by its start command; a second loop for the same host is a stray
+// (a race, an older build) and is killed, so reloads never leave twins.
 func EnsureHostPane(outer tmux.Client, sess, bin, name string) (HostPane, error) {
-	hp, ok := findHostWindow(outer, sess, name)
-	if !ok {
+	wp, err := ScanWorkPanes(outer)
+	if err != nil {
+		return HostPane{}, err
+	}
+	for _, extra := range wp.Extra[name] {
+		_, _ = outer.Run("kill-pane", "-t", extra)
+	}
+	hp := HostPane{Pane: wp.Hosts[name], Window: wp.Window[wp.Hosts[name]]}
+	if hp.Pane == "" {
 		home, _ := os.UserHomeDir()
 		out, err := outer.Run("new-window", "-d", "-t", sess+":", "-n", HostWindowName(name), "-c", home,
 			"-P", "-F", "#{window_id}\t#{pane_id}", hostAttachLoopCommand(bin, name))
@@ -51,63 +108,62 @@ func EnsureHostPane(outer tmux.Client, sess, bin, name string) (HostPane, error)
 			r.Hosts = map[string]HostPane{}
 		}
 		r.Hosts[name] = hp
+		if wp.Local != "" {
+			r.LocalPane = wp.Local
+		}
 	})
 }
 
-// findHostWindow looks the parked window up by name (a `flok reload` or a second `flok up`
-// must not create a twin).
-func findHostWindow(outer tmux.Client, sess, name string) (HostPane, bool) {
-	out, err := outer.Run("list-windows", "-t", sess, "-F", "#{window_id}\t#{window_name}\t#{pane_id}")
-	if err != nil {
-		return HostPane{}, false
-	}
-	return parseHostWindows(out)[name], parseHostWindows(out)[name] != HostPane{}
-}
-
-// parseHostWindows maps host names to their parked windows from list-windows output.
-func parseHostWindows(out string) map[string]HostPane {
-	m := map[string]HostPane{}
-	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
-		f := strings.SplitN(line, "\t", 3)
-		if len(f) != 3 || !strings.HasPrefix(f[1], "flok-host-") {
-			continue
-		}
-		m[strings.TrimPrefix(f[1], "flok-host-")] = HostPane{Window: f[0], Pane: f[2]}
-	}
-	return m
-}
-
-// KillHostPane removes a host's parked window and its record. The caller brings the local
-// pane back to the front first when the host was there (the window then holds the host's pane).
+// KillHostPane removes a host's work pane (and any stray twin) and its record; the window it
+// sat in closes with it when it was alone there. A host still in front, its pane next to the
+// sidebar, is refused: the caller swaps back to local first.
 func KillHostPane(outer tmux.Client, name string) error {
-	rt, err := ReadRuntime()
+	wp, err := ScanWorkPanes(outer)
 	if err != nil {
 		return err
 	}
-	hp, ok := rt.Hosts[name]
-	if ok {
-		if _, err := outer.Run("kill-window", "-t", hp.Window); err != nil && !strings.Contains(err.Error(), "can't find") {
-			return err
+	rt, _ := ReadRuntime()
+	pane := wp.Hosts[name]
+	if pane != "" && rt.SidebarPane != "" {
+		if out, err := outer.Run("list-panes", "-t", rt.SidebarPane, "-F", "#{pane_id}"); err == nil {
+			for _, id := range strings.Fields(out) {
+				if id == pane {
+					return fmt.Errorf("host %s is in front; switch to local first", name)
+				}
+			}
+		}
+	}
+	for _, id := range append(wp.Extra[name], pane) {
+		if id != "" {
+			if _, err := outer.Run("kill-pane", "-t", id); err != nil && !strings.Contains(err.Error(), "can't find") {
+				return err
+			}
 		}
 	}
 	return UpdateRuntime(func(r *Runtime) { delete(r.Hosts, name) })
 }
 
-// hostAttachCommand is what the work pane runs on the host: attach to its tmux (a named session
-// is created when missing), with TERM overridden when the host lacks the outer's terminfo.
-func hostAttachCommand(h hosts.Host) string {
-	parts := []string{"tmux"}
+// hostAttachCommand is what the work pane runs on the host: attach to its tmux, and when no
+// server runs there create a session (the host's --session, else [hosts] session), so a host
+// that only has tmux installed still gets a server the moment it is connected. A host with its
+// own session name always lands in that session. TERM is overridden when the host lacks the
+// outer's terminfo.
+func hostAttachCommand(h hosts.Host, defaultSession string) string {
+	tm := []string{"tmux"}
 	if h.Socket != "" {
-		parts = append(parts, "-L", h.Socket)
+		tm = append(tm, "-L", h.Socket)
 	}
-	if h.Session != "" {
-		parts = append(parts, "new-session", "-A", "-s", h.Session)
-	} else {
-		parts = append(parts, "attach-session")
+	var cmd string
+	switch {
+	case h.Session != "":
+		cmd = tmux.ShellJoin(append(tm, "new-session", "-A", "-s", h.Session))
+	case defaultSession != "":
+		cmd = tmux.ShellJoin(append(tm, "attach-session")) + " || " + tmux.ShellJoin(append(tm, "new-session", "-s", defaultSession))
+	default:
+		cmd = tmux.ShellJoin(append(tm, "attach-session"))
 	}
-	cmd := tmux.ShellJoin(parts)
 	if h.Term != "" {
-		cmd = "env TERM=" + tmux.ShellQuote(h.Term) + " " + cmd
+		cmd = "export TERM=" + tmux.ShellQuote(h.Term) + "; " + cmd
 	}
 	return cmd
 }
@@ -133,7 +189,7 @@ func hostAttachOutcome(h hosts.Host, exit int, stderr string, ran time.Duration,
 	}
 	st := remote.Classify(exit, stderr)
 	if st == remote.NoFlok { // the attach never runs flok; a missing command here is a missing tmux
-		st, detail = remote.Unreachable, "no tmux on the host: "+detail
+		st, detail = remote.Unreachable, "no tmux on the host's PATH: "+detail
 	}
 	if st.SlowRetry() {
 		return attachOutcome{st, fmt.Sprintf("flok: %s %s: %s (retry in 60s)", h.Name, st.Label(), st.Hint(h)), time.Minute}
@@ -171,7 +227,7 @@ func AttachLoopHost(cfg config.Config, name string) error {
 			fmt.Printf("\033[2J\033[Hflok: %s disconnected\n", name)
 			return nil
 		}
-		argv := remote.Argv(cfg.Hosts, stateDir, h, true, hostAttachCommand(h))
+		argv := remote.Argv(cfg.Hosts, stateDir, h, true, remote.WithPath(cfg.Hosts, hostAttachCommand(h, cfg.Hosts.Session)))
 		fmt.Print("\033[2J\033[H")
 		var tail strings.Builder
 		cmd := exec.Command(argv[0], argv[1:]...)

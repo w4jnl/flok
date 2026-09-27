@@ -11,6 +11,7 @@ import (
 
 	"github.com/w4jnl/flok/internal/agent"
 	"github.com/w4jnl/flok/internal/hosts"
+	"github.com/w4jnl/flok/internal/launcher"
 	"github.com/w4jnl/flok/internal/merge"
 	"github.com/w4jnl/flok/internal/remote"
 	"github.com/w4jnl/flok/internal/remote/proto"
@@ -54,7 +55,7 @@ func TestServersPanelAndFederatedAgents(t *testing.T) {
 		t.Fatalf("multi-host with 3 server rows, got %v %d", m.multiHost(), m.hostRowCount())
 	}
 	lines := render(m, 28, 40)
-	want := []string{"[flok]", "servers", " ○ local", " ● beta", " ○ gamma", "", "sessions · local", " ○ Alpha"}
+	want := []string{"[flok]", "servers", " ○ local", " ● beta full", " ○ gamma plain", "", "sessions · local", " ○ Alpha"}
 	for i, w := range want {
 		if !strings.HasPrefix(strings.TrimRight(lines[i], " "), w) {
 			t.Fatalf("line %d: %q, want prefix %q\n%s", i, lines[i], w, strings.Join(lines[:12], "\n"))
@@ -105,6 +106,21 @@ func TestServersPanelAndFederatedAgents(t *testing.T) {
 	if len(m.snap.Agents) != 1 || !strings.HasPrefix(lines[3], " ✗ beta") || !strings.Contains(lines[3], "retry in") || !m.retryCountdown() {
 		t.Fatalf("unreachable: agents=%d row=%q", len(m.snap.Agents), lines[3])
 	}
+	if !reflect.DeepEqual(m.snap.Warnings, []string{"beta: Connection refused"}) || !strings.HasPrefix(lines[len(lines)-1], "beta: Connection refused") {
+		t.Fatalf("the footer names the reason: warnings=%v footer=%q", m.snap.Warnings, lines[len(lines)-1])
+	}
+	m.onRemote(remote.Msg{Host: "beta", State: remote.NoServer, Detail: "no server running on /tmp/tmux-0/default"})
+	if lines = render(m, 28, 40); strings.TrimRight(lines[3], " ") != " ○ beta full  no tmux server" {
+		t.Fatalf("no server row: %q", lines[3])
+	}
+	// a long host name yields to the state, keeping eight cells of itself
+	m.hostList[0].Name = "macmini-office"
+	m.remotes["macmini-office"] = m.remotes["beta"]
+	if lines = render(m, 28, 40); strings.TrimRight(lines[3], " ") != " ○ macmini-o… no tmux server" {
+		t.Fatalf("long name row (the mode word yields to the state): %q", lines[3])
+	}
+	m.hostList[0].Name = "beta"
+	delete(m.remotes, "macmini-office")
 	m.onRemote(remote.Msg{Host: "beta", State: remote.Auth, Detail: "Permission denied"})
 	if lines = render(m, 28, 40); !strings.HasSuffix(strings.TrimRight(lines[3], " "), "needs auth") {
 		t.Fatalf("auth: %q", lines[3])
@@ -233,5 +249,42 @@ func TestPublishedSnapshotCarriesHosts(t *testing.T) {
 	}
 	if s.Agents[0].Host != "beta" || s.Agents[2].Host != "" || s.Sessions[1].Host != "beta" {
 		t.Fatalf("tags: %+v", s.Agents)
+	}
+}
+
+func TestSiblingPaneAndFrontResync(t *testing.T) {
+	if siblingPane("%0\n%7\n", "%0") != "%7" || siblingPane("%0\n", "%0") != "" || siblingPane("", "%0") != "" {
+		t.Fatal("siblingPane")
+	}
+	dir := t.TempDir()
+	t.Setenv("FLOK_STATE", dir)
+	if err := launcher.WriteRuntime(launcher.Runtime{RightPane: "%1", LocalPane: "%1", Hosts: map[string]launcher.HostPane{"beta": {Pane: "%5", Window: "@3"}}}); err != nil {
+		t.Fatal(err)
+	}
+	m := multiHostModel(t)
+	m.d.RightPane = "%1"
+	if m.resyncFront("%1") != nil || m.front != "" {
+		t.Fatal("the believed pane in front: nothing to do")
+	}
+	// tmux shows beta's pane next to the sidebar (a stray swap): follow it
+	m.resyncFront("%5")
+	rt, _ := launcher.ReadRuntime()
+	if m.front != "beta" || m.d.RightPane != "%5" || rt.FrontHost != "beta" || rt.RightPane != "%5" || len(m.snap.Spaces) != 1 || m.snap.Spaces[0].SessionName != "web" {
+		t.Fatalf("resync to beta: front=%q right=%q runtime=%+v spaces=%+v", m.front, m.d.RightPane, rt, m.snap.Spaces)
+	}
+	// a pane we do not know is left alone; back to the local pane is followed again
+	m.resyncFront("%9")
+	if m.front != "beta" {
+		t.Fatal("unknown pane must not change the front")
+	}
+	m.resyncFront("%1")
+	if m.front != "" || m.d.RightPane != "%1" {
+		t.Fatalf("resync to local: front=%q right=%q", m.front, m.d.RightPane)
+	}
+	if m.resyncFront("") != nil { // no outer in tests: no recovery command, and no change
+		t.Fatal("recovery needs the outer")
+	}
+	if m.front != "" || m.d.RightPane != "%1" {
+		t.Fatal("an empty window changes nothing without an outer")
 	}
 }

@@ -133,6 +133,9 @@ func HostRows(s snapshot.Snapshot) []HostRow {
 	var rows []HostRow
 	for _, h := range s.Hosts {
 		label := h.Name + " · "
+		if h.Mode != "" {
+			label += h.Mode + " · "
+		}
 		switch h.State {
 		case "connected", "stale":
 			label += fmt.Sprintf("%d agent", h.Agents)
@@ -153,6 +156,10 @@ func HostRows(s snapshot.Snapshot) []HostRow {
 			label += "host key"
 		case "noflok":
 			label += "no flok"
+		case "oldflok":
+			label += "old flok"
+		case "noserver":
+			label += "no tmux server"
 		default:
 			label += h.State
 		}

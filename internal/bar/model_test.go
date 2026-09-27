@@ -63,10 +63,12 @@ func TestRemoteHostsInTheDropdown(t *testing.T) {
 			{Name: "beta", Mode: "full", State: "connected", Agents: 1, Pending: 1, Front: true},
 			{Name: "gamma", Mode: "plain", State: "auth", Detail: "Permission denied"},
 			{Name: "delta", Mode: "plain", State: "disabled"},
+			{Name: "eps", Mode: "full", State: "oldflok", Detail: "flok 0.4.4 there is too old (no serve)"},
+			{Name: "zeta", Mode: "plain", State: "noserver", Detail: "no server running on /tmp/tmux-0/default"},
 		},
 		FrontHost: "beta",
 	}
-	if got := Header(s, snapshot.Fresh); got != "flok · 2 agents · 1 waiting · 3 hosts (1 down)" {
+	if got := Header(s, snapshot.Fresh); got != "flok · 2 agents · 1 waiting · 5 hosts (3 down)" {
 		t.Fatalf("header %q", got)
 	}
 	rows := Rows(s, now, 0)
@@ -74,8 +76,8 @@ func TestRemoteHostsInTheDropdown(t *testing.T) {
 		t.Fatalf("rows %+v", rows)
 	}
 	hosts := HostRows(s)
-	if len(hosts) != 3 || hosts[0].Label != "beta · 1 agent · 1 waiting" || !hosts[0].Front || !hosts[0].Attention ||
-		hosts[1].Label != "gamma · needs auth" || hosts[2].Label != "delta · off" || hosts[2].Front {
+	if len(hosts) != 5 || hosts[0].Label != "beta · full · 1 agent · 1 waiting" || !hosts[0].Front || !hosts[0].Attention ||
+		hosts[1].Label != "gamma · plain · needs auth" || hosts[2].Label != "delta · plain · off" || hosts[2].Front || hosts[3].Label != "eps · full · old flok" || hosts[4].Label != "zeta · plain · no tmux server" {
 		t.Fatalf("host rows %+v", hosts)
 	}
 	if HostRows(snapshot.Snapshot{}) != nil || Header(snapshot.Snapshot{}, snapshot.Fresh) != "flok · 0 agents" {

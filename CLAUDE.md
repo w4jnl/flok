@@ -85,7 +85,12 @@ One binary, several roles selected by subcommand (`internal/cli/root.go`):
   joins the local merge and the hosts' views (`m.fed` published, `m.snap` rendered with the
   front host's sessions); `swapCmd` swaps a host's parked pane with the one next to the sidebar
   (`swap-pane`, zoom preserved) and records `right_pane`/`front_host` in runtime.json; `gotoCmd`
-  swaps first when the target host is not in front. One-shot commands aimed at a remote host
+  swaps first when the target host is not in front. Swaps move panes between the windows named
+  after the hosts, so a host's pane soon sits in another host's window: work panes are always
+  identified by their start command (`launcher.ScanWorkPanes`, `pane_start_command`, which tmux
+  prints in double quotes), never by the window they sit in; a second loop for the same host is a
+  stray and is killed; every 5th poll the sidebar re-reads which pane is next to it and resyncs
+  `front`/runtime.json (`resyncFront`). One-shot commands aimed at a remote host
   (`flok goto beta:%12`, `flok jump`/`next`/`prev` with hosts, `flok host front`) cannot open ssh
   themselves: they file a JSON request in `$FLOK_STATE/requests/` (`state.WriteRequest`), which
   the store watcher delivers and `ui/requests.go` runs (older than 10 s are dropped). `flok doctor`

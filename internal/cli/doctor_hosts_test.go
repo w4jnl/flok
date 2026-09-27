@@ -41,11 +41,11 @@ func canned(answers map[string]*cannedProc) remote.Dialer {
 
 const goodProbe = "tmux 3.4\n---\n/opt/homebrew/bin/flok\n---\n" +
 	`{"type":"hello","hello":{"proto":1,"version":"v0.5.0","hostname":"beta","pid":7,"tmux_version":"3.4","state_dir":"/h/.local/state/flok"}}` +
-	"\n---\nterminfo=ok\n---\nhooks=9\n"
+	"\n---\nterminfo=ok\n---\nhooks=9\n---\nflok 0.5.0\n---\nx\nx\n"
 
 func TestParseHostProbe(t *testing.T) {
 	p := parseHostProbe(goodProbe)
-	if p.TmuxVersion != "tmux 3.4" || p.Flok != "/opt/homebrew/bin/flok" || p.Hello == nil || p.Hello.Version != "v0.5.0" || !p.Terminfo || p.Hooks != 9 {
+	if p.TmuxVersion != "tmux 3.4" || p.Flok != "/opt/homebrew/bin/flok" || p.Hello == nil || p.Hello.Version != "v0.5.0" || !p.Terminfo || p.Hooks != 9 || p.Version != "0.5.0" || p.Sessions != 2 {
 		t.Fatalf("%+v", p)
 	}
 	p = parseHostProbe("Welcome!\ntmux 2.7\n---\nnone\n---\n---\nterminfo=missing\n---\nhooks=nofile\n")
@@ -64,6 +64,7 @@ func TestHostChecks(t *testing.T) {
 		{Name: "gamma", Target: "gamma", Mode: hosts.ModePlain, Enabled: true},
 		{Name: "delta", Target: "delta", Mode: hosts.ModeFull, Enabled: true},
 		{Name: "old", Target: "old", Mode: hosts.ModePlain, Enabled: true},
+		{Name: "eps", Target: "eps", Mode: hosts.ModeFull, Enabled: true},
 		{Name: "off", Target: "off", Mode: hosts.ModeFull},
 	}}
 	dial := canned(map[string]*cannedProc{
@@ -71,6 +72,7 @@ func TestHostChecks(t *testing.T) {
 		"gamma": {out: "tmux 3.2a\n---\nnone\n---\n---\nterminfo=missing\n---\nhooks=nofile\n"},
 		"delta": {exit: 255, stderr: "delta: Permission denied (publickey)."},
 		"old":   {out: "tmux 2.6\n---\nnone\n---\n---\nterminfo=ok\n---\nhooks=nofile\n"},
+		"eps":   {out: "tmux 3.4\n---\n/usr/local/bin/flok\n---\n---\nterminfo=ok\n---\nhooks=3\n---\nflok 0.4.4\n---\nno server running on /tmp/tmux-0/default\n"},
 	})
 	got := hostChecks(cfg, t.TempDir(), set, dial, time.Second)
 	var lines []string
@@ -84,6 +86,8 @@ func TestHostChecks(t *testing.T) {
 		"warn host gamma (plain): no tmux-256color terminfo",
 		"fail host delta (full): needs auth (Permission denied (publickey)); run `ssh delta` once",
 		"fail host old (plain): tmux 2.6 is too old, flok needs 2.7 or newer",
+		"warn host eps (full): tmux 3.4, flok 0.4.4 at /usr/local/bin/flok is too old, it has no `serve` (upgrade flok there, or use --mode plain)",
+		"warn host eps (full): tmux is installed but not running for eps: the sidebar's work pane starts a session there",
 		"ok host off (full): disabled (flok host connect off)",
 	} {
 		if !strings.Contains(joined, want) {

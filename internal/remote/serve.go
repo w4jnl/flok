@@ -107,6 +107,7 @@ func Serve(ctx context.Context, d ServeDeps) error {
 	var lastBody []byte
 	var last proto.Snapshot
 	var lastSent time.Time
+	lastPollErr := ""
 	sendSnap := func(s proto.Snapshot) error {
 		last = s
 		lastSent = time.Now()
@@ -132,6 +133,14 @@ func Serve(ctx context.Context, d ServeDeps) error {
 				if err := sendSnap(last); err != nil {
 					return err
 				}
+			}
+			// a tmux that is not running (yet) for this user: tell the local side why there is
+			// nothing to show, once per change
+			if e := p.PollError(); e != nil && e.Error() != lastPollErr {
+				lastPollErr = e.Error()
+				_ = write(proto.Frame{Type: proto.TypeError, Error: "poll: " + lastPollErr})
+			} else if e == nil {
+				lastPollErr = ""
 			}
 		case f := <-frames:
 			switch f.Type {

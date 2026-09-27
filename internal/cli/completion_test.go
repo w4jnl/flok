@@ -36,7 +36,7 @@ COMP_WORDS=(flok host add beta beta --mode ""); COMP_CWORD=6; _flok; echo "${COM
 	}
 	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
 	if len(lines) != 4 || lines[0] != "status" || !strings.Contains(lines[1], "--claude") || !strings.Contains(lines[1], "--copilot") ||
-		lines[2] != "add remove connect disconnect list status front" || lines[3] != "full plain" {
+		lines[2] != "add set remove connect disconnect list status front" || lines[3] != "full plain" {
 		t.Fatalf("unexpected completions: %q", lines)
 	}
 	for _, c := range commands {

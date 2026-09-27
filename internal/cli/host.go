@@ -28,6 +28,8 @@ const hostUsage = `usage: flok host <command>
               plain drives its tmux over ssh (titles and screen rules only)
                       --term sets TERM for the attach when the host lacks the tmux-256color
                       terminfo (flok doctor tells; screen-256color usually works)
+  set <name> [--mode full|plain] [--target t] [--socket s] [--session s] [--flok p] [--term t]
+              change a host in place (an empty value clears the field); the sidebar reconnects
   remove <name>       forget the host (and its local cache)
   connect <name>      enable the host: the sidebar connects now and at every flok up
   disconnect <name>   disable the host: disconnect and stay disconnected across restarts
@@ -66,6 +68,8 @@ func (c hostCmd) run(args []string) int {
 	switch args[0] {
 	case "add":
 		return c.add(args[1:])
+	case "set":
+		return c.set(args[1:])
 	case "remove", "rm":
 		return c.remove(args[1:])
 	case "connect", "enable":
@@ -388,5 +392,61 @@ func (c hostCmd) front(args []string) int {
 		}
 	}
 	fmt.Fprintf(c.out, "%s comes to the front\n", name)
+	return 0
+}
+
+// set edits a registered host; the sidebar picks the change up from the file and reconnects.
+func (c hostCmd) set(args []string) int {
+	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
+		fmt.Fprintf(c.errw, "flok host set: need <name>\n\n%s\n", hostUsage)
+		return 2
+	}
+	name := args[0]
+	if err := hosts.ValidateName(name); err != nil {
+		return c.fail(err)
+	}
+	var edits []func(*hosts.Host)
+	for i := 1; i < len(args); i++ {
+		flag := args[i]
+		if i+1 >= len(args) || !strings.HasPrefix(flag, "--") {
+			fmt.Fprintf(c.errw, "flok host set: %s needs a value\n\n%s\n", flag, hostUsage)
+			return 2
+		}
+		i++
+		v := args[i]
+		switch flag {
+		case "--mode":
+			edits = append(edits, func(h *hosts.Host) { h.Mode = hosts.Mode(v) })
+		case "--target":
+			edits = append(edits, func(h *hosts.Host) { h.Target = v })
+		case "--socket":
+			edits = append(edits, func(h *hosts.Host) { h.Socket = v })
+		case "--session":
+			edits = append(edits, func(h *hosts.Host) { h.Session = v })
+		case "--flok":
+			edits = append(edits, func(h *hosts.Host) { h.Flok = v })
+		case "--term":
+			edits = append(edits, func(h *hosts.Host) { h.Term = v })
+		default:
+			fmt.Fprintf(c.errw, "flok host set: unknown flag %s\n\n%s\n", flag, hostUsage)
+			return 2
+		}
+	}
+	if len(edits) == 0 {
+		fmt.Fprintf(c.errw, "flok host set: nothing to change\n\n%s\n", hostUsage)
+		return 2
+	}
+	set, err := hosts.Update(c.dir, func(s *hosts.Set) error {
+		return s.Set(name, func(h *hosts.Host) {
+			for _, e := range edits {
+				e(h)
+			}
+		})
+	})
+	if err != nil {
+		return c.fail(err)
+	}
+	h, _ := set.Get(name)
+	fmt.Fprintf(c.out, "%s: %s, %s\n", h.Name, h.Target, h.Mode)
 	return 0
 }

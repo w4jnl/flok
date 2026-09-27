@@ -28,7 +28,7 @@ var commands = []command{
 	{"doctor", "check the installation", nil},
 	{"theme", "show or switch the light/dark palette", nil},
 	{"install", "wire agent hooks and print the tmux snippet", []string{"--claude", "--copilot", "--tmux"}},
-	{"host", "manage remote tmux servers (add, remove, connect, disconnect, list, status)", nil},
+	{"host", "manage remote tmux servers (add, set, remove, connect, disconnect, list, status, front)", nil},
 	{"completion", "print a shell completion script", nil},
 	{"version", "print the version", nil},
 	{"help", "show usage", nil},
@@ -88,10 +88,16 @@ func bashCompletion() string {
 	b.WriteString("            COMPREPLY=( $(compgen -W \"--print --filter\" -- \"$cur\") ) ;;\n")
 	b.WriteString(`        host)
             if [ "$COMP_CWORD" -eq 2 ]; then
-                COMPREPLY=( $(compgen -W "add remove connect disconnect list status front" -- "$cur") )
+                COMPREPLY=( $(compgen -W "add set remove connect disconnect list status front" -- "$cur") )
             else
                 case "${COMP_WORDS[2]}" in
                     remove|connect|disconnect|front) COMPREPLY=( $(compgen -W "$(flok host list --names 2>/dev/null) local" -- "$cur") ) ;;
+                    set) if [ "$COMP_CWORD" -eq 3 ]; then COMPREPLY=( $(compgen -W "$(flok host list --names 2>/dev/null)" -- "$cur") )
+                         else case "$prev" in
+                             --mode) COMPREPLY=( $(compgen -W "full plain" -- "$cur") ) ;;
+                             --target|--socket|--session|--flok|--term) ;;
+                             *) COMPREPLY=( $(compgen -W "--mode --target --socket --session --flok --term" -- "$cur") ) ;;
+                         esac; fi ;;
                     add) case "$prev" in
                              --mode) COMPREPLY=( $(compgen -W "full plain" -- "$cur") ) ;;
                              --socket|--session|--flok|--term) ;;
@@ -133,13 +139,22 @@ func zshCompletion() string {
 	b.WriteString("        keys)\n            _arguments '--print[dump the help as text]' '--filter[keep bindings matching a substring]:filter' ;;\n")
 	b.WriteString(`        host)
             if (( CURRENT == 3 )); then
-                _values 'host command' 'add[register a remote tmux server]' 'remove[forget a host]'                     'connect[enable a host]' 'disconnect[disable a host]' 'list[show the hosts]' 'status[connect once and report]' 'front[bring its work pane next to the sidebar]'
+                _values 'host command' 'add[register a remote tmux server]' 'set[change a host in place]' 'remove[forget a host]'                     'connect[enable a host]' 'disconnect[disable a host]' 'list[show the hosts]' 'status[connect once and report]' 'front[bring its work pane next to the sidebar]'
             else
                 case ${words[3]} in
                     remove|connect|disconnect|front)
                         local -a hosts
                         hosts=(${(f)"$(flok host list --names 2>/dev/null)"} local)
                         _describe -t hosts 'host' hosts ;;
+                    set)
+                        if (( CURRENT == 4 )); then
+                            local -a hosts
+                            hosts=(${(f)"$(flok host list --names 2>/dev/null)"})
+                            _describe -t hosts 'host' hosts
+                        else
+                            _arguments '--mode[full or plain]:mode:(full plain)' '--target[ssh target]:target' '--socket[remote tmux socket]:socket' \
+                                '--session[session to attach or create]:session' '--flok[remote flok binary]:path:_files' '--term[TERM for the attach]:term'
+                        fi ;;
                     add) _arguments '--mode[full (flok serve on the host) or plain (tmux only)]:mode:(full plain)'                             '--socket[remote tmux socket name]:socket' '--session[session to attach or create]:session'                             '--flok[remote flok binary]:path:_files' '--term[TERM for the attach (screen-256color)]:term' '--disabled[register without connecting]' ;;
                     list) _arguments '--json[machine-readable output]' '--names[one name per line]' ;;
                     status) _arguments '--json[machine-readable output]' ;;

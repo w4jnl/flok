@@ -384,7 +384,7 @@ flok host status                          # connect to each once and report
 flok doctor                               # probes every host: tmux, flok, hooks, terminfo
 ```
 
-Hosts live in `hosts.json` in the state dir, not in `config.toml`: `flok host add|remove|
+Hosts live in `hosts.json` in the state dir, not in `config.toml`: `flok host add|set|remove|
 connect|disconnect` (or `c` on a row of the servers panel) changes the set while flok runs, and
 `flok up` reconnects the enabled ones. `[hosts]` in `config.toml` holds the ssh defaults.
 
@@ -396,8 +396,8 @@ host's tmux over ssh itself: titles and screen rules, no hook states, slower pol
 where flok cannot be installed.
 
 The sidebar grows a **servers** panel above the sessions: local first, then the hosts in the
-order they were added, each with its rollup glyph and agent count (an orange `· 2` for agents
-waiting there), or its connection state (`connecting`, `retry in 8s`, `needs auth`, `no flok`,
+order they were added, each with its mode (`full` or `plain`) after the name, its rollup glyph
+and agent count (an orange `· 2` for agents waiting there), or its connection state (`connecting`, `retry in 8s`, `needs auth`, `no flok`,
 `busy`, `incompatible`, `off`). `Enter` on a host brings its work pane next to the sidebar; the
 sessions panel then shows that host's sessions (`sessions · beta`). The agents panel shows every
 host, attention-sorted, remote rows tagged with their host (`beta · claude · fix login`).
@@ -414,8 +414,10 @@ outer tmux -L flok                                         ┌──────
 
 Every enabled host keeps a persistent `ssh -t … tmux attach` pane parked in a hidden window of
 the outer server, so switching hosts is one `swap-pane`: instant, no reconnect, `flok hide`
-keeps working. The parked pane re-attaches by itself when you detach inside the remote tmux, and
-shows one status line and a countdown while the host is unreachable. The data channel
+keeps working. A host with tmux installed but not running gets a server from that pane (`tmux
+new-session -s main`, the name from `[hosts] session` or the host's `--session`), so a fresh box
+needs nothing but tmux. The parked pane re-attaches by itself when you detach inside the remote
+tmux, and shows one status line and a countdown while the host is unreachable. The data channel
 reconnects with a backoff of 1, 2, 4 … 30 s; `needs auth`, `host key`, `no flok` and
 `incompatible` are retried once a minute with the fix spelled out, `busy` (another flok already
 serves that host) every 10 s. A laptop going to sleep ends the dead ssh within about 45 s; the
@@ -524,6 +526,7 @@ flok doctor                 checks tmux, hooks, sounds, the outer session and ev
 flok completion bash|zsh
 flok host add <name> <user@host> [--mode full|plain] [--socket name] [--session name]
               [--flok /path/to/flok] [--term name] [--disabled]     register a remote host
+flok host set <name> [--mode full|plain] [--target t] [--socket s] [--session s] [--flok p] [--term t]
 flok host remove | connect | disconnect <name>
 flok host list [--json|--names]  |  flok host status [--json]  |  flok host front <name>|local [--focus]
 flok serve --stdio | --hello      run headless on this host for a flok elsewhere (started over ssh by it)
@@ -621,6 +624,10 @@ connect_timeout_s = 10
 backoff_max_s = 30          # reconnect backoff 1, 2, 4 … up to this many seconds
 multiplex = true            # one ControlMaster connection per host, shared by the data channel,
                             # tmux calls and the work pane (sockets under the state dir)
+session = "main"            # a host whose tmux is not running gets this session from its work pane
+remote_path = "/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:/opt/local/bin"
+                            # appended to PATH for every command flok runs on a host: a non-interactive
+                            # ssh shell sees only the system PATH (Homebrew's tmux would be invisible)
 serve_command = "flok serve --stdio"   # what mode full runs on the host; flok host add --flok <path>
                             # names the binary per host when it is not on the non-interactive PATH
 
@@ -674,6 +681,13 @@ brand = "#12999D"
 - A host reads `needs auth` or `host key`: run `ssh <target>` once by hand (flok uses
   `BatchMode=yes`, so it never types a password or accepts a key); `no flok`: flok is not on the
   host's non-interactive PATH, register it with `--flok /path/to/flok` or use `--mode plain`;
+  `old flok`: the flok there predates `serve` (the row names its version), upgrade it; `no
+  server`: tmux is there but not running for the user and socket you registered (the footer
+  shows the socket path); the work pane starts one as soon as the host is connected in the
+  sidebar (`[hosts] session`), so this only lingers when the sessions live under another user
+  or socket, then `flok host set <name> --target user@host` or `--socket`; "no tmux
+  on the host's PATH": tmux lives somewhere the non-interactive shell does not look, add that
+  directory to `[hosts] remote_path` (Homebrew, /usr/local and ~/.local/bin are there by default);
   `incompatible`: the two floks speak different protocols, upgrade one side; `busy`: another flok
   (or a `flok host status` still running) serves that host. `flok doctor` runs the same probe on
   every host and says which of tmux, flok, the hooks or the terminfo entry is missing there.

@@ -242,6 +242,7 @@ type conn struct {
 	cancel     context.CancelFunc
 	done       chan struct{}
 	probed     bool
+	oldVersion string // version of a remote flok that has no serve, once asked
 
 	mu      sync.Mutex
 	status  Status
@@ -296,6 +297,15 @@ func (c *conn) run(ctx context.Context) {
 				continue
 			}
 		}
+		if st == OldFlok { // say which version sits there, so the row explains itself
+			if c.oldVersion == "" {
+				c.oldVersion = c.probeVersion(ctx)
+			}
+			detail = "flok there is too old (no serve)"
+			if c.oldVersion != "" {
+				detail = "flok " + c.oldVersion + " there is too old (no serve)"
+			}
+		}
 		if c.m.d.Now().Sub(start) > time.Minute {
 			attempt = 0 // it held for a while: a fresh outage starts the backoff over
 		}
@@ -331,13 +341,14 @@ func (c *conn) persist(fn func(*hosts.Host)) {
 }
 
 func (c *conn) serveCommand() string {
-	if c.host.Flok != "" {
-		return tmux.ShellQuote(c.host.Flok) + " serve --stdio"
+	cmd := "flok serve --stdio"
+	switch {
+	case c.host.Flok != "":
+		cmd = tmux.ShellQuote(c.host.Flok) + " serve --stdio"
+	case c.m.d.Cfg.Hosts.ServeCommand != "":
+		cmd = c.m.d.Cfg.Hosts.ServeCommand
 	}
-	if cmd := c.m.d.Cfg.Hosts.ServeCommand; cmd != "" {
-		return cmd
-	}
-	return "flok serve --stdio"
+	return WithPath(c.m.d.Cfg.Hosts, cmd)
 }
 
 // probeScript finds a flok the non-interactive ssh PATH misses (Homebrew, ~/.local/bin).
@@ -346,7 +357,7 @@ const probeScript = `for p in "$HOME/.local/bin/flok" /opt/homebrew/bin/flok /us
 func (c *conn) probeFlok(ctx context.Context) string {
 	pctx, cancel := context.WithTimeout(ctx, time.Duration(c.m.d.Cfg.Hosts.ConnectTimeoutS+10)*time.Second)
 	defer cancel()
-	proc, err := c.m.d.Dial(pctx, Argv(c.m.d.Cfg.Hosts, c.m.d.StateDir, c.host, false, probeScript))
+	proc, err := c.m.d.Dial(pctx, Argv(c.m.d.Cfg.Hosts, c.m.d.StateDir, c.host, false, WithPath(c.m.d.Cfg.Hosts, probeScript)))
 	if err != nil {
 		return ""
 	}
@@ -358,6 +369,35 @@ func (c *conn) probeFlok(ctx context.Context) string {
 	}
 	c.m.debugf("%s: flok found at %s", c.host.Name, path)
 	return path
+}
+
+// flokBinary is the remote flok the serve command runs: the probed or configured path, else
+// the first word of [hosts] serve_command.
+func (c *conn) flokBinary() string {
+	if c.host.Flok != "" {
+		return tmux.ShellQuote(c.host.Flok)
+	}
+	if f := strings.Fields(c.m.d.Cfg.Hosts.ServeCommand); len(f) > 0 {
+		return f[0]
+	}
+	return "flok"
+}
+
+// probeVersion asks a remote flok for its version ("flok 0.4.4" on a non-tty), "" when that fails.
+func (c *conn) probeVersion(ctx context.Context) string {
+	pctx, cancel := context.WithTimeout(ctx, time.Duration(c.m.d.Cfg.Hosts.ConnectTimeoutS+10)*time.Second)
+	defer cancel()
+	proc, err := c.m.d.Dial(pctx, Argv(c.m.d.Cfg.Hosts, c.m.d.StateDir, c.host, false, WithPath(c.m.d.Cfg.Hosts, c.flokBinary()+" version")))
+	if err != nil {
+		return ""
+	}
+	out, _ := io.ReadAll(io.LimitReader(proc.Stdout(), 4096))
+	exit, _ := proc.Wait()
+	line := strings.TrimSpace(strings.SplitN(string(out), "\n", 2)[0])
+	if exit != 0 || !strings.HasPrefix(line, "flok ") {
+		return ""
+	}
+	return strings.TrimPrefix(strings.TrimPrefix(line, "flok "), "v")
 }
 
 const (
@@ -493,7 +533,7 @@ func (c *conn) attemptFull(ctx context.Context) (State, string) {
 	ping := time.NewTicker(pingEvery)
 	defer ping.Stop()
 	lastFrame := time.Now()
-	stale := false
+	stale, noServer := false, false
 	for {
 		select {
 		case f := <-frames:
@@ -508,6 +548,10 @@ func (c *conn) attemptFull(ctx context.Context) (State, string) {
 					c.mu.Lock()
 					c.status.Agents = len(f.Snap.Agents)
 					c.mu.Unlock()
+					if noServer { // the host's tmux is back
+						noServer = false
+						c.set(actx, Connected, "", time.Time{}, nil)
+					}
 					c.m.emit(actx, Msg{Host: c.host.Name, State: Connected, Snap: f.Snap})
 				}
 			case proto.TypeEvent:
@@ -515,10 +559,15 @@ func (c *conn) attemptFull(ctx context.Context) (State, string) {
 					c.m.emit(actx, Msg{Host: c.host.Name, State: Connected, Event: f.Event})
 				}
 			case proto.TypeError:
-				if st, detail := classifyRemoteError(f.Error); st == Busy {
+				switch st, detail := classifyRemoteError(f.Error); st {
+				case Busy:
 					return st, detail
+				case NoServer: // serve runs, its tmux does not: say so until a snapshot arrives
+					noServer = true
+					c.set(actx, NoServer, detail, time.Time{}, nil)
+				default:
+					c.m.debugf("%s: remote error: %s", c.host.Name, f.Error)
 				}
-				c.m.debugf("%s: remote error: %s", c.host.Name, f.Error)
 			}
 		case err := <-writeErr:
 			return Unreachable, Detail(err.Error())
@@ -548,8 +597,11 @@ func (c *conn) attemptFull(ctx context.Context) (State, string) {
 }
 
 func classifyRemoteError(msg string) (State, string) {
-	if strings.Contains(msg, "already served") {
+	switch {
+	case strings.Contains(msg, "already served"):
 		return Busy, msg
+	case strings.Contains(msg, "no server running"), strings.Contains(msg, "no sessions"):
+		return NoServer, Detail(strings.TrimPrefix(msg, "poll: "))
 	}
 	return Unreachable, Detail(msg)
 }
@@ -562,14 +614,14 @@ func (c *conn) attemptPlain(ctx context.Context) (State, string) {
 	if c.m.d.NewClient != nil {
 		client = c.m.d.NewClient(prefix, c.host)
 	} else {
-		client = &tmux.Remote{Argv: prefix, Socket: c.host.Socket, Name: c.host.Name,
+		client = &tmux.Remote{Argv: prefix, Prefix: PathPrefix(c.m.d.Cfg.Hosts), Socket: c.host.Socket, Name: c.host.Name,
 			Timeout: time.Duration(c.m.d.Cfg.Hosts.ConnectTimeoutS+10) * time.Second}
 	}
 	out, err := client.Run("-V")
 	if err != nil {
 		st, detail := ClassifyErr(err)
 		if st == NoFlok {
-			st, detail = Unreachable, "no tmux on the host: "+detail
+			st, detail = Unreachable, "no tmux on the host's PATH ([hosts] remote_path): "+detail
 		}
 		return st, detail
 	}

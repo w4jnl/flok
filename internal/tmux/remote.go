@@ -17,6 +17,7 @@ import (
 // nav.Go work unchanged; only the floors are slower (a fork plus a round trip per call).
 type Remote struct {
 	Argv    []string      // the command prefix, up to and including the ssh target
+	Prefix  string        // shell text placed before the tmux command line (a PATH export), may be ""
 	Socket  string        // remote `tmux -L` socket; "" = tmux's default
 	Bin     string        // remote tmux binary; "" = tmux
 	Timeout time.Duration // per call; 0 = 15 s
@@ -50,7 +51,7 @@ func (r *Remote) Command(args ...string) string {
 	if r.Socket != "" {
 		parts = append(parts, "-L", r.Socket)
 	}
-	return ShellJoin(append(parts, args...))
+	return r.Prefix + ShellJoin(append(parts, args...))
 }
 
 func (r *Remote) Run(args ...string) (string, error) {

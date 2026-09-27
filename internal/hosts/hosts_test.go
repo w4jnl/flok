@@ -70,6 +70,18 @@ func TestLoadSaveUpdateRoundTrip(t *testing.T) {
 	if !got.SetEnabled("beta", false) || got.SetEnabled("nope", true) || len(got.Enabled()) != 0 {
 		t.Fatal("SetEnabled")
 	}
+	if err := got.Set("beta", func(h *Host) { h.Mode = ModePlain; h.Socket = "agents"; h.Name = "renamed" }); err != nil || got.Hosts[0].Mode != ModePlain || got.Hosts[0].Name != "beta" {
+		t.Fatalf("Set edits in place and keeps the name: %v %+v", err, got.Hosts[0])
+	}
+	if got.Set("beta", func(h *Host) { h.Target = "-x" }) == nil || got.Hosts[0].Target != "beta" {
+		t.Fatal("an invalid edit is refused and leaves the host as it was")
+	}
+	if got.Set("nope", func(*Host) {}) == nil {
+		t.Fatal("Set on a missing host")
+	}
+	if !AttachChanged(Host{Target: "a"}, Host{Target: "b"}) || AttachChanged(Host{Mode: ModeFull}, Host{Mode: ModePlain}) {
+		t.Fatal("AttachChanged")
+	}
 	if !got.Remove("beta") || got.Remove("beta") || len(got.Names()) != 0 {
 		t.Fatal("Remove")
 	}
