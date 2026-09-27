@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime/pprof"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/w4jnl/flok/internal/config"
 	"github.com/w4jnl/flok/internal/git"
 	"github.com/w4jnl/flok/internal/launcher"
+	"github.com/w4jnl/flok/internal/remote"
 	"github.com/w4jnl/flok/internal/rules"
 	"github.com/w4jnl/flok/internal/state"
 	"github.com/w4jnl/flok/internal/tmux"
@@ -49,7 +51,26 @@ func sidebarDeps(cfg config.Config) ui.Deps {
 			d.ClientTTY = rt.InnerClientTTY
 		}
 	}
+	d.Bin = binPath()
+	rules, adapters := d.Rules, d.Adapters
+	d.NewRemote = func(sink chan<- remote.Msg) *remote.Manager {
+		var debugf func(string, ...any)
+		if os.Getenv("FLOK_DEBUG") != "" {
+			debugf = func(format string, args ...any) { appendLog("remote.log", format, args...) }
+		}
+		return remote.New(remote.Deps{Cfg: cfg, StateDir: config.StateDir(), Sink: sink, Rules: rules, Adapters: adapters, Debugf: debugf})
+	}
 	return d
+}
+
+// appendLog appends a line to a log file in the state dir (FLOK_DEBUG).
+func appendLog(name, format string, args ...any) {
+	f, err := os.OpenFile(filepath.Join(config.StateDir(), name), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	fmt.Fprintf(f, time.Now().Format("15:04:05.000")+" "+format+"\n", args...)
 }
 
 func runSidebar(cfg config.Config) int {
@@ -75,6 +96,7 @@ func runSidebar(cfg config.Config) int {
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion(), tea.WithFPS(fps), tea.WithReportFocus())
 	_, err := p.Run()
 	m.ReleaseKeepAwake()
+	m.Close() // remote hosts: their serve sessions end on EOF
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "flok sidebar:", err)
 		return 1

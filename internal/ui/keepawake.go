@@ -4,7 +4,6 @@ import (
 	"time"
 
 	"github.com/w4jnl/flok/internal/awake"
-	"github.com/w4jnl/flok/internal/snapshot"
 )
 
 // Releaser is a held power assertion (awake.Assertion in production).
@@ -82,7 +81,7 @@ func (m Model) publish() {
 	if m.publisher == nil {
 		return
 	}
-	s := snapshot.FromMerge(m.snap)
+	s := m.publishedSnapshot()
 	s.KeepAwake, s.KeepAwakePresence = m.keep.on(), string(presence)
 	_, _ = m.publisher.Publish(s, time.Now())
 }

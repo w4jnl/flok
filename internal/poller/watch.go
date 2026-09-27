@@ -7,6 +7,7 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 
+	"github.com/w4jnl/flok/internal/hosts"
 	"github.com/w4jnl/flok/internal/state"
 )
 
@@ -50,13 +51,13 @@ func watchLoop(w *fsnotify.Watcher, dir string, ch chan struct{}) {
 
 // StoreEventWanted filters fsnotify events: hook records and seen marks under agents/ and seen/,
 // plus the sidebar-hidden marker in the root (un-hide must resume the spinner at once), the
-// terminal-theme record and the keep-awake marker (`flok keep-awake` waits for the snapshot to
-// confirm); everything else in the root (the sidebar's own snapshot.json temp+rename writes,
+// terminal-theme record, the keep-awake marker (`flok keep-awake` waits for the snapshot to
+// confirm) and hosts.json (the sidebar reconciles its remote hosts); everything else in the root (the sidebar's own snapshot.json temp+rename writes,
 // terminal-focus, which the next poll reads anyway, events.log, pid files) is noise.
 func StoreEventWanted(root, name string) bool {
 	base := filepath.Base(name)
 	if filepath.Dir(name) == root {
-		return base == "sidebar-hidden" || base == "terminal-theme" || base == state.KeepAwakeFile
+		return base == "sidebar-hidden" || base == "terminal-theme" || base == state.KeepAwakeFile || base == hosts.File
 	}
 	return strings.HasSuffix(base, ".json")
 }

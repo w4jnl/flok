@@ -35,8 +35,10 @@ IN kill-server 2>/dev/null || true; OUT kill-server 2>/dev/null || true
 pass=0; fail=0
 ok()  { printf 'PASS  %s\n' "$1"; pass=$((pass+1)); }
 bad() { printf 'FAIL  %s\n' "$1"; fail=$((fail+1)); }
-expect() { # name, pattern (grep -E), text
-  if printf '%s\n' "$3" | grep -qE "$2"; then ok "$1"; else bad "$1 (pattern: $2)"; printf '%s\n' "$3" | sed '/^ *$/d; s/^/      | /'; fi; }
+expect() { # name, pattern (grep -E), text — matched against a file: a pipe into grep -q would
+  # end with SIGPIPE on large text (pipefail then reports a match as a failure)
+  printf '%s\n' "$3" > "$T/expect.txt"
+  if grep -qE "$2" "$T/expect.txt"; then ok "$1"; else bad "$1 (pattern: $2)"; sed '/^ *$/d; s/^/      | /' "$T/expect.txt"; fi; }
 capture() { OUT capture-pane -p -t "$SIDEBAR"; }
 wait_for() { # pattern, seconds
   local i; for i in $(seq 1 $(( ${2:-3} * 10 ))); do capture | grep -qE "$1" && return 0; sleep 0.1; done; return 1; }

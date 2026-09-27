@@ -38,7 +38,8 @@ const (
 	Busy         State = "busy"         // another flok already serves that host
 )
 
-// SlowRetry says the state is a configuration problem: retried once a minute, never spammed.
+// SlowRetry says the state is a configuration problem: retried once a minute (busy: every
+// 10 s, the other serve is often short-lived), never spammed.
 func (s State) SlowRetry() bool {
 	switch s {
 	case Auth, HostKey, NoFlok, Incompatible, Busy:

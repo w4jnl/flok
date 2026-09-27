@@ -300,7 +300,10 @@ func (c *conn) run(ctx context.Context) {
 			attempt = 0 // it held for a while: a fresh outage starts the backoff over
 		}
 		delay := Backoff(attempt, c.m.d.Cfg.Hosts.BackoffMaxS)
-		if st.SlowRetry() {
+		switch {
+		case st == Busy: // the other serve is often a one-shot (flok host status) or on its way out
+			delay = busyRetry
+		case st.SlowRetry():
 			delay = time.Minute
 		}
 		attempt++
@@ -361,6 +364,7 @@ const (
 	pingEvery  = 5 * time.Second
 	staleAfter = 15 * time.Second
 	deadAfter  = 60 * time.Second
+	busyRetry  = 10 * time.Second
 )
 
 // attemptFull runs one serve session: dial, hello, then frames until the stream ends.

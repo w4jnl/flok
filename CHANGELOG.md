@@ -6,12 +6,19 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
-- `flok host add|remove|connect|disconnect|list` keeps a registry of remote tmux servers
-  (`hosts.json` in the state dir) and `[hosts]` in config.toml holds the ssh defaults.
-  `flok host status` connects to each enabled host once over ssh and reports what answers;
-  `flok serve --stdio` is what it runs on a host in full mode (a headless flok streaming its
-  agents; hooks there stay silent while it runs). Groundwork for showing local and remote
-  agents in one sidebar; the sidebar itself does not connect yet.
+- Remote hosts: one local flok now shows and drives tmux servers on other machines over ssh.
+  `flok host add <name> <user@host> [--mode full|plain]` registers a host (`hosts.json` in the
+  state dir; `remove`, `connect`, `disconnect`, `list`, `status`); `[hosts]` in config.toml
+  holds the ssh defaults. Mode `full` runs `flok serve --stdio` on the host (its hooks, Claude
+  registry and screen rules, streamed back; hooks there stay silent while served and the sounds
+  play here), mode `plain` drives the host's tmux over ssh with titles and screen rules only.
+  The sidebar grows a **servers** panel above the sessions (local first; `Tab` cycles the three
+  panels, `Enter` brings a host's work pane next to the sidebar, `c` connects or disconnects
+  it); the sessions panel shows the front host, the agents panel every host, attention-sorted,
+  remote rows tagged with their host. Each host keeps a persistent `ssh -t … tmux attach` pane
+  parked in the outer, so switching is instant and survives `flok hide`. Hosts reconnect with
+  backoff; `needs auth`, `no flok`, `busy` and `incompatible` say what to fix. Without any host
+  nothing changes.
 - `prefix u` in the tmux snippet toggles keep-awake; `flok keep-awake --notify` shows the new
   state on tmux's status line instead of printing it, and the keybinds popup labels the key
   "keep the Mac awake (toggle)". Existing installs add the line by hand (`flok install --tmux`

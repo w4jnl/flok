@@ -23,6 +23,7 @@ const (
 
 type Agent struct {
 	PaneID      string      `json:"pane_id"`
+	Host        string      `json:"host,omitempty"` // remote host; "" = local
 	SessionID   string      `json:"session_id"`
 	SessionName string      `json:"session_name"`
 	WindowID    string      `json:"window_id"`
@@ -39,14 +40,27 @@ type Agent struct {
 
 type Session struct {
 	ID     string      `json:"id"`
+	Host   string      `json:"host,omitempty"`
 	Name   string      `json:"name"`
 	Rollup agent.State `json:"rollup,omitempty"`
 	Agents int         `json:"agents"`
 }
 
 type Focus struct {
+	Host        string `json:"host,omitempty"`
 	SessionName string `json:"session_name,omitempty"`
 	PaneID      string `json:"pane_id,omitempty"`
+}
+
+// Host is one remote tmux server the sidebar manages (absent without any).
+type Host struct {
+	Name    string `json:"name"`
+	Mode    string `json:"mode"`
+	State   string `json:"state"`            // connected, connecting, unreachable, auth, …, disabled
+	Detail  string `json:"detail,omitempty"` // reason or hint for a failed state
+	Agents  int    `json:"agents"`
+	Pending int    `json:"pending"` // agents waiting on the user there
+	Front   bool   `json:"front"`   // its work pane is next to the sidebar
 }
 
 type Snapshot struct {
@@ -60,6 +74,8 @@ type Snapshot struct {
 	// KeepAwakePresence is "active" while keep-awake also keeps the user active ([keep_awake]
 	// presence), "blocked" when macOS drops those events (no Accessibility permission).
 	KeepAwakePresence string `json:"keep_awake_presence,omitempty"`
+	Hosts             []Host `json:"hosts,omitempty"` // remote hosts, in registry order
+	FrontHost         string `json:"front_host,omitempty"`
 }
 
 // Freshness tells a reader how much to trust a loaded snapshot.
@@ -74,14 +90,14 @@ const (
 // FromMerge converts the sidebar's merged snapshot.
 func FromMerge(s merge.Snapshot) Snapshot {
 	out := Snapshot{SidebarPID: os.Getpid(), Unseen: s.Unseen,
-		Focus: Focus{SessionName: s.Focus.SessionName, PaneID: s.Focus.PaneID}}
+		Focus: Focus{Host: s.Focus.Host, SessionName: s.Focus.SessionName, PaneID: s.Focus.PaneID}}
 	for _, a := range s.Agents {
-		out.Agents = append(out.Agents, Agent{PaneID: a.PaneID, SessionID: a.SessionID, SessionName: a.SessionName,
+		out.Agents = append(out.Agents, Agent{PaneID: a.PaneID, Host: a.Host, SessionID: a.SessionID, SessionName: a.SessionName,
 			WindowID: a.WindowID, Name: a.Name, Kind: a.Kind, State: a.State, Reason: a.Reason, Tool: a.CurrentTool,
 			Detail: a.ToolDetail, Unseen: a.Unseen, StateSince: a.StateSince, HasHooks: a.HasHooks})
 	}
 	for _, sp := range s.Spaces {
-		out.Sessions = append(out.Sessions, Session{ID: sp.SessionID, Name: sp.SessionName, Rollup: sp.Rollup, Agents: sp.AgentCount})
+		out.Sessions = append(out.Sessions, Session{ID: sp.SessionID, Host: sp.Host, Name: sp.SessionName, Rollup: sp.Rollup, Agents: sp.AgentCount})
 	}
 	return out
 }

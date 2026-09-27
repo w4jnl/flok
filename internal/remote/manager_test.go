@@ -292,7 +292,7 @@ func TestFullModeFailures(t *testing.T) {
 	if msg := h.state(Busy); msg.Detail != "already served (pid 9)" {
 		t.Fatalf("busy %+v", msg)
 	}
-	if d := <-h.slept; d != time.Minute {
+	if d := <-h.slept; d != busyRetry {
 		t.Fatalf("busy backoff %v", d)
 	}
 	// hello timeout: connect timeout (1 s here) plus five seconds of grace
