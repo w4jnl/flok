@@ -272,20 +272,6 @@ func (c *conn) set(ctx context.Context, st State, detail string, retryAt time.Ti
 	c.m.emit(ctx, Msg{Host: c.host.Name, State: st, Detail: detail, RetryAt: retryAt, Hello: hello})
 }
 
-func backoff(attempt int, maxS int) time.Duration {
-	if maxS <= 0 {
-		maxS = 30
-	}
-	if attempt > 10 {
-		attempt = 10
-	}
-	d := time.Second << uint(attempt)
-	if d > time.Duration(maxS)*time.Second {
-		d = time.Duration(maxS) * time.Second
-	}
-	return d
-}
-
 func (c *conn) run(ctx context.Context) {
 	defer close(c.done)
 	attempt := 0
@@ -313,7 +299,7 @@ func (c *conn) run(ctx context.Context) {
 		if c.m.d.Now().Sub(start) > time.Minute {
 			attempt = 0 // it held for a while: a fresh outage starts the backoff over
 		}
-		delay := backoff(attempt, c.m.d.Cfg.Hosts.BackoffMaxS)
+		delay := Backoff(attempt, c.m.d.Cfg.Hosts.BackoffMaxS)
 		if st.SlowRetry() {
 			delay = time.Minute
 		}

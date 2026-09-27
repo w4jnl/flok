@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/w4jnl/flok/internal/config"
 	"github.com/w4jnl/flok/internal/hosts"
@@ -173,6 +174,45 @@ func Detail(stderr string) string {
 		line = line[:77] + "..."
 	}
 	return line
+}
+
+// Backoff is the reconnect delay after attempt failures in a row: 1, 2, 4 … maxS seconds.
+func Backoff(attempt int, maxS int) time.Duration {
+	if maxS <= 0 {
+		maxS = 30
+	}
+	if attempt > 10 {
+		attempt = 10
+	}
+	d := time.Second << uint(attempt)
+	if d > time.Duration(maxS)*time.Second {
+		d = time.Duration(maxS) * time.Second
+	}
+	return d
+}
+
+// CloseMasters ends the ControlMaster connections flok opened (sockets under $FLOK_STATE/ssh),
+// so `flok down` leaves no ssh behind. Failures are ignored: a master that is not running is
+// the goal.
+func CloseMasters(cfg config.Hosts, stateDir string) {
+	dir, ok := ControlDir(stateDir)
+	if !cfg.Multiplex || !ok {
+		return
+	}
+	set, err := hosts.Load(stateDir)
+	if err != nil {
+		return
+	}
+	bin := cfg.SSH
+	if bin == "" {
+		bin = "ssh"
+	}
+	for _, h := range set.Hosts {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		args := append(append([]string{}, cfg.SSHOptions...), "-o", "ControlPath="+filepath.Join(dir, "%C"), "-O", "exit", "--", h.Target)
+		_ = exec.CommandContext(ctx, bin, args...).Run()
+		cancel()
+	}
 }
 
 // Proc is a running remote command: what the manager needs from an ssh process.
