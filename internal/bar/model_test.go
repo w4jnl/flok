@@ -52,6 +52,37 @@ func TestTitleHeaderRows(t *testing.T) {
 	}
 }
 
+func TestRemoteHostsInTheDropdown(t *testing.T) {
+	now := time.Now()
+	s := snapshot.Snapshot{
+		Agents: []snapshot.Agent{
+			{PaneID: "%1", Name: "flok", Kind: "claude", State: agent.Idle},
+			{PaneID: "%1", Host: "beta", Name: "api", Kind: "claude", State: agent.Blocked, Reason: "question", StateSince: now},
+		},
+		Hosts: []snapshot.Host{
+			{Name: "beta", Mode: "full", State: "connected", Agents: 1, Pending: 1, Front: true},
+			{Name: "gamma", Mode: "plain", State: "auth", Detail: "Permission denied"},
+			{Name: "delta", Mode: "plain", State: "disabled"},
+		},
+		FrontHost: "beta",
+	}
+	if got := Header(s, snapshot.Fresh); got != "flok · 2 agents · 1 waiting · 3 hosts (1 down)" {
+		t.Fatalf("header %q", got)
+	}
+	rows := Rows(s, now, 0)
+	if rows[0].PaneID != "beta:%1" || rows[0].Label != "api · claude @beta" || rows[1].PaneID != "%1" || rows[1].Label != "flok · claude" {
+		t.Fatalf("rows %+v", rows)
+	}
+	hosts := HostRows(s)
+	if len(hosts) != 3 || hosts[0].Label != "beta · 1 agent · 1 waiting" || !hosts[0].Front || !hosts[0].Attention ||
+		hosts[1].Label != "gamma · needs auth" || hosts[2].Label != "delta · off" || hosts[2].Front {
+		t.Fatalf("host rows %+v", hosts)
+	}
+	if HostRows(snapshot.Snapshot{}) != nil || Header(snapshot.Snapshot{}, snapshot.Fresh) != "flok · 0 agents" {
+		t.Fatal("no hosts: nothing added")
+	}
+}
+
 func TestTitleRunsColours(t *testing.T) {
 	s := snapshot.Snapshot{Agents: []snapshot.Agent{{PaneID: "%1", State: agent.Working}, {PaneID: "%2", State: agent.Blocked}}}
 	runs := TitleRuns(s, snapshot.Fresh, 1, Options{Animate: true, Badge: true})

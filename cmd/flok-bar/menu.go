@@ -40,6 +40,7 @@ type menuBar struct {
 
 	header, show, keepAwake, edit, reload, quit, about, repo *systray.MenuItem
 	slots                                                    []*slot
+	hostSlots                                                []*slot // remote hosts, under the agents; hidden without any
 
 	mu          sync.Mutex
 	snap        snapshot.Snapshot
@@ -96,6 +97,12 @@ func (b *menuBar) onReady() {
 		s.item.Hide()
 		b.slots = append(b.slots, s)
 		go b.slotClicks(s)
+	}
+	for i := 0; i < maxHostRows; i++ { // the menu cannot grow later: the host rows exist from the start
+		s := &slot{item: systray.AddMenuItem("", "bring this host's work pane next to the sidebar")}
+		s.item.Hide()
+		b.hostSlots = append(b.hostSlots, s)
+		go b.hostClicks(s)
 	}
 	systray.AddSeparator()
 	b.show = systray.AddMenuItem("Show flok", "bring the flok terminal window to the front")
@@ -228,6 +235,41 @@ func (b *menuBar) render(now time.Time) {
 		sl.mu.Unlock()
 		title := mark + r.Label + "    " + r.Detail
 		if title != sl.last {
+			sl.item.SetTitle(title)
+			sl.last = title
+		}
+		if !sl.shown {
+			sl.item.Show()
+			sl.shown = true
+		}
+	}
+	hostRows := []bar.HostRow{}
+	if f == snapshot.Fresh {
+		hostRows = bar.HostRows(s)
+	}
+	for i, sl := range b.hostSlots {
+		if i >= len(hostRows) {
+			sl.mu.Lock()
+			sl.pane = ""
+			sl.mu.Unlock()
+			if sl.shown {
+				sl.item.Hide()
+				sl.shown, sl.last = false, ""
+			}
+			continue
+		}
+		r := hostRows[i]
+		mark := "  "
+		switch {
+		case r.Front:
+			mark = "▸ "
+		case r.Attention:
+			mark = "● "
+		}
+		sl.mu.Lock()
+		sl.pane = r.Name
+		sl.mu.Unlock()
+		if title := mark + r.Label; title != sl.last {
 			sl.item.SetTitle(title)
 			sl.last = title
 		}
@@ -388,6 +430,21 @@ func (b *menuBar) slotClicks(s *slot) {
 		s.mu.Unlock()
 		if pane != "" {
 			b.goto_(pane)
+		}
+	}
+}
+
+// maxHostRows is the number of pre-created host rows (systray menus cannot grow).
+const maxHostRows = 8
+
+// hostClicks brings a host's work pane to the front and raises the terminal window.
+func (b *menuBar) hostClicks(s *slot) {
+	for range s.item.ClickedCh {
+		s.mu.Lock()
+		host := s.pane
+		s.mu.Unlock()
+		if host != "" {
+			b.run("host", "front", host, "--focus")
 		}
 	}
 }

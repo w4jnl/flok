@@ -22,11 +22,19 @@ type Options struct {
 }
 
 type Row struct {
-	PaneID    string
-	Label     string // "project · kind"
+	PaneID    string // "%12" here, "beta:%12" on a remote host: what `flok goto` takes
+	Label     string // "project · kind", "project · kind @beta" on a remote host
 	Detail    string // state detail as in the sidebar
 	Attention bool   // blocked or done-unseen
 	State     agent.State
+}
+
+// HostRow is one remote host in the dropdown (absent without any).
+type HostRow struct {
+	Name      string
+	Label     string // "beta · 3 agents · 1 waiting", "beta · needs auth", "beta · off"
+	Front     bool   // its work pane is next to the sidebar
+	Attention bool   // agents waiting there
 }
 
 // Working reports whether any agent is in a turn.
@@ -95,7 +103,62 @@ func Header(s snapshot.Snapshot, f snapshot.Freshness) string {
 	if p := Pending(s); p > 0 {
 		line += fmt.Sprintf(" · %d waiting", p)
 	}
+	if n := len(s.Hosts); n > 0 {
+		line += fmt.Sprintf(" · %d host", n)
+		if n != 1 {
+			line += "s"
+		}
+		if down := hostsDown(s); down > 0 {
+			line += fmt.Sprintf(" (%d down)", down)
+		}
+	}
 	return line
+}
+
+// hostsDown counts enabled hosts that are not delivering agents right now.
+func hostsDown(s snapshot.Snapshot) int {
+	n := 0
+	for _, h := range s.Hosts {
+		switch h.State {
+		case "connected", "stale", "disabled":
+		default:
+			n++
+		}
+	}
+	return n
+}
+
+// HostRows lists the remote hosts in registry order, for the block under the agents.
+func HostRows(s snapshot.Snapshot) []HostRow {
+	var rows []HostRow
+	for _, h := range s.Hosts {
+		label := h.Name + " · "
+		switch h.State {
+		case "connected", "stale":
+			label += fmt.Sprintf("%d agent", h.Agents)
+			if h.Agents != 1 {
+				label += "s"
+			}
+			if h.Pending > 0 {
+				label += fmt.Sprintf(" · %d waiting", h.Pending)
+			}
+			if h.State == "stale" {
+				label += " · stale"
+			}
+		case "disabled":
+			label += "off"
+		case "auth":
+			label += "needs auth"
+		case "hostkey":
+			label += "host key"
+		case "noflok":
+			label += "no flok"
+		default:
+			label += h.State
+		}
+		rows = append(rows, HostRow{Name: h.Name, Label: label, Front: h.Front, Attention: h.Pending > 0})
+	}
+	return rows
 }
 
 func priority(a snapshot.Agent) int {
@@ -137,7 +200,10 @@ func Rows(s snapshot.Snapshot, now time.Time, max int) []Row {
 		if a.Kind != "" {
 			label += " · " + a.Kind
 		}
-		rows = append(rows, Row{PaneID: a.PaneID, Label: label, Detail: detail(a, now), Attention: attention(a), State: a.State})
+		if a.Host != "" {
+			label += " @" + a.Host
+		}
+		rows = append(rows, Row{PaneID: agent.PaneRef{Host: a.Host, ID: a.PaneID}.String(), Label: label, Detail: detail(a, now), Attention: attention(a), State: a.State})
 	}
 	return rows
 }
