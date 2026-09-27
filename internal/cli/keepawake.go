@@ -1,9 +1,12 @@
 package cli
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/w4jnl/flok/internal/awake"
@@ -12,10 +15,12 @@ import (
 	"github.com/w4jnl/flok/internal/state"
 )
 
-const keepAwakeUsage = `usage: flok keep-awake [on|off|toggle|status]
+const keepAwakeUsage = `usage: flok keep-awake [on|off|toggle|status] [--notify]
 
 Keeps the Mac awake with the display on while flok runs (off by default; no argument toggles).
-The sidebar holds the power assertions, so they end with the flok session.`
+The sidebar holds the power assertions, so they end with the flok session. --notify shows the
+result on tmux's status line instead of printing it, for key bindings (run-shell would open a
+view-mode window for any output).`
 
 // keepAwakeCmd is `flok keep-awake` with its environment injected for tests.
 type keepAwakeCmd struct {
@@ -26,8 +31,45 @@ type keepAwakeCmd struct {
 }
 
 func runKeepAwake(_ config.Config, args []string) int {
-	return keepAwakeCmd{dir: config.StateDir(), supported: awake.Supported(), wait: 1500 * time.Millisecond,
-		out: os.Stdout, errw: os.Stderr}.run(args)
+	c := keepAwakeCmd{dir: config.StateDir(), supported: awake.Supported(), wait: 1500 * time.Millisecond,
+		out: os.Stdout, errw: os.Stderr}
+	rest, notify := stripNotify(args)
+	if !notify {
+		return c.run(rest)
+	}
+	var buf bytes.Buffer
+	c.out, c.errw = &buf, &buf
+	rc := c.run(rest)
+	if msg := firstLine(buf.String()); msg != "" {
+		// the binding runs inside the inner server, so a bare tmux reaches it through $TMUX
+		if err := exec.Command("tmux", "display-message", msg).Run(); err != nil {
+			fmt.Fprint(os.Stderr, buf.String()) // no tmux to show it: print after all
+		}
+	}
+	return rc
+}
+
+// stripNotify removes --notify from the arguments and says whether it was there.
+func stripNotify(args []string) ([]string, bool) {
+	rest, notify := args[:0:0], false
+	for _, a := range args {
+		if a == "--notify" {
+			notify = true
+			continue
+		}
+		rest = append(rest, a)
+	}
+	return rest, notify
+}
+
+// firstLine is the first non-empty line of s, trimmed: what fits on a status line.
+func firstLine(s string) string {
+	for _, l := range strings.Split(s, "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			return l
+		}
+	}
+	return ""
 }
 
 // keepAwakeState is what the sidebar reports: on when a fresh snapshot from a live sidebar says it

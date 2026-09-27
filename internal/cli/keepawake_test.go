@@ -191,3 +191,21 @@ func TestKeepAwakePresenceReporting(t *testing.T) {
 		}
 	}
 }
+
+func TestKeepAwakeNotifyFlag(t *testing.T) {
+	rest, notify := stripNotify([]string{"--notify"})
+	if !notify || len(rest) != 0 {
+		t.Fatalf("bare --notify: rest=%v notify=%v", rest, notify)
+	}
+	rest, notify = stripNotify([]string{"status", "--notify"})
+	if !notify || len(rest) != 1 || rest[0] != "status" {
+		t.Fatalf("status --notify: rest=%v notify=%v", rest, notify)
+	}
+	rest, notify = stripNotify([]string{"toggle"})
+	if notify || len(rest) != 1 {
+		t.Fatalf("no flag: rest=%v notify=%v", rest, notify)
+	}
+	if got := firstLine("\n  keep-awake: on (display and idle sleep blocked)\nsecond line\n"); got != "keep-awake: on (display and idle sleep blocked)" {
+		t.Fatalf("firstLine = %q", got)
+	}
+}

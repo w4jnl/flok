@@ -64,9 +64,9 @@ func TestTmuxSnippetIsVersionIndependent(t *testing.T) {
 	if strings.Contains(snip, "display-popup") || !strings.Contains(snip, `keys --open --client '#{client_tty}'`) {
 		t.Fatalf("snippet: %s", snip)
 	}
-	// keep-awake prints its state; the binding routes that to the status line instead of the
-	// view-mode window run-shell would open for any output
-	if !strings.Contains(snip, `bind u run-shell -b 'msg=$(/usr/local/bin/flok keep-awake 2>&1); tmux display-message "$msg"'`) {
+	// keep-awake prints its state; --notify puts it on the status line instead of the view-mode
+	// window run-shell would open for any output
+	if !strings.Contains(snip, `bind u run-shell -b "/usr/local/bin/flok keep-awake --notify"`) {
 		t.Fatalf("keep-awake binding: %s", snip)
 	}
 }

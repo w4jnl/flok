@@ -21,7 +21,7 @@ usage: flok <command>
   up          start (or re-attach) the sidebar + your tmux server in a nested outer session
               (--detach: create it without attaching)
   down        stop the outer session (your tmux server keeps running)
-  keep-awake  [on|off|toggle|status]: keep the Mac awake with the display on while flok runs
+  keep-awake  [on|off|toggle|status] [--notify]: keep the Mac awake with the display on while flok runs
               (off by default, no argument toggles; macOS only)
   sidebar     run the sidebar UI in the current pane (used by up)
   status      print sessions and agents once (--json for machine output)

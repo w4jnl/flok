@@ -344,8 +344,9 @@ moment the sidebar exits, including a crash or a killed tmux server, and `flok d
 end of the session turns keep-awake off; the next `flok up` starts with it off. `flok reload`
 keeps it (the new sidebar takes the assertions again).
 
-`flok keep-awake` with no argument toggles (`prefix u` in the tmux snippet); `on`, `off` and
-`status` do what they say. It waits
+`flok keep-awake` with no argument toggles; `on`, `off` and `status` do what they say, and
+`--notify` puts the result on tmux's status line instead of printing it, which is what the
+snippet's `prefix u` binding uses. It waits
 until the sidebar confirms the change and prints the result. While it is on, `flok status`
 adds a `keep-awake: on` line (`"KeepAwake": true` in `--json`), `flok doctor` reports it, and
 `pmset -g assertions` lists both assertions for the sidebar's pid under the name
@@ -440,7 +441,7 @@ only `prefix b` keeps the cursor in the sidebar so you can collapse it and conti
 ```
 flok up [--detach]          start or re-attach the outer session (your server keeps running)
 flok down                   stop the outer session
-flok keep-awake [on|off|toggle|status]   keep the Mac awake, display on, while flok runs (macOS)
+flok keep-awake [on|off|toggle|status] [--notify]   keep the Mac awake, display on, while flok runs (macOS)
 flok status [--json]        one-shot dump of sessions and agents
 flok jump | next | prev     navigation, used by the bindings           [--client <tty>]
 flok toggle | hide | focus  sidebar layout and keyboard focus
