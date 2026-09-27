@@ -99,7 +99,13 @@ const Template = `# flok configuration - https://github.com/w4jnl/flok
                               # tmux calls and the work pane (sockets under the state dir)
 # serve_command = "flok serve --stdio"
                               # what mode full runs on the host; flok host add --flok <path> names
-                              # the binary per host when it is not on the non-interactive PATH
+                              # the binary per host when it is not on the PATH below
+# remote_path = "/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:/opt/local/bin"
+                              # appended to PATH for every command flok runs on a host: a
+                              # non-interactive ssh shell sees only the system PATH, so Homebrew's
+                              # tmux and flok would be invisible without it ($HOME expands there)
+# session = "main"            # a host whose tmux is not running gets this session from its work pane
+                              # (tmux new-session); flok host add --session <name> sets it per host
 
 [theme]                       # Dracula; state tokens may name a colour or a hex value
 # mode = "auto"               # auto: follow the terminal background, asked at flok up | dark | light

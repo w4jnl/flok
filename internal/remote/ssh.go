@@ -34,7 +34,9 @@ const (
 	Unreachable  State = "unreachable"  // network, ssh exit, remote gone; retried with backoff
 	Auth         State = "auth"         // ssh needs a password or an unknown key
 	HostKey      State = "hostkey"      // host key unknown or changed
-	NoFlok       State = "noflok"       // full mode: no flok (or no serve) on the host
+	NoFlok       State = "noflok"       // full mode: no flok on the host
+	OldFlok      State = "oldflok"      // full mode: a flok without `serve` on the host
+	NoServer     State = "noserver"     // the host answers, but its tmux server is not running (for that user/socket)
 	Incompatible State = "incompatible" // hello with another protocol version
 	Busy         State = "busy"         // another flok already serves that host
 )
@@ -43,7 +45,7 @@ const (
 // 10 s, the other serve is often short-lived), never spammed.
 func (s State) SlowRetry() bool {
 	switch s {
-	case Auth, HostKey, NoFlok, Incompatible, Busy:
+	case Auth, HostKey, NoFlok, OldFlok, Incompatible, Busy:
 		return true
 	}
 	return false
@@ -60,6 +62,10 @@ func (s State) Label() string {
 		return "host key"
 	case NoFlok:
 		return "no flok"
+	case OldFlok:
+		return "old flok"
+	case NoServer:
+		return "no tmux server"
 	}
 	return string(s)
 }
@@ -73,6 +79,10 @@ func (s State) Hint(h hosts.Host) string {
 		return "run `ssh " + h.Target + "` once to accept the host key"
 	case NoFlok:
 		return "install flok on the host, set its path with `flok host add --flok`, or use --mode plain"
+	case OldFlok:
+		return "upgrade flok on the host (its version has no `serve`), or use --mode plain"
+	case NoServer:
+		return "the sidebar's work pane starts one there once connected ([hosts] session, or --session); otherwise start tmux as " + h.Target + ", or point --target/--socket at the tmux that has the sessions"
 	case Incompatible:
 		return "upgrade flok on one side, or use --mode plain"
 	case Busy:
@@ -115,6 +125,20 @@ func Argv(cfg config.Hosts, stateDir string, h hosts.Host, tty bool, remoteCmd s
 	return argv
 }
 
+// PathPrefix is the shell text put before every command run on a host: it appends [hosts]
+// remote_path to the remote's PATH, because a non-interactive ssh shell sees only the system
+// PATH and Homebrew's tmux or flok would not be found. "" when remote_path is empty.
+func PathPrefix(cfg config.Hosts) string {
+	p := strings.TrimSpace(cfg.RemotePath)
+	if p == "" || strings.ContainsAny(p, "\"';\n") {
+		return ""
+	}
+	return `export PATH="$PATH:` + p + `"; `
+}
+
+// WithPath prefixes a remote command with PathPrefix.
+func WithPath(cfg config.Hosts, cmd string) string { return PathPrefix(cfg) + cmd }
+
 // ControlDir is where the ssh control sockets live ($FLOK_STATE/ssh, mode 0700). ok is false
 // when a socket path there would exceed the Unix socket limit (about 104 bytes on macOS);
 // multiplexing is then skipped rather than failing every connection.
@@ -139,8 +163,11 @@ func Classify(exit int, stderr string) State {
 	case strings.Contains(low, "permission denied"), strings.Contains(low, "too many authentication failures"),
 		strings.Contains(low, "authentication failed"):
 		return Auth
-	case exit == 127, strings.Contains(low, "command not found"), strings.Contains(low, ": not found"),
-		strings.Contains(low, "unknown command"):
+	case strings.Contains(low, "no server running"), strings.Contains(low, "no sessions"): // tmux itself answered
+		return NoServer
+	case strings.Contains(low, "unknown command"): // a flok from before `serve`
+		return OldFlok
+	case exit == 127, strings.Contains(low, "command not found"), strings.Contains(low, ": not found"):
 		return NoFlok
 	}
 	return Unreachable

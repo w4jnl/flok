@@ -79,6 +79,7 @@ type Poller struct {
 	snap                   merge.Snapshot
 	changes                chan struct{} // nil without a store
 	watcher                *fsnotify.Watcher
+	pollErr                error // the last tmux poll's error under Run/RunLoop, nil after a good one
 	registry               map[string]claudereg.Entry
 	registrySeq            int
 	registryAt             time.Time
@@ -112,6 +113,10 @@ func New(d Deps) *Poller {
 	}
 	return p
 }
+
+// PollError is the error of the last tmux poll under Run/RunLoop (nil after a successful one):
+// a serve session reports it so the local side can say "no tmux server" instead of nothing.
+func (p *Poller) PollError() error { return p.pollErr }
 
 // Close stops the store watcher. The sidebar's poller lives as long as the process; a remote
 // host's poller is rebuilt on every reconnect and must not leak watchers.
@@ -450,7 +455,13 @@ func RunLoop(ctx context.Context, p *Poller, onChange func(merge.Snapshot), cmds
 	apply := func(msg SnapshotMsg, force bool) {
 		if msg.Err != nil {
 			p.debugf("poll: %v", msg.Err)
+			if !msg.Rebuilt {
+				p.pollErr = msg.Err
+			}
 			return
+		}
+		if !msg.Rebuilt {
+			p.pollErr = nil
 		}
 		if p.ApplySnapshot(msg, force) && onChange != nil {
 			onChange(p.snap)

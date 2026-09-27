@@ -25,6 +25,10 @@ func TestRemoteRunPassesOneCommandArgument(t *testing.T) {
 	if out != "1\ntmux -L agents display-message -p '#{pane_id};x'\n" {
 		t.Fatalf("got %q", out)
 	}
+	r.Prefix = `export PATH="$PATH:/opt/homebrew/bin"; `
+	if got := r.Command("-V"); got != `export PATH="$PATH:/opt/homebrew/bin"; tmux -L agents -V` {
+		t.Fatalf("prefix: %q", got)
+	}
 	r = &Remote{Argv: []string{"sh", "-c", "echo boom >&2; exit 255", "sh"}, Name: "beta"}
 	_, err = r.Run("list-sessions")
 	var ee *ExitError

@@ -8,7 +8,8 @@ updates this file first. Dates are the tag dates.
 
 - Remote hosts: one local flok now shows and drives tmux servers on other machines over ssh.
   `flok host add <name> <user@host> [--mode full|plain]` registers a host (`hosts.json` in the
-  state dir; `remove`, `connect`, `disconnect`, `list`, `status`); `[hosts]` in config.toml
+  state dir; `set` changes a host in place, `remove`, `connect`, `disconnect`, `list`,
+  `status`); `[hosts]` in config.toml
   holds the ssh defaults. Mode `full` runs `flok serve --stdio` on the host (its hooks, Claude
   registry and screen rules, streamed back; hooks there stay silent while served and the sounds
   play here), mode `plain` drives the host's tmux over ssh with titles and screen rules only.
@@ -17,7 +18,13 @@ updates this file first. Dates are the tag dates.
   it); the sessions panel shows the front host, the agents panel every host, attention-sorted,
   remote rows tagged with their host. Each host keeps a persistent `ssh -t … tmux attach` pane
   parked in the outer, so switching is instant and survives `flok hide`. Hosts reconnect with
-  backoff; `needs auth`, `no flok`, `busy` and `incompatible` say what to fix. `flok goto
+  backoff; `needs auth`, `no flok`, `old flok` (a flok without `serve` there, named with its
+  version), `no tmux server` (the host answers but tmux is not running for that user or
+  socket; the work pane then starts one with the session from `[hosts] session`, default
+  `main`, or the host's `--session`), `busy` and `incompatible` say what to fix, and the sidebar
+  footer names the reason behind a failing host; `[hosts] remote_path` (Homebrew,
+  /usr/local, ~/.local/bin by default) is appended to the PATH of every command run on a host,
+  since a non-interactive ssh shell sees only the system PATH. `flok goto
   beta:%12` and `flok jump` reach agents on any host (bringing that host to the front first),
   `flok next`/`prev` walk the front host, `flok host front <name>|local` switches hosts from a
   key binding or script. The menu bar tags remote agents with `@host` and lists a row per host

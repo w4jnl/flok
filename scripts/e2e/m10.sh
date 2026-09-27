@@ -6,6 +6,12 @@ source "$(dirname "$0")/lib.sh"
 fake_ssh_setup
 fake_host beta
 fake_host gamma
+fake_host delta   # its flok predates serve: only `version` works
+cat > "$FAKE/hosts/delta/bin/flok" <<'OLD'
+#!/usr/bin/env bash
+case "${1:-}" in version) echo "flok 0.4.4" ;; *) echo "flok: unknown command \"${1:-}\"" >&2; echo "usage: flok <command>" >&2; exit 2 ;; esac
+OLD
+chmod +x "$FAKE/hosts/delta/bin/flok"
 wait_file() { local i; for i in $(seq 1 $(( ${3:-5} * 10 ))); do grep -qE "$2" "$1" 2>/dev/null && return 0; sleep 0.1; done; return 1; }
 # Part 1 is the CLI without a sidebar: it uses a state dir of its own (as on a machine that only
 # checks hosts), so the running sidebar, which connects to a host the moment it is registered,
@@ -29,6 +35,10 @@ expect "list --json carries the version" '"version": 1' "$json"
 expect "gamma is plain with its socket" '"socket": "agents"' "$json"
 expect "hosts.json lives in the state dir" '"name": "beta"' "$(cat "$CLI_STATE/hosts.json")"
 expect "list shows enabled hosts never connected" '^beta +beta +full +yes +never' "$(cli host list)"
+expect "set changes a host in place" '^gamma: gamma, full$' "$(cli host set gamma --mode full --socket "")"
+expect "set validates" 'mode "ssh"' "$(cli host set gamma --mode ssh 2>&1 || true)"
+expect "set keeps the registry order" '^beta gamma$' "$(cli host list --names | tr '\n' ' ' | sed 's/ $//')"
+cli host set gamma --mode plain --socket agents >/dev/null
 
 # --- flok serve over a pipe, as the local flok runs it on beta -------------------------------
 mkfifo "$T/serve-in"
@@ -84,6 +94,18 @@ doc=$(cli doctor 2>&1 || true)
 expect "doctor probes beta: tmux, flok and its protocol" '^ok +host beta \(full\): tmux [0-9][^,]*, flok [^ ]+ \(protocol 1\)' "$doc"
 expect "doctor probes gamma" '^ok +host gamma \(plain\): tmux [0-9]' "$doc"
 expect "doctor notices the missing hooks on beta" '^warn +host beta \(full\): no ~/.claude/settings.json' "$doc"
+# a host whose flok predates serve: named with its version, not mistaken for a missing flok
+cli host add delta delta >/dev/null
+out=$(cli host status 2>&1 || true)
+expect "status names an outdated flok with its version" '^delta +full +old flok +- +- +flok 0.4.4 there is too old \(no serve\); upgrade flok on the host' "$out"
+doc=$(cli doctor 2>&1 || true)
+expect "doctor says the same" '^warn +host delta \(full\): tmux [0-9][^,]*, flok 0.4.4 at .*/flok is too old, it has no `serve`' "$doc"
+# a host with tmux installed but no server, seen from the CLI alone (no work pane to start one)
+cli host set delta --mode plain >/dev/null
+tmux -L e2e-delta kill-server
+out=$(cli host status 2>&1 || true)
+expect "status tells a stopped tmux from an unreachable host" '^delta +plain +no tmux server +tmux [0-9][^ ]* +- +no server running on .*; the sidebar.s work pane starts one' "$out"
+cli host remove delta >/dev/null
 touch "$T/down-gamma" "$T/auth-beta"
 rc=0; out=$(cli host status 2>&1) || rc=$?
 echo "--- host status, both failing ---"; printf '%s\n' "$out" | sed 's/^/      | /'
@@ -118,11 +140,11 @@ expect "local is the first server row" '^ . local' "$snap"
 expect "the sessions header names the front host" '^sessions · local' "$snap"
 wait_hosts "beta=connected gamma=connected" 25 || true   # beta may sit out a busy retry after part 1's serves
 expect "snapshot.json reports both hosts connected" '^beta=connected gamma=connected$' "$(snap_hosts)"
-wait_for '. beta +[0-9]' 5 || true
-wait_for '. gamma +[0-9]' 10 || true   # plain mode polls over the fake ssh with a 1 s floor: slower on a loaded runner
+wait_for 'beta +full +[0-9]' 5 || true
+wait_for 'gamma +plain +[0-9]' 10 || true   # plain mode polls over the fake ssh with a 1 s floor: slower on a loaded runner
 snap=$(capture)
-expect "beta's row counts its agent" ' beta +1' "$snap"
-expect "gamma's row counts its title-detected agent" ' gamma +1' "$snap"
+expect "beta's row names its mode and counts its agent" ' beta +full +1' "$snap"
+expect "gamma's row reads plain and counts its title-detected agent" ' gamma +plain +1' "$snap"
 expect "remote agents carry their host on the second line" 'beta · claude' "$snap"
 expect "the plain host's agent shows too" 'gamma · claude' "$snap"
 wins=$(OUT list-windows -t flok -F '#{window_name} #{window_panes}')
@@ -141,7 +163,7 @@ rhook beta claude '{"hook_event_name":"Stop","session_id":"r1"}'
 wait_for 'done' 5 || true
 snap=$(capture)
 expect "a Stop on beta shows done here" '✓ .*done' "$snap"
-expect "beta's server row counts the pending agent" ' beta +1 · [0-9]' "$snap"
+expect "beta's server row counts the pending agent" ' beta +full +1 · [0-9]' "$snap"
 
 # switch to beta with the keyboard: Tab Tab reaches the servers panel, j selects beta, Enter swaps
 "$BIN" focus
@@ -152,6 +174,9 @@ expect "right_pane is beta's pane" "^$BETA_PANE\$" "$(rt "r['right_pane']")"
 expect "local_pane remembers the local loop" "^$RIGHT\$" "$(rt "r.get('local_pane','')")"
 expect "beta's pane sits in window 0" "$BETA_PANE" "$(OUT list-panes -t flok:0 -F '#{pane_id}')"
 expect "the local pane is parked in beta's window" "$RIGHT" "$(OUT list-panes -t "$BETA_WIN" -F '#{pane_id}')"
+sleep 1.5   # the swap's pane bookkeeping runs after it; it must not adopt the local pane as beta's
+expect "beta's pane stays recorded as beta's" "^$BETA_PANE\$" "$(rt "r['hosts']['beta']['pane']")"
+expect "local_pane stays the local pane" "^$RIGHT\$" "$(rt "r.get('local_pane','')")"
 expect "the sidebar keeps its width" "^$(python3 -c "import json;print(json.load(open('$RT'))['full_width'])")\$" "$(OUT display -p -t "$SIDEBAR" '#{pane_width}')"
 wait_for 'sessions · beta' 3 || true
 snap=$(capture); echo "--- beta in front ---"; printf '%s\n' "$snap" | grep -v '^ *$' | sed -n '1,12p' | sed 's/^/      | /'
@@ -173,13 +198,23 @@ expect "beta's pane is parked again" "$BETA_PANE" "$(OUT list-panes -t "$BETA_WI
 expect "un-hide restores the layout" '^0$' "$(OUT display -p -t "$RIGHT" '#{window_zoomed_flag}')"
 expect "beta was told it is out of sight" '^0$' "$(cat "$T/hosts/beta/state/terminal-focus")"
 
+# something else moves the panes (a stray swap-pane): the sidebar notices and follows within a few polls
+OUT swap-pane -d -s "$BETA_PANE" -t "$RIGHT"
+wait_for 'sessions · beta' 5 || true
+expect "an external swap is noticed: the sessions panel follows the pane in front" '^sessions · beta' "$(capture)"
+expect "... and runtime.json is corrected" '^beta$' "$(rt "r.get('front_host','')")"
+OUT swap-pane -d -s "$RIGHT" -t "$BETA_PANE"
+wait_for 'sessions · local' 5 || true
+expect "swapping back is noticed as well" '^sessions · local' "$(capture)"
+expect "... with right_pane back on the local pane" "^$RIGHT\$" "$(rt "r['right_pane']")"
+
 # beta goes down: the serve session dies, the attach pane loses its client, both report it
 touch "$T/down-beta"
 pkill -f "serve --stdio" || true
 tmux -L e2e-beta detach-client 2>/dev/null || true
 wait_for '✗ beta' 10 || true
 snap=$(capture)
-expect "a lost host shows ✗ with the reason or a countdown" '✗ beta +(retry in [0-9]+s|unreachable)' "$snap"
+expect "a lost host shows ✗ with the reason or a countdown" '✗ beta +full +(retry in [0-9]+s|unreachable)' "$snap"
 expect "its agents left the list" '^0$' "$(printf '%s\n' "$snap" | grep -c 'beta · claude' || true)"
 for _ in $(seq 1 80); do OUT capture-pane -p -t "$BETA_PANE" | grep -q 'unreachable' && break; sleep 0.1; done
 expect "the parked pane says why and when it retries" 'flok: beta unreachable \(Connection refused\), retry in [0-9]+s' "$(OUT capture-pane -p -t "$BETA_PANE")"
@@ -189,6 +224,16 @@ expect "beta reconnects once reachable" '^beta=connected gamma=connected$' "$(sn
 for _ in $(seq 1 80); do [ "$(tmux -L e2e-beta list-clients | wc -l | tr -d ' ')" = 1 ] && break; sleep 0.1; done
 expect "the parked pane re-attaches" '^1$' "$(tmux -L e2e-beta list-clients | wc -l | tr -d ' ')"
 
+# the host's tmux goes away: the parked work pane starts a fresh server with the default session,
+# and the row is back with it
+tmux -L e2e-gamma kill-server
+for _ in $(seq 1 150); do tmux -L e2e-gamma list-sessions -F '#{session_name}' 2>/dev/null | grep -qx main && break; sleep 0.1; done
+expect "the work pane starts tmux again with [hosts] session" '^main$' "$(tmux -L e2e-gamma list-sessions -F '#{session_name}' 2>/dev/null)"
+wait_for 'gamma +plain +[0-9]' 15 || true
+expect "the row is back once the server is" 'gamma +plain +[0-9]' "$(capture)"
+fake_host gamma   # the agent window again, for the rest of the suite
+wait_for 'gamma +plain +1' 15 || true
+
 # --- part 3: navigation from the shell (key bindings, the menu bar) crosses hosts --------------
 "$BIN" host front local >/dev/null
 for _ in $(seq 1 50); do [ "$(rt "r.get('front_host','')")" = "" ] && break; sleep 0.1; done
@@ -197,6 +242,7 @@ BETA_AGENT=$(eval echo "\$HOST_beta_PANE")
 "$BIN" goto "beta:$BETA_AGENT" --no-focus
 for _ in $(seq 1 50); do [ "$(rt "r.get('front_host','')")" = beta ] && break; sleep 0.1; done
 expect "goto beta:<pane> brings beta to the front" '^beta$' "$(rt "r.get('front_host','')")"
+expect "... with beta's pane really in window 0" "$BETA_PANE" "$(OUT list-panes -t flok:0 -F '#{pane_id}')"
 for _ in $(seq 1 30); do tmux -L e2e-beta display -p '#{window_name}' | grep -q agent && break; sleep 0.1; done
 expect "... and selects the agent window on beta" '^agent$' "$(tmux -L e2e-beta display -p '#{window_name}')"
 expect "... and marks the pane seen on beta" 'seen_at' "$(cat "$T"/hosts/beta/state/seen/*.json 2>/dev/null)"
@@ -210,6 +256,8 @@ wait_for 'perm:Bash' 5 || true
 "$BIN" jump
 for _ in $(seq 1 50); do [ "$(rt "r.get('front_host','')")" = beta ] && break; sleep 0.1; done
 expect "jump crosses hosts to the blocked agent" '^beta$' "$(rt "r.get('front_host','')")"
+expect "... with beta's pane in window 0" "$BETA_PANE" "$(OUT list-panes -t flok:0 -F '#{pane_id}')"
+expect "still one parked window per host" '^1 1$' "$(OUT list-windows -t flok -F '#{window_name}' | grep -c flok-host-beta) $(OUT list-windows -t flok -F '#{window_name}' | grep -c flok-host-gamma)"
 for _ in $(seq 1 30); do tmux -L e2e-beta display -p '#{window_name}' | grep -q agent && break; sleep 0.1; done
 expect "... and lands on its window" '^agent$' "$(tmux -L e2e-beta display -p '#{window_name}')"
 "$BIN" next
@@ -221,11 +269,11 @@ expect "front_host is published for the menu bar" '"front_host": "beta"' "$(cat 
 "$BIN" host disconnect gamma >/dev/null
 for _ in $(seq 1 50); do OUT list-windows -t flok -F '#{window_name}' | grep -q flok-host-gamma || break; sleep 0.1; done
 expect "disconnect kills gamma's parked window" '^0$' "$(OUT list-windows -t flok -F '#{window_name}' | grep -c flok-host-gamma || true)"
-wait_for ' gamma +off' 5 || true
-expect "gamma's row reads off" ' gamma +off' "$(capture)"
+wait_for 'gamma +plain +off' 5 || true
+expect "gamma's row reads off" 'gamma +plain +off' "$(capture)"
 "$BIN" host remove gamma >/dev/null
-for _ in $(seq 1 50); do capture | grep -q ' gamma' || break; sleep 0.1; done
-expect "remove drops gamma's row" '^0$' "$(capture | grep -c ' gamma' || true)"
+for _ in $(seq 1 50); do capture | grep -q 'gamma' || break; sleep 0.1; done
+expect "remove drops gamma's row" '^0$' "$(capture | grep -c 'gamma' || true)"
 
 # down leaves the remote servers alone
 "$BIN" down

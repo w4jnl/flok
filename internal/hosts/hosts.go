@@ -141,10 +141,33 @@ func (s *Set) Add(h Host) error {
 		return err
 	}
 	if _, ok := s.Get(h.Name); ok {
-		return fmt.Errorf("host %q exists; flok host remove %s first", h.Name, h.Name)
+		return fmt.Errorf("host %q exists; flok host set %s … changes it", h.Name, h.Name)
 	}
 	s.Hosts = append(s.Hosts, h)
 	return nil
+}
+
+// Set replaces the host called name with fn's edit of it, validated; a missing host is an error.
+func (s *Set) Set(name string, fn func(*Host)) error {
+	for i := range s.Hosts {
+		if s.Hosts[i].Name != name {
+			continue
+		}
+		h := s.Hosts[i]
+		fn(&h)
+		h.Name = name
+		if err := Validate(h); err != nil {
+			return err
+		}
+		s.Hosts[i] = h
+		return nil
+	}
+	return fmt.Errorf("no host %q (flok host list)", name)
+}
+
+// AttachChanged says whether the work pane's ssh must be rebuilt for the change from a to b.
+func AttachChanged(a, b Host) bool {
+	return a.Target != b.Target || a.Socket != b.Socket || a.Session != b.Session || a.Term != b.Term
 }
 
 // Remove drops the host called name and says whether it was there.

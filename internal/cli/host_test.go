@@ -56,6 +56,17 @@ func TestHostCommandLifecycle(t *testing.T) {
 	if s := run(0, "list"); !strings.Contains(s, "beta") || !strings.Contains(s, "never") || !strings.Contains(s, "no") {
 		t.Fatalf("table: %q", s)
 	}
+	run(0, "set", "gamma", "--mode", "full", "--socket", "", "--flok", "/opt/homebrew/bin/flok")
+	run(1, "set", "gamma", "--mode", "ssh") // invalid, nothing written
+	run(1, "set", "nope", "--mode", "plain")
+	run(2, "set", "gamma")           // nothing to change
+	run(2, "set", "gamma", "--mode") // flag without value
+	run(2, "set", "gamma", "--port", "22")
+	set, _ = hosts.Load(dir)
+	if g := set.Hosts[1]; g.Mode != hosts.ModeFull || g.Socket != "" || g.Flok != "/opt/homebrew/bin/flok" || g.Target != "gamma" {
+		t.Fatalf("set: %+v", g)
+	}
+	run(0, "set", "gamma", "--mode", "plain")
 	run(0, "disconnect", "beta")
 	run(0, "connect", "gamma")
 	run(1, "connect", "nope")

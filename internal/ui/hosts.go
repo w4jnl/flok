@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -128,9 +129,15 @@ func (m *Model) applyHosts(set hosts.Set) tea.Cmd {
 		return nil
 	}
 	m.hostsApplied = true
+	prev := m.hostSet
 	m.hostSet, m.hostList = set, set.Hosts
 	if m.remote != nil {
 		m.remote.Apply(set)
+	}
+	for _, h := range set.Hosts { // a changed target/socket/session/term needs a fresh attach pane
+		if old, ok := prev.Get(h.Name); ok && hosts.AttachChanged(old, h) {
+			m.restartPanes = append(m.restartPanes, h.Name)
+		}
 	}
 	for name := range m.remotes {
 		if h, ok := set.Get(name); !ok || !h.Enabled {
@@ -139,7 +146,8 @@ func (m *Model) applyHosts(set hosts.Set) tea.Cmd {
 	}
 	var cmds []tea.Cmd
 	if m.front != "" {
-		if h, ok := set.Get(m.front); !ok || !h.Enabled { // the front host went away: local comes back
+		h, ok := set.Get(m.front)
+		if !ok || !h.Enabled || m.paneRestarts(m.front) { // the front host went away or changes its attach: local comes back first
 			cmds = append(cmds, m.swapCmd("", nil))
 		}
 	}
@@ -150,15 +158,40 @@ func (m *Model) applyHosts(set hosts.Set) tea.Cmd {
 	return batch(cmds...)
 }
 
-// hostPanesCmd creates the parked panes of enabled hosts and removes those of the others (a
-// host still in front is removed once the swap back to local landed, see frontMsg).
-func (m Model) hostPanesCmd() tea.Cmd {
+// paneRestarts says whether host's parked pane must be rebuilt (its attach changed).
+func (m Model) paneRestarts(host string) bool {
+	for _, n := range m.restartPanes {
+		if n == host {
+			return true
+		}
+	}
+	return false
+}
+
+// hostPanesCmd creates the parked panes of enabled hosts, rebuilds those whose attach changed
+// and removes those of the others (a host still in front waits for the swap back to local, see
+// frontMsg).
+func (m *Model) hostPanesCmd() tea.Cmd {
 	outer, sess, bin, front, set := m.d.Outer, m.d.Cfg.Outer.Session, m.d.Bin, m.front, m.hostSet
 	if outer == nil || bin == "" || !m.hostsApplied {
 		return nil
 	}
+	var restart, keep []string
+	for _, n := range m.restartPanes {
+		if n == front {
+			keep = append(keep, n) // after the swap back to local
+		} else {
+			restart = append(restart, n)
+		}
+	}
+	m.restartPanes = keep
 	return func() tea.Msg {
 		var firstErr error
+		for _, n := range restart {
+			if err := launcher.KillHostPane(outer, n); err != nil && firstErr == nil {
+				firstErr = fmt.Errorf("%s: %w", n, err)
+			}
+		}
 		for _, h := range set.Enabled() {
 			if _, err := launcher.EnsureHostPane(outer, sess, bin, h.Name); err != nil && firstErr == nil {
 				firstErr = fmt.Errorf("%s: %w", h.Name, err)
@@ -207,6 +240,16 @@ func (m *Model) refederate() {
 			}
 		}
 		m.snap.Spaces = sp
+		// a host that cannot deliver says why in the footer; the row only has room for the state
+		for _, h := range m.hostList {
+			if v, ok := m.remotes[h.Name]; ok && h.Enabled && v.detail != "" {
+				switch v.state {
+				case remote.Connected, remote.Stale, remote.Connecting, remote.Disabled, "":
+				default:
+					m.snap.Warnings = append(m.snap.Warnings, h.Name+": "+v.detail)
+				}
+			}
+		}
 	}
 	m.vc.valid = false
 }
@@ -250,12 +293,43 @@ func (m Model) retryCountdown() bool {
 	return false
 }
 
+// swapMu serializes swaps: two in flight (a key and a request, say) must not both act on the
+// same idea of which pane is in front.
+var swapMu sync.Mutex
+
+// siblingPane picks the other pane of the sidebar's window from list-panes output.
+func siblingPane(out, sidebar string) string {
+	for _, id := range strings.Fields(out) {
+		if id != sidebar {
+			return id
+		}
+	}
+	return ""
+}
+
+// observedRight asks tmux which pane sits next to the sidebar; fallback when it cannot say.
+func observedRight(outer tmux.Client, sidebar, fallback string) string {
+	if outer == nil || sidebar == "" {
+		return fallback
+	}
+	out, err := outer.Run("list-panes", "-t", sidebar, "-F", "#{pane_id}")
+	if err != nil {
+		return fallback
+	}
+	if sib := siblingPane(out, sidebar); sib != "" {
+		return sib
+	}
+	return fallback
+}
+
 // swapCmd brings host's work pane next to the sidebar. swap-pane moves only the two work
 // panes, so the sidebar never resizes or re-pins; a zoomed window (flok hide) is un-zoomed
-// around the swap and zoomed again on the new pane. then runs afterwards with the new front
-// pane (a goto on that host, focusing it) and its error is reported.
+// around the swap and zoomed again on the new pane. The pane it swaps out is the one tmux
+// reports next to the sidebar at that moment, and which host owns it comes from runtime.json,
+// so a stale idea of the front never swaps the wrong pane. then runs afterwards with the new
+// front pane (a goto on that host, focusing it) and its error is reported.
 func (m Model) swapCmd(host string, then func(pane string) error) tea.Cmd {
-	outer, right, sess, bin, cur := m.d.Outer, m.d.RightPane, m.d.Cfg.Outer.Session, m.d.Bin, m.front
+	outer, right, sess, bin, sidebar, cur := m.d.Outer, m.d.RightPane, m.d.Cfg.Outer.Session, m.d.Bin, m.d.SidebarPane, m.front
 	if host == cur {
 		if then == nil {
 			return nil
@@ -266,19 +340,29 @@ func (m Model) swapCmd(host string, then func(pane string) error) tea.Cmd {
 		return nil
 	}
 	return func() tea.Msg {
-		rt, err := launcher.ReadRuntime()
+		swapMu.Lock()
+		defer swapMu.Unlock()
+		wp, err := launcher.ScanWorkPanes(outer) // panes by what they run, not by where they sit
 		if err != nil {
 			return frontMsg{host, "", err}
 		}
-		target := rt.LocalPane
+		right = observedRight(outer, sidebar, right)
+		cur = ""
+		for name, p := range wp.Hosts {
+			if p == right {
+				cur = name
+			}
+		}
+		target := wp.Local
 		if host != "" {
-			hp, ok := rt.Hosts[host]
-			if !ok {
-				if hp, err = launcher.EnsureHostPane(outer, sess, bin, host); err != nil {
+			target = wp.Hosts[host]
+			if target == "" {
+				hp, err := launcher.EnsureHostPane(outer, sess, bin, host)
+				if err != nil {
 					return frontMsg{host, "", err}
 				}
+				target = hp.Pane
 			}
-			target = hp.Pane
 		}
 		if target == "" {
 			return frontMsg{host, "", errors.New("no work pane for " + hostLabel(host))}
@@ -298,8 +382,8 @@ func (m Model) swapCmd(host string, then func(pane string) error) tea.Cmd {
 			}
 		}
 		_ = launcher.UpdateRuntime(func(r *launcher.Runtime) {
-			if r.LocalPane == "" && cur == "" {
-				r.LocalPane = right // hosts added after flok up: the local pane is the one leaving
+			if wp.Local != "" {
+				r.LocalPane = wp.Local
 			}
 			r.RightPane, r.FrontHost = target, host
 		})
@@ -307,6 +391,70 @@ func (m Model) swapCmd(host string, then func(pane string) error) tea.Cmd {
 			err = then(target)
 		}
 		return frontMsg{host, target, err}
+	}
+}
+
+// resyncFront follows the pane tmux really shows next to the sidebar when it is not the one the
+// sidebar believes (a raced swap, a stray swap-pane, a work pane that died): the front host and
+// runtime.json are corrected, or the local pane is brought back when the sidebar is alone.
+func (m *Model) resyncFront(actual string) tea.Cmd {
+	if actual == m.d.RightPane || !m.hostsApplied {
+		return nil
+	}
+	var wp launcher.WorkPanes
+	err := errors.New("no outer")
+	if m.d.Outer != nil {
+		wp, err = launcher.ScanWorkPanes(m.d.Outer)
+	}
+	if err != nil {
+		rt, rerr := launcher.ReadRuntime()
+		if rerr != nil {
+			return nil
+		}
+		wp = launcher.WorkPanes{Local: rt.LocalPane, Hosts: map[string]string{}}
+		for name, hp := range rt.Hosts {
+			wp.Hosts[name] = hp.Pane
+		}
+	}
+	if actual == "" { // nothing next to the sidebar: the work pane went away
+		return m.recoverCmd(wp.Local)
+	}
+	host, known := "", actual == wp.Local
+	for name, p := range wp.Hosts {
+		if p == actual {
+			host, known = name, true
+		}
+	}
+	if !known {
+		return nil // not one of ours: leave it alone
+	}
+	m.debugf("front resync: %s (%s) was %s (%s)", hostLabel(host), actual, hostLabel(m.front), m.d.RightPane)
+	m.front, m.d.RightPane = host, actual
+	_ = launcher.UpdateRuntime(func(r *launcher.Runtime) { r.RightPane, r.FrontHost = actual, host })
+	m.syncVisible()
+	m.refederate()
+	m.publish()
+	m.clamp()
+	return nil
+}
+
+// recoverCmd puts the local work pane back next to a sidebar left alone in its window.
+func (m Model) recoverCmd(local string) tea.Cmd {
+	outer, sidebar := m.d.Outer, m.d.SidebarPane
+	if outer == nil || sidebar == "" || local == "" {
+		return nil
+	}
+	return func() tea.Msg {
+		swapMu.Lock()
+		defer swapMu.Unlock()
+		if observedRight(outer, sidebar, "") != "" {
+			return nil // something arrived meanwhile
+		}
+		if _, err := outer.Run("join-pane", "-d", "-h", "-s", local, "-t", sidebar, ";", "select-layout", "-t", sidebar, "main-vertical"); err != nil {
+			return frontMsg{"", "", err}
+		}
+		_ = launcher.UpdateRuntime(func(r *launcher.Runtime) { r.RightPane, r.FrontHost = local, "" })
+		return frontMsg{"", local, nil}
 	}
 }
 
@@ -423,6 +571,8 @@ func (m Model) hostRowParts(i int) (name, glyph string, col lipgloss.Color, deta
 		detail, dcol = "stale", t.Orange
 	case remote.Connecting:
 		glyph, col, detail, dcol = "◌", t.Comment, "connecting", t.Comment
+	case remote.NoServer:
+		glyph, col, detail, dcol = "○", t.Comment, st.Label(), t.Orange // "no tmux server"
 	case remote.Disabled:
 		glyph, col, detail, dcol = "○", t.Comment, "off", t.Comment
 	default:
@@ -436,11 +586,22 @@ func (m Model) hostRowParts(i int) (name, glyph string, col lipgloss.Color, deta
 	return
 }
 
-// hostRow renders one servers-panel row with the geometry of a session row.
+// hostMode is the dim word after a remote host's name: "full" or "plain" ("" for local).
+func (m Model) hostMode(host string) string {
+	if h, ok := m.hostSet.Get(host); ok && host != "" {
+		return string(h.Mode)
+	}
+	return ""
+}
+
+// hostRow renders one servers-panel row with the geometry of a session row: glyph, name, a dim
+// mode word, then the state. When room runs out the mode word goes first, then the name is
+// shortened; the state on the right is never cut before those.
 func (m Model) hostRow(i, w int) string {
 	t := m.theme
 	name, glyph, col, detail, dcol := m.hostRowParts(i)
 	host, _ := m.hostAt(i)
+	tag := m.hostMode(host)
 	sel := m.panel == panelHosts && m.cursor[panelHosts] == i
 	base := lipgloss.NewStyle()
 	if host == m.front {
@@ -453,23 +614,37 @@ func (m Model) hostRow(i, w int) string {
 		nameStyle = nameStyle.Bold(true)
 	}
 	avail := w - 3
+	keep := ansi.StringWidth(name) // the name keeps at most 8 cells when something has to give
+	if keep > 8 {
+		keep = 8
+	}
+	tw := 0
+	if tag != "" {
+		tw = ansi.StringWidth(tag) + 1
+	}
 	dw := 0
 	if detail != "" {
-		if max := avail / 2; ansi.StringWidth(detail) > max {
+		if tw > 0 && ansi.StringWidth(detail) > avail-1-keep-tw { // no room for the mode word: the state wins
+			tag, tw = "", 0
+		}
+		if max := avail - 1 - keep - tw; ansi.StringWidth(detail) > max {
 			detail = ansi.Truncate(detail, max, "…")
 		}
 		dw = ansi.StringWidth(detail) + 1
-		if avail-dw < 4 {
+		if avail-dw-tw < 4 {
 			detail, dw = "", 0
 		}
 	}
-	name = ansi.Truncate(name, avail-dw, "…")
-	gap := avail - dw - ansi.StringWidth(name)
+	name = ansi.Truncate(name, avail-dw-tw, "…")
+	gap := avail - dw - tw - ansi.StringWidth(name)
 	if gap < 0 {
 		gap = 0
 	}
-	row := base.Render(" ") + base.Foreground(col).Render(glyph) + base.Render(" ") +
-		nameStyle.Render(name) + base.Render(strings.Repeat(" ", gap))
+	row := base.Render(" ") + base.Foreground(col).Render(glyph) + base.Render(" ") + nameStyle.Render(name)
+	if tag != "" {
+		row += base.Render(" ") + base.Foreground(t.Comment).Render(tag)
+	}
+	row += base.Render(strings.Repeat(" ", gap))
 	if detail != "" {
 		row += base.Render(" ") + base.Foreground(dcol).Render(detail)
 	}

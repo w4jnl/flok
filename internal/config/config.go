@@ -96,6 +96,8 @@ type Hosts struct {
 	BackoffMaxS     int      `toml:"backoff_max_s"`     // reconnect backoff 1, 2, 4 … up to this
 	Multiplex       bool     `toml:"multiplex"`         // one ControlMaster connection per host
 	ServeCommand    string   `toml:"serve_command"`     // what mode full runs on the host
+	RemotePath      string   `toml:"remote_path"`       // appended to PATH for every command run on a host
+	Session         string   `toml:"session"`           // session the work pane creates on a host whose tmux is not running
 }
 
 // Palette is one set of sidebar colours.
@@ -169,8 +171,9 @@ func Default() Config {
 		Keys:    Keys{Tables: []string{"prefix", "root", "copy-mode-vi"}},
 		Sounds: Sounds{Enabled: true, Player: "hook", Bell: "auto", Volume: 0.6, MinIntervalMs: 750,
 			Done: "", Blocked: "", Error: ""}, // empty = the bundled herdr sounds (done.wav / request.wav)
-		Bar:   Bar{Enabled: false, Animate: true, Badge: true, Focus: "auto", MaxRows: 16, AnimateMs: 0, Color: true, IconSize: 18, Blink: true},
-		Hosts: Hosts{SSH: "ssh", ConnectTimeoutS: 10, BackoffMaxS: 30, Multiplex: true, ServeCommand: "flok serve --stdio"},
+		Bar: Bar{Enabled: false, Animate: true, Badge: true, Focus: "auto", MaxRows: 16, AnimateMs: 0, Color: true, IconSize: 18, Blink: true},
+		Hosts: Hosts{SSH: "ssh", ConnectTimeoutS: 10, BackoffMaxS: 30, Multiplex: true, ServeCommand: "flok serve --stdio",
+			RemotePath: "/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:/opt/local/bin", Session: "main"},
 		Theme: Theme{Mode: "auto",
 			Palette: Palette{BG: "#282a36", CurrentLine: "#44475a", FG: "#f8f8f2", Comment: "#6272a4", Cyan: "#8be9fd", Green: "#50fa7b",
 				Orange: "#ffb86c", Pink: "#ff79c6", Purple: "#bd93f9", Red: "#ff5555", Yellow: "#f1fa8c",

@@ -188,7 +188,7 @@ func TestFullModeSession(t *testing.T) {
 	m := h.manager(nil)
 	h.state(Connecting)
 	p := h.proc()
-	if last := p.argv[len(p.argv)-1]; last != "flok serve --stdio" || p.argv[len(p.argv)-2] != "beta" {
+	if last := p.argv[len(p.argv)-1]; last != `export PATH="$PATH:/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:/opt/local/bin"; flok serve --stdio` || p.argv[len(p.argv)-2] != "beta" {
 		t.Fatalf("dial argv %q", p.argv)
 	}
 	p.send(t, proto.Frame{Type: proto.TypeHello, Hello: &proto.Hello{Proto: proto.Version, Version: "0.5.0", Hostname: "beta", TmuxVersion: "3.4"}})
@@ -210,6 +210,13 @@ func TestFullModeSession(t *testing.T) {
 	if msg := h.msg(func(m Msg) bool { return m.Event != nil }, "event"); msg.Event.Pane != "%3" {
 		t.Fatalf("event %+v", msg)
 	}
+	// serve's tmux goes away: the row says so while the session stays up, a snapshot ends it
+	p.send(t, proto.Frame{Type: proto.TypeError, Error: "poll: no server running on /tmp/tmux-501/default"})
+	if msg := h.state(NoServer); msg.Detail != "no server running on /tmp/tmux-501/default" {
+		t.Fatalf("no server %+v", msg)
+	}
+	p.send(t, proto.Frame{Type: proto.TypeSnap, Snap: &proto.Snapshot{}})
+	h.state(Connected)
 	m.SetVisible("beta", true)
 	m.SetVisible("beta", true) // deduplicated
 	if err := m.Goto("beta", "$1", "@2", "%3"); err != nil {
@@ -273,7 +280,7 @@ func TestFullModeFailures(t *testing.T) {
 	_, _ = io.WriteString(probe.outW, "/opt/homebrew/bin/flok\n")
 	probe.exit(0, "")
 	p := h.proc()
-	if last := p.argv[len(p.argv)-1]; last != "/opt/homebrew/bin/flok serve --stdio" {
+	if last := p.argv[len(p.argv)-1]; !strings.HasSuffix(last, "; /opt/homebrew/bin/flok serve --stdio") {
 		t.Fatalf("retry must use the probed path, got %q", last)
 	}
 	if set, _ := hosts.Load(h.dir); set.Hosts[0].Flok != "/opt/homebrew/bin/flok" {
@@ -295,6 +302,25 @@ func TestFullModeFailures(t *testing.T) {
 	if d := <-h.slept; d != busyRetry {
 		t.Fatalf("busy backoff %v", d)
 	}
+	// a flok from before serve: the version is asked once and named in the detail
+	h.proc().exit(2, "flok: unknown command \"serve\"\n\nusage: flok <command>\n")
+	vp := h.proc()
+	if last := vp.argv[len(vp.argv)-1]; !strings.HasSuffix(last, "; /opt/homebrew/bin/flok version") {
+		t.Fatalf("expected a version probe with the probed path, got %q", last)
+	}
+	_, _ = io.WriteString(vp.outW, "flok 0.4.4\n")
+	vp.exit(0, "")
+	if msg := h.state(OldFlok); msg.Detail != "flok 0.4.4 there is too old (no serve)" {
+		t.Fatalf("old flok %+v", msg)
+	}
+	if d := <-h.slept; d != time.Minute {
+		t.Fatalf("old flok backoff %v", d)
+	}
+	h.proc().exit(2, "flok: unknown command \"serve\"") // the retry does not ask again
+	if msg := h.state(OldFlok); msg.Detail != "flok 0.4.4 there is too old (no serve)" {
+		t.Fatalf("old flok again %+v", msg)
+	}
+	<-h.slept
 	// hello timeout: connect timeout (1 s here) plus five seconds of grace
 	p = h.proc()
 	h.wait = 10 * time.Second
@@ -311,10 +337,11 @@ func TestFullModeFailures(t *testing.T) {
 
 // fakeTmux answers -V and, while healthy, empty snapshots; when broken every call fails.
 type fakeTmux struct {
-	mu     sync.Mutex
-	broken bool
-	calls  int
-	feat   tmux.Features
+	mu       sync.Mutex
+	broken   bool
+	noServer bool
+	calls    int
+	feat     tmux.Features
 }
 
 func (f *fakeTmux) Label() string             { return "fake" }
@@ -329,6 +356,9 @@ func (f *fakeTmux) Run(args ...string) (string, error) {
 	}
 	if len(args) == 1 && args[0] == "-V" {
 		return "tmux 3.2a\n", nil
+	}
+	if f.noServer {
+		return "", &tmux.ExitError{Code: 1, Stderr: "no server running on /tmp/tmux-0/default", Cmd: "beta: tmux list-sessions"}
 	}
 	return "", nil
 }
@@ -354,6 +384,20 @@ func TestPlainMode(t *testing.T) {
 	}
 	m.SetVisible("beta", false)
 	m.MarkSeen("beta", "%1")
+	// the host answers but its tmux server is down for that user: a state of its own, normal backoff
+	ft.mu.Lock()
+	ft.noServer = true
+	ft.mu.Unlock()
+	if msg := h.state(NoServer); msg.Detail != "no server running on /tmp/tmux-0/default" {
+		t.Fatalf("no server %+v", msg)
+	}
+	if d := <-h.slept; d != time.Second {
+		t.Fatalf("no-server backoff %v", d)
+	}
+	ft.mu.Lock()
+	ft.noServer = false
+	ft.mu.Unlock()
+	h.state(Connected)
 	ft.mu.Lock()
 	ft.broken = true
 	ft.mu.Unlock()

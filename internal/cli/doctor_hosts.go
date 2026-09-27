@@ -24,6 +24,8 @@ type hostProbe struct {
 	Hello       *proto.Hello // `flok serve --hello`, nil when flok or serve is missing
 	Terminfo    bool         // the host has the tmux-256color terminfo entry
 	Hooks       int          // Claude Code hook entries in ~/.claude/settings.json; -1 = no file
+	Version     string       // `flok version` there, "" when unknown (also set for a flok without serve)
+	Sessions    int          // tmux sessions on the host's socket; -1 = no server running
 }
 
 const probeSep = "---"
@@ -45,7 +47,26 @@ func hostProbeScript(h hosts.Host) string {
 		"if infocmp tmux-256color >/dev/null 2>&1; then echo terminfo=ok; else echo terminfo=missing; fi",
 		"echo " + probeSep,
 		`if [ -f "$HOME/.claude/settings.json" ]; then n=$(grep -c 'hook claude' "$HOME/.claude/settings.json" 2>/dev/null); echo "hooks=${n:-0}"; else echo hooks=nofile; fi`,
+		"echo " + probeSep,
+		flok + " version 2>/dev/null || true",
+		"echo " + probeSep,
+		tmuxCmd(h) + " list-sessions -F x 2>&1 || true",
 	}, "; ")
+}
+
+func socketNote(h hosts.Host) string {
+	if h.Socket != "" {
+		return " on socket " + h.Socket
+	}
+	return ""
+}
+
+// tmuxCmd is the host's tmux on the registered socket.
+func tmuxCmd(h hosts.Host) string {
+	if h.Socket != "" {
+		return "tmux -L " + tmux.ShellQuote(h.Socket)
+	}
+	return "tmux"
 }
 
 func parseHostProbe(out string) hostProbe {
@@ -102,6 +123,19 @@ func parseHostProbe(out string) hostProbe {
 			p.Hooks, _ = strconv.Atoi(v)
 		}
 	}
+	for _, line := range get(5) {
+		if strings.HasPrefix(line, "flok ") {
+			p.Version = strings.TrimPrefix(strings.TrimPrefix(line, "flok "), "v")
+		}
+	}
+	for _, line := range get(6) {
+		switch {
+		case strings.Contains(line, "no server running"), strings.Contains(line, "no sessions"):
+			p.Sessions = -1
+		case line == "x":
+			p.Sessions++
+		}
+	}
 	return p
 }
 
@@ -140,7 +174,7 @@ func probeHost(cfg config.Config, stateDir string, h hosts.Host, dial remote.Dia
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	proc, err := dial(ctx, remote.Argv(cfg.Hosts, stateDir, h, false, hostProbeScript(h)))
+	proc, err := dial(ctx, remote.Argv(cfg.Hosts, stateDir, h, false, remote.WithPath(cfg.Hosts, hostProbeScript(h))))
 	if err != nil {
 		return []check{{"fail", name + ": ssh could not start: " + err.Error()}}
 	}
@@ -166,7 +200,7 @@ func probeHost(cfg config.Config, stateDir string, h hosts.Host, dial remote.Dia
 	var out []check
 	add := func(level, format string, a ...any) { out = append(out, check{level, fmt.Sprintf(format, a...)}) }
 	if p.TmuxVersion == "" {
-		add("fail", "%s: no tmux on the host", name)
+		add("fail", "%s: no tmux on the host's PATH (a non-interactive ssh shell sees only the system PATH; [hosts] remote_path adds directories)", name)
 		return out
 	}
 	ver := tmux.ParseVersion(p.TmuxVersion)
@@ -183,7 +217,11 @@ func probeHost(cfg config.Config, stateDir string, h hosts.Host, dial remote.Dia
 			summary += ", no flok on the remote's non-interactive PATH (the sidebar tries ~/.local/bin, /opt/homebrew/bin and /usr/local/bin; else `flok host add --flok <path>` or --mode plain)"
 		case p.Hello == nil:
 			level = "warn"
-			summary += fmt.Sprintf(", %s has no `serve` (upgrade flok there, or use --mode plain)", p.Flok)
+			which := p.Flok
+			if p.Version != "" {
+				which = "flok " + p.Version + " at " + p.Flok
+			}
+			summary += fmt.Sprintf(", %s is too old, it has no `serve` (upgrade flok there, or use --mode plain)", which)
 		case p.Hello.Proto != proto.Version:
 			level = "warn"
 			summary += fmt.Sprintf(", flok %s speaks protocol %d, this one %d (upgrade one side, or use --mode plain)", p.Hello.Version, p.Hello.Proto, proto.Version)
@@ -199,6 +237,9 @@ func probeHost(cfg config.Config, stateDir string, h hosts.Host, dial remote.Dia
 		case p.Hooks == 0:
 			add("warn", "%s: Claude Code hooks not installed there (run `flok install --claude` on the host)", name)
 		}
+	}
+	if p.Sessions < 0 {
+		add("warn", "%s: tmux is installed but not running for %s%s: the sidebar's work pane starts a session there when connected ([hosts] session, or --session); until then nothing can show. If the sessions live under another user or socket, set --target or --socket", name, h.Target, socketNote(h))
 	}
 	if !p.Terminfo && h.Term == "" {
 		add("warn", "%s: no tmux-256color terminfo on the host, its tmux would refuse the attach; add the host with `--term screen-256color`", name)
