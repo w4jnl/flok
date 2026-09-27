@@ -16,13 +16,14 @@ func (p *Poller) soundTransitions() {
 	cfg := p.d.Cfg.Sounds
 	present := map[string]bool{}
 	for _, a := range p.snap.Agents {
-		present[a.PaneID] = true
-		prev := p.prevState[a.PaneID]
-		p.prevState[a.PaneID] = a.State
+		key := agent.PaneRef{Host: a.Host, ID: a.PaneID}.String() // rate-limit key; bare id on a single host
+		present[key] = true
+		prev := p.prevState[key]
+		p.prevState[key] = a.State
 		if !cfg.Enabled {
 			continue
 		}
-		focused := a.PaneID == p.snap.Focus.PaneID
+		focused := a.PaneID == p.snap.Focus.PaneID && a.Host == p.snap.Focus.Host
 		if a.Source == "hook" {
 			if !p.d.SoundHookNotifications || p.d.Store == nil {
 				continue
@@ -31,7 +32,7 @@ func (p *Poller) soundTransitions() {
 				if n.Sounded || n.At.Before(p.started) || time.Since(n.At) > time.Minute {
 					continue
 				}
-				p.playIfAllowed(a.PaneID, n.Kind)
+				p.playIfAllowed(key, n.Kind)
 				idx := i
 				_, _, _ = p.d.Store.Update(a.PaneID, func(rec *agent.Agent) state.Effects {
 					if idx < len(rec.Notifications) {
@@ -51,12 +52,12 @@ func (p *Poller) soundTransitions() {
 		}
 		switch a.State {
 		case agent.Blocked:
-			p.playIfAllowed(a.PaneID, "blocked")
+			p.playIfAllowed(key, "blocked")
 		case agent.Done:
-			p.playIfAllowed(a.PaneID, "done")
+			p.playIfAllowed(key, "done")
 		case agent.Idle:
 			if watched && prev == agent.Working { // a watched turn ends idle, never done
-				p.playIfAllowed(a.PaneID, "done")
+				p.playIfAllowed(key, "done")
 			}
 		}
 	}
@@ -69,7 +70,8 @@ func (p *Poller) soundTransitions() {
 
 func (p *Poller) terminalUnfocused() bool { return p.d.Store != nil && !p.d.Store.TerminalFocused() }
 
-// playIfAllowed passes a sound through the per-pane and global rate limits to Deps.Sound.
+// playIfAllowed passes a sound through the per-pane and global rate limits to Deps.Sound. pane
+// is the PaneRef string ("%12", "beta:%12"); notify.Allowed maps it to a safe file name.
 func (p *Poller) playIfAllowed(pane, kind string) {
 	if p.d.Sound == nil {
 		return

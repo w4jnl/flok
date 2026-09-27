@@ -22,6 +22,7 @@ type Notification struct {
 
 type Agent struct {
 	PaneID         string         `json:"pane_id"`
+	Host           string         `json:"host,omitempty"` // "" = the local server; set by merge.Federate, never by a single-host merge
 	SessionID      string         `json:"session_id,omitempty"`
 	SessionName    string         `json:"session_name,omitempty"`
 	WindowID       string         `json:"window_id,omitempty"`
@@ -50,6 +51,7 @@ type Agent struct {
 
 // Space is one tmux session; the sidebar header calls the panel "sessions".
 type Space struct {
+	Host        string // "" = the local server; set by merge.Federate
 	SessionID   string
 	SessionName string
 	Path        string
