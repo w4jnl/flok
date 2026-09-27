@@ -112,6 +112,7 @@ expect "the sessions header names the front host" '^sessions · local' "$snap"
 wait_hosts "beta=connected gamma=connected" 25 || true   # beta may sit out a busy retry after part 1's serves
 expect "snapshot.json reports both hosts connected" '^beta=connected gamma=connected$' "$(snap_hosts)"
 wait_for '. beta +[0-9]' 5 || true
+wait_for '. gamma +[0-9]' 10 || true   # plain mode polls over the fake ssh with a 1 s floor: slower on a loaded runner
 snap=$(capture)
 expect "beta's row counts its agent" ' beta +1' "$snap"
 expect "gamma's row counts its title-detected agent" ' gamma +1' "$snap"
