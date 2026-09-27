@@ -104,6 +104,9 @@ func Main(args []string) int {
 	case "serve":
 		return runServe(cfg, args[1:])
 	case "_attach-loop":
+		if len(args) > 2 && args[1] == "--host" {
+			return report(launcher.AttachLoopHost(cfg, args[2]))
+		}
 		return report(launcher.AttachLoop(cfg))
 	case "_focus":
 		return report(launcher.SetTerminalFocus(len(args) > 1 && args[1] == "1"))

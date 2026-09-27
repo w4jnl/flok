@@ -74,7 +74,7 @@ func TestClassify(t *testing.T) {
 	if !Auth.SlowRetry() || Unreachable.SlowRetry() || Auth.Label() != "needs auth" || Disabled.Label() != "off" || Auth.Hint(hosts.Host{Target: "b"}) == "" {
 		t.Fatal("state helpers")
 	}
-	if backoff(0, 30) != 1e9 || backoff(3, 30) != 8e9 || backoff(9, 30) != 30e9 || backoff(20, 0) != 30e9 {
-		t.Fatalf("backoff %v %v %v %v", backoff(0, 30), backoff(3, 30), backoff(9, 30), backoff(20, 0))
+	if Backoff(0, 30) != 1e9 || Backoff(3, 30) != 8e9 || Backoff(9, 30) != 30e9 || Backoff(20, 0) != 30e9 {
+		t.Fatalf("backoff %v %v %v %v", Backoff(0, 30), Backoff(3, 30), Backoff(9, 30), Backoff(20, 0))
 	}
 }

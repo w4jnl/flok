@@ -21,6 +21,8 @@ import (
 	"golang.org/x/term"
 
 	"github.com/w4jnl/flok/internal/config"
+	"github.com/w4jnl/flok/internal/hosts"
+	"github.com/w4jnl/flok/internal/remote"
 	"github.com/w4jnl/flok/internal/snapshot"
 	"github.com/w4jnl/flok/internal/state"
 	"github.com/w4jnl/flok/internal/termtheme"
@@ -44,6 +46,13 @@ type Runtime struct {
 	TerminalApp    string    `json:"terminal_app,omitempty"` // TERM_PROGRAM of the terminal that ran `flok up`
 	TmuxVersion    string    `json:"tmux_version,omitempty"` // `tmux -V` seen by `flok up`, so other commands skip the fork
 	StartedAt      time.Time `json:"started_at"`
+	// Remote hosts (absent without any): RightPane keeps meaning "the pane next to the sidebar in
+	// window 0", which is the front host's work pane; LocalPane is the local attach loop's pane
+	// wherever it currently sits, FrontHost names whose pane is in front ("" = local) and Hosts
+	// the parked window and pane of every host.
+	LocalPane string              `json:"local_pane,omitempty"`
+	FrontHost string              `json:"front_host,omitempty"`
+	Hosts     map[string]HostPane `json:"hosts,omitempty"`
 }
 
 // Version is the tmux version recorded by `flok up` (detected when the record predates it).
@@ -494,11 +503,24 @@ func createOuter(cfg config.Config, bin, confPath string, outer *tmux.Local, ses
 		"select-layout", "-t", sess, "main-vertical")
 	_, _ = outer.Run("select-pane", "-t", right)
 	// The sidebar pane is already running and may have recorded its pid and client tty: merge.
-	return UpdateRuntime(func(r *Runtime) {
+	if err := UpdateRuntime(func(r *Runtime) {
 		r.OuterSocket, r.OuterSession, r.SidebarPane, r.RightPane = cfg.Outer.Socket, sess, sidebar, right
 		r.InnerSocket, r.FullWidth, r.RailWidth = cfg.Inner.Socket, cfg.Sidebar.Width, cfg.Sidebar.RailWidth
 		r.TerminalApp, r.TmuxVersion, r.StartedAt = os.Getenv("TERM_PROGRAM"), ver.String(), time.Now()
-	})
+	}); err != nil {
+		return err
+	}
+	// remote hosts get their parked work panes now, so they are connecting while the client
+	// attaches; a failure here is reported, never fatal
+	if set, err := hosts.Load(config.StateDir()); err == nil && len(set.Enabled()) > 0 {
+		_ = UpdateRuntime(func(r *Runtime) { r.LocalPane = right })
+		for _, h := range set.Enabled() {
+			if _, err := EnsureHostPane(outer, sess, bin, h.Name); err != nil {
+				fmt.Fprintf(os.Stderr, "flok: host %s: %v\n", h.Name, err)
+			}
+		}
+	}
+	return nil
 }
 
 // ensureSidebar respawns a dead sidebar pane in an existing outer session.
@@ -618,6 +640,7 @@ func AttachLoop(cfg config.Config) error {
 	if outer != nil {
 		_, _ = outer.Run("kill-server")
 	}
+	remote.CloseMasters(cfg.Hosts, config.StateDir())
 	return nil
 }
 
@@ -631,6 +654,7 @@ func Down(cfg config.Config) error {
 	snapshot.Remove(config.StateDir())
 	resetKeepAwake()
 	StopBar()
+	remote.CloseMasters(cfg.Hosts, config.StateDir())
 	if err != nil && strings.Contains(err.Error(), "no server running") {
 		return nil
 	}
