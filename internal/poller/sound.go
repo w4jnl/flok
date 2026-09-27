@@ -70,6 +70,14 @@ func (p *Poller) soundTransitions() {
 
 func (p *Poller) terminalUnfocused() bool { return p.d.Store != nil && !p.d.Store.TerminalFocused() }
 
+// PlaySound plays a sound another host reported (its own poller decided it is due), through
+// the same rate limits as local ones; pane is the PaneRef string.
+func (p *Poller) PlaySound(pane, kind string) {
+	if p.d.Cfg.Sounds.Enabled {
+		p.playIfAllowed(pane, kind)
+	}
+}
+
 // playIfAllowed passes a sound through the per-pane and global rate limits to Deps.Sound. pane
 // is the PaneRef string ("%12", "beta:%12"); notify.Allowed maps it to a safe file name.
 func (p *Poller) playIfAllowed(pane, kind string) {

@@ -55,7 +55,8 @@ func TestStoreEventWanted(t *testing.T) {
 	root := "/s"
 	for name, want := range map[string]bool{
 		"/s/agents/1.json": true, "/s/seen/1.json": true, "/s/sidebar-hidden": true, "/s/terminal-theme": true, "/s/terminal-focus": false,
-		"/s/keep-awake":         true,
+		"/s/keep-awake": true,
+		"/s/hosts.json": true, "/s/hosts.json.lock": false, "/s/hosts.json.7.tmp": false,
 		"/s/agents/1.json.lock": false, "/s/agents/1.json.123.tmp": false,
 		"/s/snapshot.json": false, "/s/snapshot.json.42.tmp": false, "/s/runtime.json": false, "/s/events.log": false,
 	} {

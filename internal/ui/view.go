@@ -14,6 +14,7 @@ import (
 type layout struct {
 	rail                  bool
 	brandRows             int // lines the brand takes on top (see brand.go)
+	hostsTop, hostsRows   int // servers panel (multi-host only)
 	spacesTop, spacesRows int
 	agentsTop, agentsRows int // agentsRows counts agents, each perAgent lines tall
 	footerY               int
@@ -26,8 +27,17 @@ func (m Model) layout() layout {
 	h := m.height
 	nS, nA := len(m.snap.Spaces), len(m.snap.Agents)
 	brand := m.brandRows()
+	nH := m.hostRowCount() // 0 without remote hosts: the layout is the single-host one
+	hostsRows := nH
+	if max := h / 4; nH > 0 && hostsRows > max && max >= 1 {
+		hostsRows = max
+	}
 	if m.isRail() {
-		avail := h - 1 - brand // separator, brand mark
+		extra := 0 // host rows and their separator
+		if nH > 0 {
+			extra = hostsRows + 1
+		}
+		avail := h - 1 - brand - extra // separator, brand mark
 		if avail < 2 {
 			avail = 2
 		}
@@ -44,10 +54,15 @@ func (m Model) layout() layout {
 			s += extra
 			a -= extra
 		}
-		return layout{rail: true, brandRows: brand, spacesTop: brand, spacesRows: s, agentsTop: brand + s + 1, agentsRows: a, perAgent: 1}
+		return layout{rail: true, brandRows: brand, hostsTop: brand, hostsRows: hostsRows, spacesTop: brand + extra, spacesRows: s,
+			agentsTop: brand + extra + s + 1, agentsRows: a, perAgent: 1}
 	}
 	per := m.agentRows()
-	avail := h - 4 - brand // two headers, one blank line, footer, brand line
+	extra := 0 // servers header, rows and the blank line under them
+	if nH > 0 {
+		extra = 1 + hostsRows + 1
+	}
+	avail := h - 4 - brand - extra // two headers, one blank line, footer, brand line
 	if avail < 1+per {
 		avail = 1 + per
 	}
@@ -76,7 +91,8 @@ func (m Model) layout() layout {
 	if a < 1 {
 		a = 1
 	}
-	return layout{brandRows: brand, spacesTop: 1 + brand, spacesRows: s, agentsTop: 1 + brand + s + 2, agentsRows: a, footerY: h - 1, perAgent: per}
+	return layout{brandRows: brand, hostsTop: 1 + brand, hostsRows: hostsRows, spacesTop: 1 + brand + extra, spacesRows: s,
+		agentsTop: 1 + brand + extra + s + 2, agentsRows: a, footerY: h - 1, perAgent: per}
 }
 
 // agentRows is the configured number of lines per agent row, clamped to 1..2.
@@ -94,6 +110,10 @@ func (m Model) agentRows() int {
 // rowAt maps a screen row to (panel, index) for mouse clicks.
 func (m Model) rowAt(y int) (int, int, bool) {
 	lay := m.layout()
+	if lay.hostsRows > 0 && y >= lay.hostsTop && y < lay.hostsTop+lay.hostsRows {
+		i := y - lay.hostsTop + m.offset[panelHosts]
+		return panelHosts, i, i < m.hostRowCount()
+	}
 	if y >= lay.spacesTop && y < lay.spacesTop+lay.spacesRows {
 		i := y - lay.spacesTop + m.offset[panelSpaces]
 		return panelSpaces, i, i < len(m.snap.Spaces)
@@ -162,7 +182,20 @@ func (m Model) viewFull() string {
 	if lay.brandRows > 0 {
 		lines = append(lines, pad(m.brandWordmark(), w, plain))
 	}
-	lines = append(lines, pad(hdr.Render("sessions"), w, plain))
+	sessions := "sessions"
+	if lay.hostsRows > 0 {
+		lines = append(lines, pad(hdr.Render("servers"), w, plain))
+		for r := 0; r < lay.hostsRows; r++ {
+			if i := m.offset[panelHosts] + r; i < m.hostRowCount() {
+				lines = append(lines, m.hostRow(i, w))
+			} else {
+				lines = append(lines, blank)
+			}
+		}
+		lines = append(lines, blank)
+		sessions = "sessions · " + hostLabel(m.front)
+	}
+	lines = append(lines, pad(hdr.Render(sessions), w, plain))
 	for r := 0; r < lay.spacesRows; r++ {
 		if i := m.offset[panelSpaces] + r; i < len(m.snap.Spaces) {
 			lines = append(lines, m.spaceRow(i, w))
@@ -278,7 +311,7 @@ func (m Model) agentRow(i, w, per int) []string {
 	t := m.theme
 	a := m.snap.Agents[i]
 	sel := m.panel == panelAgents && m.cursor[panelAgents] == i
-	focused := a.PaneID != "" && a.PaneID == m.snap.Focus.PaneID
+	focused := a.PaneID != "" && a.PaneID == m.snap.Focus.PaneID && a.Host == m.snap.Focus.Host
 	base := lipgloss.NewStyle()
 	if focused {
 		base = base.Background(t.CurrentLine)
@@ -289,6 +322,9 @@ func (m Model) agentRow(i, w, per int) []string {
 	}
 	if !a.HasHooks {
 		label = "~" + label
+	}
+	if a.Host != "" && per < 2 { // one line per agent: the host goes in front of the label
+		label = a.Host + "/" + label
 	}
 	right, rcol := m.agentRight(a)
 	if per > 1 { // the kind moves to the second line
@@ -328,6 +364,9 @@ func (m Model) agentRow(i, w, per int) []string {
 		return []string{pad(row, w, base)}
 	}
 	sub := a.Kind
+	if a.Host != "" {
+		sub = a.Host + " · " + sub
+	}
 	if a.Title != "" && !strings.EqualFold(a.Title, a.Name) && !genericTitle(a.Title) {
 		sub += " · " + a.Title
 	}
@@ -385,6 +424,29 @@ func (m Model) viewRail() string {
 			lines = append(lines, pad(l, w, plain))
 		}
 	}
+	if lay.hostsRows > 0 { // "›lo ◐": cursor, two letters, the host's state glyph
+		abbr := m.hostAbbrevs()
+		for r := 0; r < lay.hostsRows; r++ {
+			i := m.offset[panelHosts] + r
+			if i >= m.hostRowCount() {
+				lines = append(lines, strings.Repeat(" ", w))
+				continue
+			}
+			host, _ := m.hostAt(i)
+			_, glyph, col, _, _ := m.hostRowParts(i)
+			sel := m.panel == panelHosts && m.cursor[panelHosts] == i
+			base := lipgloss.NewStyle()
+			if host == m.front {
+				base = base.Background(t.CurrentLine)
+			}
+			name := base.Foreground(t.FG).Bold(sel)
+			if col == t.Red {
+				name = base.Foreground(t.Red).Bold(sel)
+			}
+			lines = append(lines, pad(marker(sel, base)+name.Render(abbr[i])+base.Render(" ")+base.Foreground(col).Render(glyph), w, base))
+		}
+		lines = append(lines, dim.Render(strings.Repeat("─", w)))
+	}
 
 	for r := 0; r < lay.spacesRows; r++ {
 		i := m.offset[panelSpaces] + r
@@ -425,7 +487,7 @@ func (m Model) viewRail() string {
 			continue
 		}
 		base := lipgloss.NewStyle()
-		if a.PaneID != "" && a.PaneID == m.snap.Focus.PaneID {
+		if a.PaneID != "" && a.PaneID == m.snap.Focus.PaneID && a.Host == m.snap.Focus.Host {
 			base = base.Background(t.CurrentLine)
 		}
 		mark := ""

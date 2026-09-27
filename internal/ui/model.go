@@ -14,11 +14,13 @@ import (
 
 	"github.com/w4jnl/flok/internal/agent"
 	"github.com/w4jnl/flok/internal/config"
+	"github.com/w4jnl/flok/internal/hosts"
 	"github.com/w4jnl/flok/internal/keys"
+	"github.com/w4jnl/flok/internal/launcher"
 	"github.com/w4jnl/flok/internal/merge"
-	"github.com/w4jnl/flok/internal/nav"
 	"github.com/w4jnl/flok/internal/notify"
 	"github.com/w4jnl/flok/internal/poller"
+	"github.com/w4jnl/flok/internal/remote"
 	"github.com/w4jnl/flok/internal/rules"
 	"github.com/w4jnl/flok/internal/snapshot"
 	"github.com/w4jnl/flok/internal/state"
@@ -42,6 +44,9 @@ type Deps struct {
 	Feat        tmux.Features       // what the tmux both servers run on can do (popups, …)
 	// Awake takes the power assertion while the keep-awake marker is on; nil disables keep-awake.
 	Awake func() (Releaser, error)
+	// NewRemote builds the remote-host manager reporting to sink; nil = no remote hosts (tests).
+	NewRemote func(sink chan<- remote.Msg) *remote.Manager
+	Bin       string // this executable, for the parked host panes
 }
 
 const (
@@ -53,13 +58,22 @@ type Model struct {
 	d            Deps
 	theme        Theme
 	p            *poller.Poller // the state pipeline (polls, merge, sounds); shared by every Model copy
-	snap         merge.Snapshot // what the view renders: the poller's merge
+	snap         merge.Snapshot // what the panels render: the federated view, sessions of the front host only
+	local        merge.Snapshot // the local poller's merge
+	fed          merge.Snapshot // local and every connected host (published)
+	remote       *remote.Manager
+	sink         chan remote.Msg
+	remotes      map[string]hostView // per remote host, keyed by name
+	hostSet      hosts.Set           // the registry as last applied
+	hostList     []hosts.Host
+	hostsApplied bool
+	front        string // host whose work pane is next to the sidebar; "" = local
 	clientTTY    string
 	width        int
 	height       int
 	panel        int
-	cursor       [2]int
-	offset       [2]int
+	cursor       [3]int // per panel: spaces, agents, hosts
+	offset       [3]int
 	frame        int
 	animating    bool
 	errText      string
@@ -115,11 +129,24 @@ func New(d Deps) Model {
 		themeRec, _ = d.Store.TerminalTheme()
 	}
 	dark := d.Cfg.Theme.IsDark(themeRec)
-	m := Model{d: d, dark: dark, themeRec: themeRec, theme: NewTheme(d.Cfg.Theme.Resolve(dark)), clientTTY: d.ClientTTY, vc: &viewCache{}}
+	m := Model{d: d, dark: dark, themeRec: themeRec, theme: NewTheme(d.Cfg.Theme.Resolve(dark)), clientTTY: d.ClientTTY, vc: &viewCache{},
+		remotes: map[string]hostView{}}
+	if d.Outer != nil { // a remote host may be in front (flok reload keeps the layout)
+		if rt, err := launcher.ReadRuntime(); err == nil && rt.FrontHost != "" && rt.RightPane == d.RightPane {
+			m.front = rt.FrontHost
+			if rt.LocalPane != "" {
+				d.RightPane = rt.LocalPane // the local client's tty comes from the local pane
+			}
+		}
+	}
 	if m.clientTTY == "" && d.Outer != nil && d.RightPane != "" {
 		if tty, err := tmux.Display(d.Outer, d.RightPane, "#{pane_tty}"); err == nil {
 			m.clientTTY = tty
 		}
+	}
+	if d.NewRemote != nil {
+		m.sink = make(chan remote.Msg, 256)
+		m.remote = d.NewRemote(m.sink)
 	}
 	var sounder notify.Sounder = notify.Noop{}
 	if d.Cfg.Sounds.Enabled && d.Cfg.Sounds.Player != "none" {
@@ -253,7 +280,7 @@ func (m Model) pollRegistryIfDue() tea.Cmd { return registryCmd(m.p.PollRegistry
 func (m Model) ClientTTY() string { return m.clientTTY }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.poll(), m.tick(), m.waitChange(), m.pollRegistryIfEnabled(), m.registryTick(), m.screenTick())
+	return batch(m.poll(), m.tick(), m.waitChange(), m.pollRegistryIfEnabled(), m.registryTick(), m.screenTick(), m.loadHosts(), m.waitRemote())
 }
 
 func (m Model) screenTick() tea.Cmd {
@@ -394,6 +421,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg.(type) { // timers only schedule work: nothing to redraw
 	case tickMsg:
 		m.polls++
+		if m.retryCountdown() { // a host row counts down to its next attempt
+			m.vc.valid = false
+		}
 		return m, tea.Batch(m.poll(), m.tick())
 	case registryTickMsg:
 		return m, tea.Batch(m.pollRegistryIfDue(), m.registryTick())
@@ -454,7 +484,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.themeRec = msg.Theme
 		wasIdle := m.idle()
-		m.unfocused, m.hidden = msg.Unfocused, msg.Hidden
+		if m.unfocused != msg.Unfocused {
+			m.unfocused = msg.Unfocused
+			m.syncVisible() // hosts stop marking done/idle for a pane nobody looks at
+		}
+		m.hidden = msg.Hidden
 		if msg.zoomed != nil {
 			m.hidden = *msg.zoomed
 			if m.d.Store != nil && *msg.zoomed != msg.Hidden { // marker went stale (crash between zoom and write)
@@ -485,7 +519,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, batch(append(cmds, m.animCmd())...)
 		}
 		m.errText = ""
-		m.snap = m.p.Snap()
+		m.local = m.p.Snap()
+		m.refederate()
 		m.publish() // for flok-bar and other out-of-process readers
 		m.clamp()
 		return m, batch(append(cmds, m.animCmd())...)
@@ -494,8 +529,42 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.errText = msg.err.Error()
 		}
 		return m, m.poll()
-	case stateChangedMsg: // hook record, seen mark or focus/hidden marker changed on disk
-		return m, tea.Batch(m.rebuild(true), m.waitChange())
+	case frontMsg: // a host's work pane came to the front
+		if msg.err != nil {
+			m.errText = msg.err.Error()
+		}
+		if msg.pane != "" {
+			m.front, m.d.RightPane = msg.host, msg.pane
+			m.debugf("front %s (%s)", hostLabel(msg.host), msg.pane)
+			m.syncVisible()
+			m.refederate()
+			m.publish()
+			m.clamp()
+		}
+		return m, batch(m.hostPanesCmd(), m.poll()) // a host that left while in front loses its pane now
+	case hostsMsg: // hosts.json (re)read
+		if msg.err != nil {
+			m.errText = msg.err.Error()
+			return m, nil
+		}
+		return m, m.applyHosts(msg.set)
+	case remoteMsg:
+		m.onRemote(msg.Msg)
+		return m, m.waitRemote()
+	case hostPanesMsg, hostToggleMsg:
+		var err error
+		switch v := msg.(type) {
+		case hostPanesMsg:
+			err = v.err
+		case hostToggleMsg:
+			err = v.err
+		}
+		if err != nil {
+			m.errText = err.Error()
+		}
+		return m, nil
+	case stateChangedMsg: // hook record, seen mark, hosts.json or a marker changed on disk
+		return m, batch(m.rebuild(true), m.waitChange(), m.loadHosts())
 	case registryTickMsg:
 		return m, tea.Batch(m.pollRegistryIfDue(), m.registryTick())
 	case registryMsg:
@@ -565,11 +634,19 @@ func (m Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.cursor[m.panel] = 0
 	case "G", "end":
 		m.cursor[m.panel] = 1 << 30
-	case "tab", "shift+tab", "h", "l", "left", "right":
-		m.panel ^= 1
+	case "tab", "l", "right":
+		m.cyclePanel(1)
+	case "shift+tab", "h", "left":
+		m.cyclePanel(-1)
 	case "enter", " ":
 		m.focused = false
 		return m, m.activate(m.panel, m.cursor[m.panel], false)
+	case "c": // servers panel: connect / disconnect the selected host
+		if m.panel == panelHosts {
+			if host, ok := m.hostAt(m.cursor[panelHosts]); ok {
+				return m, m.toggleHostCmd(host)
+			}
+		}
 	case "r":
 		m.readPrefix()
 		return m, m.poll()
@@ -616,34 +693,35 @@ func (m Model) onMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// activate switches the inner client to the selected row; unless keepFocus, outer focus then
-// moves to the work pane.
+// activate opens the selected row: a servers row brings that host's work pane to the front, a
+// session or agent row moves its host's client there (bringing the host to the front first when
+// needed); unless keepFocus, outer focus then moves to the work pane.
 func (m Model) activate(panel, idx int, keepFocus bool) tea.Cmd {
-	inner, tty, outer, right, onSwitch := m.d.Inner, m.snap.Focus.ClientTTY, m.d.Outer, m.d.RightPane, m.d.OnSwitch
-	var sess, win, pane string
 	switch panel {
+	case panelHosts:
+		host, ok := m.hostAt(idx)
+		if !ok {
+			return nil
+		}
+		outer := m.d.Outer
+		return m.swapCmd(host, func(pane string) error {
+			if !keepFocus && outer != nil && pane != "" {
+				_, _ = outer.Run("select-pane", "-t", pane)
+			}
+			return nil
+		})
 	case panelSpaces:
 		if idx < 0 || idx >= len(m.snap.Spaces) {
 			return nil
 		}
-		sess = m.snap.Spaces[idx].SessionID
+		sp := m.snap.Spaces[idx]
+		return m.gotoCmd(sp.Host, sp.SessionID, "", "", keepFocus)
 	default:
 		if idx < 0 || idx >= len(m.snap.Agents) {
 			return nil
 		}
 		a := m.snap.Agents[idx]
-		sess, win, pane = a.SessionID, a.WindowID, a.PaneID
-		m.p.MarkSeen(pane)
-	}
-	return func() tea.Msg {
-		err := nav.Go(inner, tty, sess, win, pane)
-		if err == nil && !keepFocus && outer != nil && right != "" {
-			_, _ = outer.Run("select-pane", "-t", right)
-		}
-		if err == nil && onSwitch != nil && pane != "" {
-			onSwitch(pane)
-		}
-		return switchedMsg{err}
+		return m.gotoCmd(a.Host, a.SessionID, a.WindowID, a.PaneID, keepFocus)
 	}
 }
 
@@ -691,10 +769,13 @@ func (m Model) focusRight() tea.Cmd {
 
 // clamp keeps cursors inside their lists and offsets such that the cursor row is visible.
 func (m *Model) clamp() {
-	lens := [2]int{len(m.snap.Spaces), len(m.snap.Agents)}
+	lens := [3]int{len(m.snap.Spaces), len(m.snap.Agents), m.hostRowCount()}
 	lay := m.layout()
-	rows := [2]int{lay.spacesRows, lay.agentsRows}
-	for p := 0; p < 2; p++ {
+	rows := [3]int{lay.spacesRows, lay.agentsRows, lay.hostsRows}
+	if !m.multiHost() && m.panel == panelHosts {
+		m.panel = panelSpaces
+	}
+	for p := 0; p < 3; p++ {
 		if m.cursor[p] >= lens[p] {
 			m.cursor[p] = lens[p] - 1
 		}

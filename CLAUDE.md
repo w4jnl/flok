@@ -78,6 +78,15 @@ One binary, several roles selected by subcommand (`internal/cli/root.go`):
   tmux command) with a per-host store under `$FLOK_STATE/hosts/<name>/`; states and backoff in
   `internal/remote/ssh.go`. ssh argv is always exec'd, never a shell; remote strings come from
   `hosts.Validate`-checked fields through `tmux.ShellQuote`.
+- `flok _attach-loop --host <name>` (`launcher.AttachLoopHost`) runs in a host's parked outer
+  window `flok-host-<name>` and keeps `ssh -t … tmux attach` alive; `internal/ui/hosts.go` is the
+  sidebar's side: `hosts.json` changes (store watcher) → `applyHosts` → `remote.Manager.Apply`
+  plus `launcher.EnsureHostPane`/`KillHostPane`; manager messages → `onRemote`; `refederate`
+  joins the local merge and the hosts' views (`m.fed` published, `m.snap` rendered with the
+  front host's sessions); `swapCmd` swaps a host's parked pane with the one next to the sidebar
+  (`swap-pane`, zoom preserved) and records `right_pane`/`front_host` in runtime.json; `gotoCmd`
+  swaps first when the target host is not in front. Without a host in `hosts.json` every one of
+  these is a no-op and the single-host code paths, frames and JSON stay byte-identical.
 - `flok jump|next|prev|toggle|hide|focus|reload` (`internal/cli/nav.go`): one-shot commands
   bound in the user's tmux.conf. They build a throwaway merge snapshot (no registry poll, too
   slow) and read `runtime.json` to find the outer panes and the inner client tty.
