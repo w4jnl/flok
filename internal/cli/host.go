@@ -1,0 +1,222 @@
+package cli
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"strings"
+	"text/tabwriter"
+	"time"
+
+	"github.com/w4jnl/flok/internal/config"
+	"github.com/w4jnl/flok/internal/hosts"
+)
+
+const hostUsage = `usage: flok host <command>
+
+  add <name> <target> [--mode full|plain] [--socket name] [--session name]
+                      [--flok /path/to/flok] [--disabled]
+              register a remote tmux server; <target> is what ssh accepts (alias, host,
+              user@host). full runs flok serve on the host (hook states, needs flok there),
+              plain drives its tmux over ssh (titles and screen rules only)
+  remove <name>       forget the host (and its local cache)
+  connect <name>      enable the host: the sidebar connects now and at every flok up
+  disconnect <name>   disable the host: disconnect and stay disconnected across restarts
+  list [--json|--names]
+              show the registered hosts
+
+Hosts live in the state dir (hosts.json); [hosts] in config.toml holds the ssh defaults.`
+
+// hostCmd is `flok host` with its environment injected for tests.
+type hostCmd struct {
+	dir       string
+	now       func() time.Time
+	out, errw io.Writer
+}
+
+func runHost(_ config.Config, args []string) int {
+	return hostCmd{dir: config.StateDir(), now: time.Now, out: os.Stdout, errw: os.Stderr}.run(args)
+}
+
+func (c hostCmd) run(args []string) int {
+	if len(args) == 0 || args[0] == "help" || args[0] == "-h" || args[0] == "--help" {
+		fmt.Fprintln(c.errw, hostUsage)
+		if len(args) == 0 {
+			return 2
+		}
+		return 0
+	}
+	switch args[0] {
+	case "add":
+		return c.add(args[1:])
+	case "remove", "rm":
+		return c.remove(args[1:])
+	case "connect", "enable":
+		return c.setEnabled(args[1:], true)
+	case "disconnect", "disable":
+		return c.setEnabled(args[1:], false)
+	case "list", "ls":
+		return c.list(args[1:])
+	}
+	fmt.Fprintf(c.errw, "flok host: unknown command %q\n\n%s\n", args[0], hostUsage)
+	return 2
+}
+
+func (c hostCmd) fail(err error) int {
+	fmt.Fprintln(c.errw, "flok host:", err)
+	return 1
+}
+
+func (c hostCmd) add(args []string) int {
+	h := hosts.Host{Mode: hosts.ModeFull, Enabled: true, AddedAt: c.now()}
+	var pos []string
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		value := func() (string, bool) {
+			if i+1 >= len(args) {
+				fmt.Fprintf(c.errw, "flok host add: %s needs a value\n", a)
+				return "", false
+			}
+			i++
+			return args[i], true
+		}
+		var v string
+		var ok bool
+		switch a {
+		case "--mode":
+			if v, ok = value(); !ok {
+				return 2
+			}
+			h.Mode = hosts.Mode(v)
+		case "--socket":
+			if v, ok = value(); !ok {
+				return 2
+			}
+			h.Socket = v
+		case "--session":
+			if v, ok = value(); !ok {
+				return 2
+			}
+			h.Session = v
+		case "--flok":
+			if v, ok = value(); !ok {
+				return 2
+			}
+			h.Flok = v
+		case "--disabled":
+			h.Enabled = false
+		default:
+			if strings.HasPrefix(a, "-") {
+				fmt.Fprintf(c.errw, "flok host add: unknown flag %s\n\n%s\n", a, hostUsage)
+				return 2
+			}
+			pos = append(pos, a)
+		}
+	}
+	if len(pos) != 2 {
+		fmt.Fprintf(c.errw, "flok host add: need <name> and <target>\n\n%s\n", hostUsage)
+		return 2
+	}
+	h.Name, h.Target = pos[0], pos[1]
+	if _, err := hosts.Update(c.dir, func(s *hosts.Set) error { return s.Add(h) }); err != nil {
+		return c.fail(err)
+	}
+	state := "connects at the next flok up (or now, while the sidebar runs)"
+	if !h.Enabled {
+		state = "disabled; flok host connect " + h.Name + " enables it"
+	}
+	fmt.Fprintf(c.out, "added %s (%s, %s): %s\n", h.Name, h.Target, h.Mode, state)
+	return 0
+}
+
+func (c hostCmd) remove(args []string) int {
+	if len(args) != 1 {
+		fmt.Fprintf(c.errw, "flok host remove: need <name>\n\n%s\n", hostUsage)
+		return 2
+	}
+	name := args[0]
+	if err := hosts.ValidateName(name); err != nil {
+		return c.fail(err)
+	}
+	if _, err := hosts.Update(c.dir, func(s *hosts.Set) error {
+		if !s.Remove(name) {
+			return fmt.Errorf("no host %q (flok host list)", name)
+		}
+		return nil
+	}); err != nil {
+		return c.fail(err)
+	}
+	_ = os.RemoveAll(hosts.Dir(c.dir, name))
+	fmt.Fprintf(c.out, "removed %s\n", name)
+	return 0
+}
+
+func (c hostCmd) setEnabled(args []string, on bool) int {
+	verb := "connect"
+	if !on {
+		verb = "disconnect"
+	}
+	if len(args) != 1 {
+		fmt.Fprintf(c.errw, "flok host %s: need <name>\n\n%s\n", verb, hostUsage)
+		return 2
+	}
+	name := args[0]
+	if err := hosts.ValidateName(name); err != nil {
+		return c.fail(err)
+	}
+	if _, err := hosts.Update(c.dir, func(s *hosts.Set) error {
+		if !s.SetEnabled(name, on) {
+			return fmt.Errorf("no host %q (flok host list)", name)
+		}
+		return nil
+	}); err != nil {
+		return c.fail(err)
+	}
+	if on {
+		fmt.Fprintf(c.out, "%s enabled: the sidebar connects now (or at the next flok up)\n", name)
+	} else {
+		fmt.Fprintf(c.out, "%s disabled: disconnected, stays off until flok host connect %s\n", name, name)
+	}
+	return 0
+}
+
+func (c hostCmd) list(args []string) int {
+	set, err := hosts.Load(c.dir)
+	if err != nil {
+		return c.fail(err)
+	}
+	switch {
+	case len(args) == 1 && args[0] == "--json":
+		enc := json.NewEncoder(c.out)
+		enc.SetIndent("", "  ")
+		_ = enc.Encode(set)
+		return 0
+	case len(args) == 1 && args[0] == "--names":
+		for _, n := range set.Names() {
+			fmt.Fprintln(c.out, n)
+		}
+		return 0
+	case len(args) != 0:
+		fmt.Fprintf(c.errw, "flok host list: unknown argument %s\n\n%s\n", args[0], hostUsage)
+		return 2
+	}
+	if len(set.Hosts) == 0 {
+		fmt.Fprintln(c.out, "no remote hosts; add one with: flok host add <name> <user@host>")
+		return 0
+	}
+	tw := tabwriter.NewWriter(c.out, 0, 8, 2, ' ', 0)
+	fmt.Fprintln(tw, "NAME\tTARGET\tMODE\tENABLED\tLAST CONNECTED")
+	for _, h := range set.Hosts {
+		enabled, last := "yes", "never"
+		if !h.Enabled {
+			enabled = "no"
+		}
+		if !h.LastConnected.IsZero() {
+			last = h.LastConnected.Local().Format("2006-01-02 15:04")
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", h.Name, h.Target, h.Mode, enabled, last)
+	}
+	_ = tw.Flush()
+	return 0
+}
