@@ -11,9 +11,11 @@ import (
 	"github.com/w4jnl/flok/internal/awake"
 	"github.com/w4jnl/flok/internal/claudereg"
 	"github.com/w4jnl/flok/internal/config"
+	"github.com/w4jnl/flok/internal/hosts"
 	"github.com/w4jnl/flok/internal/install"
 	"github.com/w4jnl/flok/internal/launcher"
 	"github.com/w4jnl/flok/internal/notify"
+	"github.com/w4jnl/flok/internal/remote"
 	"github.com/w4jnl/flok/internal/rules"
 	"github.com/w4jnl/flok/internal/state"
 	"github.com/w4jnl/flok/internal/tmux"
@@ -245,6 +247,13 @@ func runDoctor(cfg config.Config) int {
 		}
 	} else {
 		add("ok", "menu bar disabled ([bar] enabled = false)")
+	}
+
+	// remote hosts: one probe per registered host through the same ssh the sidebar uses
+	if set, err := hosts.Load(config.StateDir()); err != nil {
+		add("warn", "hosts.json: %v", err)
+	} else {
+		out = append(out, hostChecks(cfg, config.StateDir(), set, remote.Exec, time.Duration(cfg.Hosts.ConnectTimeoutS+10)*time.Second)...)
 	}
 
 	rc := 0

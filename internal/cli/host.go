@@ -22,10 +22,12 @@ import (
 const hostUsage = `usage: flok host <command>
 
   add <name> <target> [--mode full|plain] [--socket name] [--session name]
-                      [--flok /path/to/flok] [--disabled]
+                      [--flok /path/to/flok] [--term name] [--disabled]
               register a remote tmux server; <target> is what ssh accepts (alias, host,
               user@host). full runs flok serve on the host (hook states, needs flok there),
               plain drives its tmux over ssh (titles and screen rules only)
+                      --term sets TERM for the attach when the host lacks the tmux-256color
+                      terminfo (flok doctor tells; screen-256color usually works)
   remove <name>       forget the host (and its local cache)
   connect <name>      enable the host: the sidebar connects now and at every flok up
   disconnect <name>   disable the host: disconnect and stay disconnected across restarts
@@ -122,6 +124,11 @@ func (c hostCmd) add(args []string) int {
 				return 2
 			}
 			h.Flok = v
+		case "--term":
+			if v, ok = value(); !ok {
+				return 2
+			}
+			h.Term = v
 		case "--disabled":
 			h.Enabled = false
 		default:
