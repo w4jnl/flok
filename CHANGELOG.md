@@ -20,7 +20,9 @@ updates this file first. Dates are the tag dates.
   backoff; `needs auth`, `no flok`, `busy` and `incompatible` say what to fix. `flok goto
   beta:%12` and `flok jump` reach agents on any host (bringing that host to the front first),
   `flok next`/`prev` walk the front host, `flok host front <name>|local` switches hosts from a
-  key binding or script. Without any host nothing changes.
+  key binding or script. The menu bar tags remote agents with `@host` and lists a row per host
+  (agents and waiting count, or why it is down); clicking one brings its pane to the front.
+  Without any host nothing changes.
 - `prefix u` in the tmux snippet toggles keep-awake; `flok keep-awake --notify` shows the new
   state on tmux's status line instead of printing it, and the keybinds popup labels the key
   "keep the Mac awake (toggle)". Existing installs add the line by hand (`flok install --tmux`
