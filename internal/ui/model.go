@@ -563,8 +563,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.errText = err.Error()
 		}
 		return m, nil
-	case stateChangedMsg: // hook record, seen mark, hosts.json or a marker changed on disk
-		return m, batch(m.rebuild(true), m.waitChange(), m.loadHosts())
+	case stateChangedMsg: // hook record, seen mark, hosts.json, a request or a marker changed on disk
+		return m, batch(m.rebuild(true), m.waitChange(), m.loadHosts(), m.drainRequests())
+	case requestsMsg: // goto / front filed by another flok process
+		var cmds []tea.Cmd
+		for _, r := range msg.reqs {
+			cmds = append(cmds, m.runRequest(r))
+		}
+		return m, batch(cmds...)
 	case registryTickMsg:
 		return m, tea.Batch(m.pollRegistryIfDue(), m.registryTick())
 	case registryMsg:

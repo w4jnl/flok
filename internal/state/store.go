@@ -19,6 +19,7 @@ type Store struct{ Dir string }
 func New(dir string) *Store {
 	_ = os.MkdirAll(filepath.Join(dir, "agents"), 0o755)
 	_ = os.MkdirAll(filepath.Join(dir, "seen"), 0o755)
+	_ = os.MkdirAll(filepath.Join(dir, RequestsDir), 0o755)
 	return &Store{Dir: dir}
 }
 

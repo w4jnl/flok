@@ -182,6 +182,34 @@ expect "beta reconnects once reachable" '^beta=connected gamma=connected$' "$(sn
 for _ in $(seq 1 80); do [ "$(tmux -L e2e-beta list-clients | wc -l | tr -d ' ')" = 1 ] && break; sleep 0.1; done
 expect "the parked pane re-attaches" '^1$' "$(tmux -L e2e-beta list-clients | wc -l | tr -d ' ')"
 
+# --- part 3: navigation from the shell (key bindings, the menu bar) crosses hosts --------------
+"$BIN" host front local >/dev/null
+for _ in $(seq 1 50); do [ "$(rt "r.get('front_host','')")" = "" ] && break; sleep 0.1; done
+expect "host front local brings the local pane back" '^$' "$(rt "r.get('front_host','')")"
+BETA_AGENT=$(eval echo "\$HOST_beta_PANE")
+"$BIN" goto "beta:$BETA_AGENT" --no-focus
+for _ in $(seq 1 50); do [ "$(rt "r.get('front_host','')")" = beta ] && break; sleep 0.1; done
+expect "goto beta:<pane> brings beta to the front" '^beta$' "$(rt "r.get('front_host','')")"
+for _ in $(seq 1 30); do tmux -L e2e-beta display -p '#{window_name}' | grep -q agent && break; sleep 0.1; done
+expect "... and selects the agent window on beta" '^agent$' "$(tmux -L e2e-beta display -p '#{window_name}')"
+expect "... and marks the pane seen on beta" 'seen_at' "$(cat "$T"/hosts/beta/state/seen/*.json 2>/dev/null)"
+expect "goto rejects a bad host ref" 'unexpected argument' "$("$BIN" goto 'Beta:%1' 2>&1 || true)"
+"$BIN" host front local >/dev/null
+for _ in $(seq 1 50); do [ "$(rt "r.get('front_host','')")" = "" ] && break; sleep 0.1; done
+tmux -L e2e-beta select-window -t Remote:0
+rhook beta claude '{"hook_event_name":"UserPromptSubmit","session_id":"r1"}'
+rhook beta claude '{"hook_event_name":"PermissionRequest","session_id":"r1","tool_name":"Bash","tool_input":{"command":"ls"},"tool_use_id":"t3"}'
+wait_for 'perm:Bash' 5 || true
+"$BIN" jump
+for _ in $(seq 1 50); do [ "$(rt "r.get('front_host','')")" = beta ] && break; sleep 0.1; done
+expect "jump crosses hosts to the blocked agent" '^beta$' "$(rt "r.get('front_host','')")"
+for _ in $(seq 1 30); do tmux -L e2e-beta display -p '#{window_name}' | grep -q agent && break; sleep 0.1; done
+expect "... and lands on its window" '^agent$' "$(tmux -L e2e-beta display -p '#{window_name}')"
+"$BIN" next
+sleep 0.6
+expect "next walks the front host only" '^beta$' "$(rt "r.get('front_host','')")"
+expect "front_host is published for the menu bar" '"front_host": "beta"' "$(cat "$SNAP")"
+
 # disconnect and remove from the CLI: the sidebar follows the registry
 "$BIN" host disconnect gamma >/dev/null
 for _ in $(seq 1 50); do OUT list-windows -t flok -F '#{window_name}' | grep -q flok-host-gamma || break; sleep 0.1; done

@@ -1,0 +1,62 @@
+package ui
+
+import (
+	"errors"
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/w4jnl/flok/internal/state"
+)
+
+// requestsMsg carries the one-shot commands other flok processes filed for the sidebar.
+type requestsMsg struct{ reqs []state.Request }
+
+// requestMaxAge drops requests filed while no sidebar was there to act on them.
+const requestMaxAge = 10 * time.Second
+
+// drainRequests picks up the requests/ mailbox (the store watcher fires when a file lands).
+func (m Model) drainRequests() tea.Cmd {
+	if m.d.Store == nil {
+		return nil
+	}
+	st := m.d.Store
+	return func() tea.Msg {
+		reqs := st.DrainRequests(time.Now(), requestMaxAge)
+		if len(reqs) == 0 {
+			return nil
+		}
+		return requestsMsg{reqs}
+	}
+}
+
+// runRequest performs one request: goto moves to an agent pane on any host (bringing the host
+// to the front first), front brings a host's work pane next to the sidebar.
+func (m *Model) runRequest(r state.Request) tea.Cmd {
+	switch r.Cmd {
+	case "goto":
+		for _, a := range m.fed.Agents {
+			if a.Host == r.Host && a.PaneID == r.Pane {
+				return m.gotoCmd(a.Host, a.SessionID, a.WindowID, a.PaneID, false)
+			}
+		}
+		m.errText = "goto: no agent in pane " + r.Pane + " on " + hostLabel(r.Host)
+	case "front":
+		if _, ok := m.hostSet.Get(r.Host); !ok && r.Host != "" {
+			m.errText = "no host " + r.Host
+			return nil
+		}
+		outer := m.d.Outer
+		return m.swapCmd(r.Host, func(pane string) error {
+			if outer != nil && pane != "" {
+				_, _ = outer.Run("select-pane", "-t", pane)
+			}
+			return nil
+		})
+	default:
+		m.debugf("request %q ignored", r.Cmd)
+	}
+	return nil
+}
+
+var errNoSidebar = errors.New("the sidebar is not running (flok up)")
