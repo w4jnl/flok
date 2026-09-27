@@ -114,6 +114,10 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
   `idle` the moment the user looks at the pane; the seen mark is persisted by the caller from
   `Snapshot.NewlySeen`. Change state semantics here and in `machine.go` together, and cover them
   in `merge_test.go` / `machine_test.go`, which construct `Inputs` directly without tmux.
+  `Build` is not idempotent (per-pane counters advance per call), so multi-host views are joined
+  above it by `merge.Federate`, which stamps `Host` on agents, spaces and focus (`""` = local, so
+  single-host keys, files and JSON stay byte-identical) and re-sorts; `agent.PaneRef` (`%12`,
+  `beta:%12`) is the cross-host pane key.
 - `internal/rules` is a port of herdr's manifest engine. Manifests under `manifests/*.toml` are
   embedded and **copied verbatim from herdr under Apache-2.0** (see `NOTICE`); edit only the
   attribution header, otherwise drop a newer herdr file in. Load order is bundled → herdr cache

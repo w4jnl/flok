@@ -36,6 +36,7 @@ type StaleHook struct {
 type Focus struct {
 	ClientTTY, SessionID, SessionName, WindowID, PaneID string
 	Found                                               bool
+	Host                                                string // "" = the local server; set by Federate
 }
 
 type Snapshot struct {
@@ -460,6 +461,9 @@ func SortAgents(as []agent.Agent) {
 		}
 		if as[i].SessionName != as[j].SessionName {
 			return as[i].SessionName < as[j].SessionName
+		}
+		if as[i].Host != as[j].Host { // equal priority and session name across hosts: group per host
+			return as[i].Host < as[j].Host
 		}
 		if as[i].WindowIndex != as[j].WindowIndex {
 			return as[i].WindowIndex < as[j].WindowIndex
