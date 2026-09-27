@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/w4jnl/flok/internal/hosts"
+	"github.com/w4jnl/flok/internal/state"
 )
 
 func TestHostCommandLifecycle(t *testing.T) {
@@ -74,5 +75,18 @@ func TestHostCommandLifecycle(t *testing.T) {
 	}
 	if s := run(0, "--help"); !strings.Contains(s, "usage: flok host") {
 		t.Fatalf("help: %q", s)
+	}
+	// front needs a live sidebar; with one it files a request the sidebar drains
+	run(1, "front", "beta")
+	run(1, "front", "nope")
+	run(2, "front")
+	stop := fakeSidebar(t, dir, false)
+	defer stop()
+	time.Sleep(30 * time.Millisecond)
+	run(0, "front", "beta")
+	run(0, "front", "local")
+	reqs := state.New(dir).DrainRequests(time.Now(), time.Minute)
+	if len(reqs) != 2 || reqs[0].Cmd != "front" || reqs[0].Host != "beta" || reqs[1].Host != "" {
+		t.Fatalf("requests %+v", reqs)
 	}
 }

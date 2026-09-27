@@ -11,8 +11,8 @@ import (
 	"github.com/w4jnl/flok/internal/state"
 )
 
-// WatchStore pushes a (coalesced) signal whenever a hook record or seen mark changes, or the
-// sidebar-hidden, terminal-theme or keep-awake marker flips. The state dir root also sees the
+// WatchStore pushes a (coalesced) signal whenever a hook record, seen mark or request changes,
+// or the sidebar-hidden, terminal-theme or keep-awake marker flips. The state dir root also sees the
 // sidebar's own snapshot.json writes; those are ignored by name.
 func WatchStore(dir string, ch chan struct{}) {
 	w, err := watchStore(dir)
@@ -31,6 +31,7 @@ func watchStore(dir string) (*fsnotify.Watcher, error) {
 	dir = filepath.Clean(dir)
 	_ = w.Add(filepath.Join(dir, "agents"))
 	_ = w.Add(filepath.Join(dir, "seen"))
+	_ = w.Add(filepath.Join(dir, state.RequestsDir))
 	_ = w.Add(dir)
 	return w, nil
 }

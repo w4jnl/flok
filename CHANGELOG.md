@@ -17,8 +17,10 @@ updates this file first. Dates are the tag dates.
   it); the sessions panel shows the front host, the agents panel every host, attention-sorted,
   remote rows tagged with their host. Each host keeps a persistent `ssh -t … tmux attach` pane
   parked in the outer, so switching is instant and survives `flok hide`. Hosts reconnect with
-  backoff; `needs auth`, `no flok`, `busy` and `incompatible` say what to fix. Without any host
-  nothing changes.
+  backoff; `needs auth`, `no flok`, `busy` and `incompatible` say what to fix. `flok goto
+  beta:%12` and `flok jump` reach agents on any host (bringing that host to the front first),
+  `flok next`/`prev` walk the front host, `flok host front <name>|local` switches hosts from a
+  key binding or script. Without any host nothing changes.
 - `prefix u` in the tmux snippet toggles keep-awake; `flok keep-awake --notify` shows the new
   state on tmux's status line instead of printing it, and the keybinds popup labels the key
   "keep the Mac awake (toggle)". Existing installs add the line by hand (`flok install --tmux`

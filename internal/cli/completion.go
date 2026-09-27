@@ -88,10 +88,10 @@ func bashCompletion() string {
 	b.WriteString("            COMPREPLY=( $(compgen -W \"--print --filter\" -- \"$cur\") ) ;;\n")
 	b.WriteString(`        host)
             if [ "$COMP_CWORD" -eq 2 ]; then
-                COMPREPLY=( $(compgen -W "add remove connect disconnect list status" -- "$cur") )
+                COMPREPLY=( $(compgen -W "add remove connect disconnect list status front" -- "$cur") )
             else
                 case "${COMP_WORDS[2]}" in
-                    remove|connect|disconnect) COMPREPLY=( $(compgen -W "$(flok host list --names 2>/dev/null)" -- "$cur") ) ;;
+                    remove|connect|disconnect|front) COMPREPLY=( $(compgen -W "$(flok host list --names 2>/dev/null) local" -- "$cur") ) ;;
                     add) case "$prev" in
                              --mode) COMPREPLY=( $(compgen -W "full plain" -- "$cur") ) ;;
                              --socket|--session|--flok) ;;
@@ -133,12 +133,12 @@ func zshCompletion() string {
 	b.WriteString("        keys)\n            _arguments '--print[dump the help as text]' '--filter[keep bindings matching a substring]:filter' ;;\n")
 	b.WriteString(`        host)
             if (( CURRENT == 3 )); then
-                _values 'host command' 'add[register a remote tmux server]' 'remove[forget a host]'                     'connect[enable a host]' 'disconnect[disable a host]' 'list[show the hosts]' 'status[connect once and report]'
+                _values 'host command' 'add[register a remote tmux server]' 'remove[forget a host]'                     'connect[enable a host]' 'disconnect[disable a host]' 'list[show the hosts]' 'status[connect once and report]' 'front[bring its work pane next to the sidebar]'
             else
                 case ${words[3]} in
-                    remove|connect|disconnect)
+                    remove|connect|disconnect|front)
                         local -a hosts
-                        hosts=(${(f)"$(flok host list --names 2>/dev/null)"})
+                        hosts=(${(f)"$(flok host list --names 2>/dev/null)"} local)
                         _describe -t hosts 'host' hosts ;;
                     add) _arguments '--mode[full (flok serve on the host) or plain (tmux only)]:mode:(full plain)'                             '--socket[remote tmux socket name]:socket' '--session[session to attach or create]:session'                             '--flok[remote flok binary]:path:_files' '--disabled[register without connecting]' ;;
                     list) _arguments '--json[machine-readable output]' '--names[one name per line]' ;;

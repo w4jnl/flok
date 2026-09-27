@@ -10,6 +10,8 @@ import (
 	"github.com/w4jnl/flok/internal/launcher"
 	"github.com/w4jnl/flok/internal/merge"
 	"github.com/w4jnl/flok/internal/nav"
+	"github.com/w4jnl/flok/internal/snapshot"
+	"github.com/w4jnl/flok/internal/state"
 	"github.com/w4jnl/flok/internal/tmux"
 )
 
@@ -54,6 +56,9 @@ func message(c tmux.Client, tty, text string) {
 
 // runNav implements jump / next / prev.
 func runNav(cfg config.Config, cmd string, args []string) int {
+	if rc, handled := navAcrossHosts(cfg, cmd, args); handled {
+		return rc
+	}
 	s, inner, err := navSnapshot(cfg, clientArg(args))
 	if err != nil {
 		return report(err)
@@ -190,4 +195,81 @@ func atoi(s string) int {
 		n = n*10 + int(r-'0')
 	}
 	return n
+}
+
+// navAcrossHosts is jump / next / prev when remote hosts are configured: the sidebar's
+// published view is the authority (it knows every host and which one is in front). jump picks
+// the first agent needing attention across hosts; next and prev walk the agents of the front
+// host, so a step never swaps the work pane. A target away from the local front goes through
+// the sidebar's request mailbox. Not handled (false): no hosts, or no running sidebar.
+func navAcrossHosts(cfg config.Config, cmd string, args []string) (int, bool) {
+	dir := config.StateDir()
+	s, f := snapshot.Load(dir, time.Now())
+	if f != snapshot.Fresh || len(s.Hosts) == 0 {
+		return 0, false
+	}
+	inner := tmux.NewLocal(cfg.Inner.Socket)
+	var target *snapshot.Agent
+	switch cmd {
+	case "jump":
+		for _, want := range []agent.State{agent.Blocked, agent.Done} {
+			for i := range s.Agents {
+				if s.Agents[i].State == want {
+					target = &s.Agents[i]
+					break
+				}
+			}
+			if target != nil {
+				break
+			}
+		}
+		if target == nil {
+			message(inner, clientArg(args), "nothing pending")
+			return 0, true
+		}
+	default:
+		var list []snapshot.Agent
+		for _, a := range s.Agents {
+			if a.Host == s.FrontHost {
+				list = append(list, a)
+			}
+		}
+		if len(list) == 0 {
+			message(inner, clientArg(args), "no agents on "+hostName(s.FrontHost))
+			return 0, true
+		}
+		cur := -1
+		for i, a := range list {
+			if a.PaneID == s.Focus.PaneID && a.Host == s.Focus.Host {
+				cur = i
+				break
+			}
+		}
+		n, idx := len(list), 0
+		switch {
+		case cur < 0 && cmd == "prev":
+			idx = n - 1
+		case cur < 0:
+			idx = 0
+		case cmd == "prev":
+			idx = (cur - 1 + n) % n
+		default:
+			idx = (cur + 1) % n
+		}
+		target = &list[idx]
+	}
+	if target.Host == "" && s.FrontHost == "" {
+		return 0, false // local target, local front: the direct path below drives the client itself
+	}
+	if err := state.New(dir).WriteRequest(state.Request{Cmd: "goto", Host: target.Host, Pane: target.PaneID}); err != nil {
+		return report(err), true
+	}
+	return 0, true
+}
+
+func hostName(host string) string {
+	if host == "" {
+		return agent.LocalHost
+	}
+	return host
 }

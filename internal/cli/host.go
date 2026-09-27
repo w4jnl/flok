@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -12,7 +13,10 @@ import (
 	"github.com/w4jnl/flok/internal/agent"
 	"github.com/w4jnl/flok/internal/config"
 	"github.com/w4jnl/flok/internal/hosts"
+	"github.com/w4jnl/flok/internal/launcher"
 	"github.com/w4jnl/flok/internal/remote"
+	"github.com/w4jnl/flok/internal/snapshot"
+	"github.com/w4jnl/flok/internal/state"
 )
 
 const hostUsage = `usage: flok host <command>
@@ -30,6 +34,9 @@ const hostUsage = `usage: flok host <command>
   status [--json]
               connect to every enabled host once and report what answers (flok on the host,
               its tmux, agents); the sidebar keeps its own connections, this is a check
+  front <name>|local [--focus]
+              bring that host's work pane next to the running sidebar (--focus also brings
+              the terminal window to the front, as the menu bar does)
 
 Hosts live in the state dir (hosts.json); [hosts] in config.toml holds the ssh defaults.`
 
@@ -67,6 +74,8 @@ func (c hostCmd) run(args []string) int {
 		return c.list(args[1:])
 	case "status":
 		return c.status(args[1:])
+	case "front":
+		return c.front(args[1:])
 	}
 	fmt.Fprintf(c.errw, "flok host: unknown command %q\n\n%s\n", args[0], hostUsage)
 	return 2
@@ -325,4 +334,52 @@ func (c hostCmd) status(args []string) int {
 	}
 	_ = tw.Flush()
 	return rc
+}
+
+// front asks the running sidebar to bring a host's work pane next to it.
+func (c hostCmd) front(args []string) int {
+	name, doFocus := "", false
+	for _, a := range args {
+		switch {
+		case a == "--focus":
+			doFocus = true
+		case strings.HasPrefix(a, "-") || name != "":
+			fmt.Fprintf(c.errw, "flok host front: need <name> or local\n\n%s\n", hostUsage)
+			return 2
+		default:
+			name = a
+		}
+	}
+	if name == "" {
+		fmt.Fprintf(c.errw, "flok host front: need <name> or local\n\n%s\n", hostUsage)
+		return 2
+	}
+	host := name
+	if name == agent.LocalHost {
+		host = ""
+	} else {
+		if err := hosts.ValidateName(name); err != nil {
+			return c.fail(err)
+		}
+		set, err := hosts.Load(c.dir)
+		if err != nil {
+			return c.fail(err)
+		}
+		if _, ok := set.Get(name); !ok {
+			return c.fail(fmt.Errorf("no host %q (flok host list)", name))
+		}
+	}
+	if _, f := snapshot.Load(c.dir, c.now()); f != snapshot.Fresh {
+		return c.fail(errors.New("the sidebar is not running (flok up)"))
+	}
+	if err := state.New(c.dir).WriteRequest(state.Request{Cmd: "front", Host: host}); err != nil {
+		return c.fail(err)
+	}
+	if doFocus {
+		if rt, err := launcher.ReadRuntime(); err == nil {
+			_ = focusTerminal(c.cfg, rt, "")
+		}
+	}
+	fmt.Fprintf(c.out, "%s comes to the front\n", name)
+	return 0
 }

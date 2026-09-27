@@ -28,8 +28,8 @@ usage: flok <command>
   jump        switch the inner client to the newest agent needing input (else newest done)
   next, prev  cycle through agent panes in sidebar order        [--client <tty>]
   toggle      sidebar full width <-> rail;  hide: zoom the work area (sidebar takes no space)
-  goto        [pane-id] [--no-focus]: switch to an agent pane and bring the terminal window
-              to the front (used by the menu bar app flok-bar)
+  goto        [pane] [--no-focus]: switch to an agent pane (%12 here, beta:%12 on a remote
+              host) and bring the terminal window to the front (used by the menu bar app)
   edit-config open config.toml: in a new tmux window with [bar] editor, else the default app
   reload      restart the sidebar pane after editing config.toml (work pane untouched)
   focus       move the outer cursor into the sidebar pane
