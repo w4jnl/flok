@@ -10,6 +10,7 @@ import (
 	"github.com/w4jnl/flok/internal/agent"
 	"github.com/w4jnl/flok/internal/config"
 	"github.com/w4jnl/flok/internal/merge"
+	"github.com/w4jnl/flok/internal/tmux"
 )
 
 func brandModel(t *testing.T) Model {
@@ -71,7 +72,7 @@ func TestThemeFollowsTheTerminalRecord(t *testing.T) {
 	if !m.dark || m.theme.Brand != lipgloss.Color(def.Brand) {
 		t.Fatal("no record: the dark palette")
 	}
-	m.lastRaw = "raw"
+	m.p.Prime(tmux.Snapshot{}, "raw")
 	if err := m.d.Store.SetTerminalTheme("light", "#fffbeb"); err != nil {
 		t.Fatal(err)
 	}

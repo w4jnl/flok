@@ -6,9 +6,9 @@ import (
 
 	"github.com/w4jnl/flok/internal/agent"
 	"github.com/w4jnl/flok/internal/config"
+	"github.com/w4jnl/flok/internal/poller"
 	"github.com/w4jnl/flok/internal/rules"
 	"github.com/w4jnl/flok/internal/tmux"
-	"github.com/w4jnl/flok/internal/ui"
 )
 
 // runExplain shows which screen rules match a pane: `explain [pane-id ...]` (default: all agent panes).
@@ -44,7 +44,7 @@ func runExplain(cfg config.Config, args []string) int {
 			fmt.Printf("%s: no manifest for %s\n", p.ID, kind)
 			continue
 		}
-		out, err := d.Inner.Run(ui.CaptureArgs(p.ID, cfg.Sidebar.CaptureLines)...)
+		out, err := d.Inner.Run(poller.CaptureArgs(p.ID, cfg.Sidebar.CaptureLines)...)
 		if err != nil {
 			fmt.Printf("%s: %v\n", p.ID, err)
 			continue
