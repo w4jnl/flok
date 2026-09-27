@@ -7,23 +7,28 @@ fake_ssh_setup
 fake_host beta
 fake_host gamma
 wait_file() { local i; for i in $(seq 1 $(( ${3:-5} * 10 ))); do grep -qE "$2" "$1" 2>/dev/null && return 0; sleep 0.1; done; return 1; }
+# Part 1 is the CLI without a sidebar: it uses a state dir of its own (as on a machine that only
+# checks hosts), so the running sidebar, which connects to a host the moment it is registered,
+# does not compete for the hosts' serve locks. Part 2 registers the hosts for the sidebar.
+CLI_STATE=$T/state-cli
+cli() { FLOK_STATE=$CLI_STATE "$BIN" "$@"; }
 
 # --- registry ------------------------------------------------------------------------------
-expect "host list starts empty" 'no remote hosts' "$("$BIN" host list)"
-"$BIN" host add beta beta >/dev/null
-"$BIN" host add gamma gamma --mode plain --socket agents >/dev/null
-rc=0; "$BIN" host add bad -x >/dev/null 2>&1 || rc=$?
+expect "host list starts empty" 'no remote hosts' "$(cli host list)"
+cli host add beta beta >/dev/null
+cli host add gamma gamma --mode plain --socket agents >/dev/null
+rc=0; cli host add bad -x >/dev/null 2>&1 || rc=$?
 expect "an option-like target is refused" '^2$' "$rc"
-rc=0; out=$("$BIN" host add local x 2>&1) || rc=$?
+rc=0; out=$(cli host add local x 2>&1) || rc=$?
 expect "local is reserved" 'names the local server' "$out"
-rc=0; "$BIN" host add beta other >/dev/null 2>&1 || rc=$?
+rc=0; cli host add beta other >/dev/null 2>&1 || rc=$?
 expect "a duplicate name is refused" '^1$' "$rc"
-expect "list --names in registry order" '^beta gamma$' "$("$BIN" host list --names | tr '\n' ' ' | sed 's/ $//')"
-json=$("$BIN" host list --json)
+expect "list --names in registry order" '^beta gamma$' "$(cli host list --names | tr '\n' ' ' | sed 's/ $//')"
+json=$(cli host list --json)
 expect "list --json carries the version" '"version": 1' "$json"
 expect "gamma is plain with its socket" '"socket": "agents"' "$json"
-expect "hosts.json lives in the state dir" '"name": "beta"' "$(cat "$T/state/hosts.json")"
-expect "list shows enabled hosts never connected" '^beta +beta +full +yes +never' "$("$BIN" host list)"
+expect "hosts.json lives in the state dir" '"name": "beta"' "$(cat "$CLI_STATE/hosts.json")"
+expect "list shows enabled hosts never connected" '^beta +beta +full +yes +never' "$(cli host list)"
 
 # --- flok serve over a pipe, as the local flok runs it on beta -------------------------------
 mkfifo "$T/serve-in"
@@ -66,32 +71,33 @@ sleep 0.5
 expect "unserved, the host's hook plays again through [sounds] command" 'request\.wav' "$(cat "$T/hosts/beta/played" 2>/dev/null)"
 
 # --- flok host status: one-shot connections through the fake ssh -----------------------------
-rc=0; out=$("$BIN" host status 2>&1) || rc=$?
+rc=0; out=$(cli host status 2>&1) || rc=$?
 echo "--- host status ---"; printf '%s\n' "$out" | sed 's/^/      | /'
 expect "beta answers in full mode with flok and its tmux" '^beta +full +connected +flok [^,]+, tmux [0-9][^ ]* +1( |$)' "$out"
 expect "gamma answers in plain mode with its tmux and the title agent" '^gamma +plain +connected +tmux [0-9][^ ]* +1( |$)' "$out"
 expect "status exits 0 when every host answers" '^0$' "$rc"
-expect "last_connected recorded" '"last_connected"' "$(cat "$T/state/hosts.json")"
-expect "gamma has a local store of its own" '^dir$' "$([ -d "$T/state/hosts/gamma/agents" ] && echo dir || echo none)"
-json=$("$BIN" host status --json)
+expect "last_connected recorded" '"last_connected"' "$(cat "$CLI_STATE/hosts.json")"
+expect "gamma has a local store of its own" '^dir$' "$([ -d "$CLI_STATE/hosts/gamma/agents" ] && echo dir || echo none)"
+json=$(cli host status --json)
 expect "status --json reports the hello" '"tmux_version": "[0-9]' "$json"
 touch "$T/down-gamma" "$T/auth-beta"
-rc=0; out=$("$BIN" host status 2>&1) || rc=$?
+rc=0; out=$(cli host status 2>&1) || rc=$?
 echo "--- host status, both failing ---"; printf '%s\n' "$out" | sed 's/^/      | /'
 expect "a refused connection is unreachable with the reason" '^gamma +plain +unreachable +- +- +Connection refused' "$out"
 expect "a rejected key needs auth with the hint" '^beta +full +needs auth +- +- +.*Permission denied.*run `ssh beta` once' "$out"
 expect "status exits 1 when a host fails" '^1$' "$rc"
 rm -f "$T/down-gamma" "$T/auth-beta"
-"$BIN" host disconnect gamma >/dev/null
-expect "a disabled host is skipped by status" '^0$' "$("$BIN" host status | grep -c '^gamma' || true)"
-expect "list shows it disabled" '^gamma +gamma +plain +no ' "$("$BIN" host list)"
-"$BIN" host remove gamma >/dev/null
-expect "remove drops the host" '^beta$' "$("$BIN" host list --names)"
-expect "remove prunes its local store" '^none$' "$([ -d "$T/state/hosts/gamma" ] && echo dir || echo none)"
+cli host disconnect gamma >/dev/null
+expect "a disabled host is skipped by status" '^0$' "$(cli host status | grep -c '^gamma' || true)"
+expect "list shows it disabled" '^gamma +gamma +plain +no ' "$(cli host list)"
+cli host remove gamma >/dev/null
+expect "remove drops the host" '^beta$' "$(cli host list --names)"
+expect "remove prunes its local store" '^none$' "$([ -d "$CLI_STATE/hosts/gamma" ] && echo dir || echo none)"
 
 # --- part 2: the sidebar goes multi-host -----------------------------------------------------
-# The running sidebar watches hosts.json: adding gamma back (beta is still enabled) connects both
-# through the manager and parks a work pane per host in the outer.
+# The running sidebar watches its hosts.json: registering the hosts connects both through the
+# manager and parks a work pane per host in the outer.
+"$BIN" host add beta beta >/dev/null
 "$BIN" host add gamma gamma --mode plain >/dev/null
 RT=$T/state/runtime.json
 SNAP=$T/state/snapshot.json
