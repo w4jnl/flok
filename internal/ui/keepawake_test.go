@@ -13,6 +13,7 @@ import (
 	"github.com/w4jnl/flok/internal/snapshot"
 	"github.com/w4jnl/flok/internal/state"
 	"github.com/w4jnl/flok/internal/tmux"
+	"github.com/w4jnl/flok/internal/tmux/tmuxtest"
 )
 
 type fakeAssertion struct{ released *int }
@@ -49,8 +50,8 @@ func newKeepAwakeModel(t *testing.T) (Model, *fakeAwake) {
 	cfg := config.Default()
 	cfg.Sounds.Enabled = false
 	fa := &fakeAwake{}
-	m := New(Deps{Cfg: cfg, Inner: &fakeTmux{screens: map[string]string{}}, Store: state.New(t.TempDir()), Awake: fa.hold})
-	m.tmuxSnap, m.lastRaw = tmux.Snapshot{}, "raw" // rebuilds reuse this instead of polling
+	m := New(Deps{Cfg: cfg, Inner: &tmuxtest.Fake{Screens: map[string]string{}}, Store: state.New(t.TempDir()), Awake: fa.hold})
+	m.p.Prime(tmux.Snapshot{}, "raw") // rebuilds reuse this instead of polling
 	return m, fa
 }
 
@@ -125,7 +126,7 @@ func TestKeepAwakeHoldErrorStaysOff(t *testing.T) {
 
 func TestKeepAwakeWithoutHolder(t *testing.T) {
 	m, _ := newTestModel(t) // no Deps.Awake: keep-awake unsupported
-	m.tmuxSnap, m.lastRaw = tmux.Snapshot{}, "raw"
+	m.p.Prime(tmux.Snapshot{}, "raw")
 	m = step(t, m, true)
 	if m.keep.on() || publishedKeepAwake(t, m) {
 		t.Fatal("without a holder keep-awake stays off")

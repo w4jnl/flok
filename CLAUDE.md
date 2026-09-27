@@ -120,6 +120,14 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
   (opt-in) → `~/.config/flok/agents/`, later replacing earlier by id. `testdata/*.txt` are
   captured screens; `TestClaudeFixtures` pins which rule id wins for each. `flok explain` runs
   `Manifest.Explain` on live panes for debugging.
+- `internal/poller` is the state pipeline without the rendering: the tmux poll, the registry and
+  screen samplers, the fsnotify watch on the store, the merge with its persistence (seen marks,
+  corrections, stale hook records) and the sound transitions. `ui.Model` holds one `*poller.Poller`
+  and drives it from Bubble Tea commands (`Poll`/`Rebuild`/`PollScreen`/`PollRegistryIfDue`
+  return the work, `ApplySnapshot`/`ApplyRegistry`/`ApplyScreen` take the results);
+  `poller.Run` drives the same pipeline headless for `flok serve` and plain-mode remote hosts.
+  The sequencing rules below live there now; `internal/tmux/tmuxtest.Fake` is the tmux stand-in
+  both packages' tests use.
 - `internal/ui/model.go` drives three independent poll cadences from config (`poll_ms` for the
   tmux snapshot, `registry_poll_ms`, `screen_poll_ms`) plus an fsnotify watch on the store so
   hook writes re-render immediately. CPU rules that are easy to undo by accident: an unchanged

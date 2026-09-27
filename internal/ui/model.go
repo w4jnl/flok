@@ -2,9 +2,7 @@
 package ui
 
 import (
-	"encoding/json"
 	"fmt"
-	"hash/fnv"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,16 +10,15 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/fsnotify/fsnotify"
 	"github.com/muesli/termenv"
 
 	"github.com/w4jnl/flok/internal/agent"
-	"github.com/w4jnl/flok/internal/claudereg"
 	"github.com/w4jnl/flok/internal/config"
 	"github.com/w4jnl/flok/internal/keys"
 	"github.com/w4jnl/flok/internal/merge"
 	"github.com/w4jnl/flok/internal/nav"
 	"github.com/w4jnl/flok/internal/notify"
+	"github.com/w4jnl/flok/internal/poller"
 	"github.com/w4jnl/flok/internal/rules"
 	"github.com/w4jnl/flok/internal/snapshot"
 	"github.com/w4jnl/flok/internal/state"
@@ -53,47 +50,29 @@ const (
 )
 
 type Model struct {
-	d                      Deps
-	theme                  Theme
-	tracker                *merge.Tracker
-	snap                   merge.Snapshot
-	clientTTY              string
-	width                  int
-	height                 int
-	panel                  int
-	cursor                 [2]int
-	offset                 [2]int
-	frame                  int
-	animating              bool
-	errText                string
-	registry               map[string]claudereg.Entry
-	registrySeq            int
-	registryAt             time.Time
-	screenSeq              int
-	screenAt               time.Time
-	changes                chan struct{}
-	help                   *HelpModel
-	screen                 map[string]rules.Result
-	titles                 map[string]string
-	progress               map[string]string // pane id -> OSC 9;4 payload for the screen rules
-	prevState              map[string]agent.State
-	sounder                notify.Sounder
-	started                time.Time
-	publisher              *snapshot.Publisher
-	vc                     *viewCache // rendered frame, reused while nothing changed
-	lastFP                 uint64     // fingerprint of the inputs of the last Build
-	lastRegSeq, lastScrSeq int
-	polls                  int           // 1 s polls so far (focus fallback cadence)
-	repinPending           bool          // a select-layout is scheduled after a resize (tmux < 3.3)
-	tmuxSnap               tmux.Snapshot // last tmux snapshot; rebuilds reuse it instead of spawning tmux
-	lastRaw                string        // raw tmux output behind tmuxSnap (fingerprint input for rebuilds)
-	lastHook               map[string]agent.Agent
-	lastSeen               map[string]time.Time
-	unfocused              bool   // terminal-focus marker: the terminal window is not focused
-	hidden                 bool   // sidebar-hidden marker / window_zoomed_flag: the pane is not visible
-	focused                bool   // the outer's active pane is the sidebar: keys arrive here
-	dark                   bool   // the dark palette is in use (see config.Theme.IsDark)
-	themeRec               string // terminal theme recorded by flok up ("dark", "light", "")
+	d            Deps
+	theme        Theme
+	p            *poller.Poller // the state pipeline (polls, merge, sounds); shared by every Model copy
+	snap         merge.Snapshot // what the view renders: the poller's merge
+	clientTTY    string
+	width        int
+	height       int
+	panel        int
+	cursor       [2]int
+	offset       [2]int
+	frame        int
+	animating    bool
+	errText      string
+	help         *HelpModel
+	publisher    *snapshot.Publisher
+	vc           *viewCache // rendered frame, reused while nothing changed
+	polls        int        // 1 s polls so far (focus fallback cadence)
+	repinPending bool       // a select-layout is scheduled after a resize (tmux < 3.3)
+	unfocused    bool       // terminal-focus marker: the terminal window is not focused
+	hidden       bool       // sidebar-hidden marker / window_zoomed_flag: the pane is not visible
+	focused      bool       // the outer's active pane is the sidebar: keys arrive here
+	dark         bool       // the dark palette is in use (see config.Theme.IsDark)
+	themeRec     string     // terminal theme recorded by flok up ("dark", "light", "")
 	// Inner tmux prefix, so chords typed while the sidebar has focus are replayed into the work
 	// pane instead of being swallowed (prefixTmux "C-a", prefixKey "ctrl+a").
 	prefixTmux    string
@@ -104,30 +83,22 @@ type Model struct {
 }
 
 type (
-	tickMsg     struct{}
-	animMsg     struct{}
+	tickMsg struct{}
+	animMsg struct{}
+	// snapshotMsg is a poll (or rebuild) of the pipeline plus what only the sidebar reads from
+	// the outer server, each only when this poll checked it (see focusCheckEvery).
 	snapshotMsg struct {
-		fp        uint64
-		focus     *bool // outer active pane == sidebar, only when this poll checked (see focusCheckEvery)
-		zoomed    *bool // outer window zoomed (flok hide), only when this poll checked
-		snap      tmux.Snapshot
-		raw       string
-		hook      map[string]agent.Agent
-		seen      map[string]time.Time
-		unfocused bool
-		hidden    bool
-		keepAwake *bool  // keep-awake marker, only when this message read it (a stale copy would undo a change)
-		theme     string // terminal theme record ("dark", "light", "")
-		rebuilt   bool   // produced by rebuild from cached tmux data, not by a tmux poll
-		err       error
+		poller.SnapshotMsg
+		focus  *bool // outer active pane == sidebar
+		zoomed *bool // outer window zoomed (flok hide)
 	}
 	switchedMsg     struct{ err error }
 	repinMsg        struct{}
 	stateChangedMsg struct{}
 	registryTickMsg struct{}
-	registryMsg     struct{ entries map[string]claudereg.Entry }
+	registryMsg     = poller.RegistryMsg
 	screenTickMsg   struct{}
-	screenMsg       struct{ results map[string]rules.Result }
+	screenMsg       = poller.ScreenMsg
 )
 
 // viewCache holds the last rendered frame; Bubble Tea calls View after every Update, and most
@@ -144,25 +115,28 @@ func New(d Deps) Model {
 		themeRec, _ = d.Store.TerminalTheme()
 	}
 	dark := d.Cfg.Theme.IsDark(themeRec)
-	m := Model{d: d, dark: dark, themeRec: themeRec, theme: NewTheme(d.Cfg.Theme.Resolve(dark)), tracker: merge.NewTracker(), clientTTY: d.ClientTTY, changes: make(chan struct{}, 1), vc: &viewCache{},
-		prevState: map[string]agent.State{}, sounder: notify.Noop{}, started: time.Now()}
+	m := Model{d: d, dark: dark, themeRec: themeRec, theme: NewTheme(d.Cfg.Theme.Resolve(dark)), clientTTY: d.ClientTTY, vc: &viewCache{}}
 	if m.clientTTY == "" && d.Outer != nil && d.RightPane != "" {
 		if tty, err := tmux.Display(d.Outer, d.RightPane, "#{pane_tty}"); err == nil {
 			m.clientTTY = tty
 		}
 	}
+	var sounder notify.Sounder = notify.Noop{}
 	if d.Cfg.Sounds.Enabled && d.Cfg.Sounds.Player != "none" {
 		player := notify.Player{Files: notify.Resolve(config.StateDir(), map[string]string{"done": d.Cfg.Sounds.Done, "blocked": d.Cfg.Sounds.Blocked, "error": d.Cfg.Sounds.Error}),
 			Volume: d.Cfg.Sounds.Volume, Command: d.Cfg.Sounds.Command}
 		tty := m.clientTTY // the outer's work pane: the bell travels through the outer server to the terminal
-		m.sounder = notify.Compose(player, notify.Bell{Resolve: func() string { return tty }}, d.Cfg.Sounds.Bell)
+		sounder = notify.Compose(player, notify.Bell{Resolve: func() string { return tty }}, d.Cfg.Sounds.Bell)
 	}
+	m.debug = os.Getenv("FLOK_DEBUG") != ""
+	m.p = poller.New(poller.Deps{Cfg: d.Cfg, Tmux: d.Inner, Store: d.Store, Registry: d.Registry, Rules: d.Rules,
+		Adapters: d.Adapters, BranchOf: d.BranchOf, ClientTTY: m.clientTTY,
+		Sound:                  func(_, kind string) { _ = sounder.Play(kind) },
+		SoundHookNotifications: d.Cfg.Sounds.Player == "sidebar", Debugf: m.debugf})
 	if d.Store != nil {
-		go watchStore(d.Store.Dir, m.changes)
 		m.publisher = &snapshot.Publisher{Dir: d.Store.Dir}
 		m.keep = &awakeHold{hold: d.Awake}
 	}
-	m.debug = os.Getenv("FLOK_DEBUG") != ""
 	m.readPrefix()
 	return m
 }
@@ -211,30 +185,6 @@ func (m *Model) forwardChord(msg tea.KeyMsg) tea.Cmd {
 	}
 }
 
-// watchStore pushes a (coalesced) signal whenever a hook record or seen mark changes, or the
-// sidebar-hidden or keep-awake marker flips. The state dir root also sees our own snapshot.json
-// writes; those are ignored by name.
-func watchStore(dir string, ch chan struct{}) {
-	w, err := fsnotify.NewWatcher()
-	if err != nil {
-		return
-	}
-	dir = filepath.Clean(dir)
-	_ = w.Add(filepath.Join(dir, "agents"))
-	_ = w.Add(filepath.Join(dir, "seen"))
-	_ = w.Add(dir)
-	for ev := range w.Events {
-		if !storeEventWanted(dir, ev.Name) {
-			continue
-		}
-		select {
-		case ch <- struct{}{}:
-		default:
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-}
-
 // repinAfterResize keeps the sidebar at its pinned width on tmux versions without the
 // window-resized hook (< 3.3, RHEL 9): tmux scales every pane on a window resize, so the
 // sidebar re-applies the main-vertical layout itself, debounced, when its width is neither the
@@ -274,77 +224,30 @@ func (m Model) borderCmd() tea.Cmd {
 	}
 }
 
-// storeEventWanted filters fsnotify events: hook records and seen marks under agents/ and seen/,
-// plus the sidebar-hidden marker in the root (un-hide must resume the spinner at once) and the
-// keep-awake marker (`flok keep-awake` waits for the snapshot to confirm);
-// everything else in the root (our own snapshot.json temp+rename writes, terminal-focus, which
-// the next poll reads anyway, events.log, pid files) is noise.
-func storeEventWanted(root, name string) bool {
-	base := filepath.Base(name)
-	if filepath.Dir(name) == root {
-		return base == "sidebar-hidden" || base == "terminal-theme" || base == state.KeepAwakeFile
-	}
-	return strings.HasSuffix(base, ".json")
-}
-
 func (m Model) waitChange() tea.Cmd {
-	ch := m.changes
-	if m.d.Store == nil {
+	ch := m.p.Changes()
+	if ch == nil {
 		return nil
 	}
 	return func() tea.Msg { <-ch; return stateChangedMsg{} }
 }
 
 func (m Model) registryTick() tea.Cmd {
-	if !m.d.Registry {
+	if !m.p.RegistryEnabled() {
 		return nil
 	}
-	ms := m.d.Cfg.Sidebar.RegistryPollMs
-	if ms < 1000 {
-		ms = 1000
-	}
-	return tea.Tick(time.Duration(ms)*time.Millisecond, func(time.Time) tea.Msg { return registryTickMsg{} })
+	return tea.Tick(m.p.RegistryInterval(), func(time.Time) tea.Msg { return registryTickMsg{} })
 }
 
-// The registry (`claude agents --json`) costs ~0.2 s of CPU per call in a node process, so on the
-// registry tick it is queried only while something can use the answer: a Claude pane without
-// hook records (the registry is its state source) or a hook agent with a turn or prompt open
-// (registry idle samples are what clear an interrupted turn or a dismissed prompt). With every
-// agent idle it is refreshed once per registrySlowEvery, which still discovers a Claude the
-// process name does not reveal (npm installs run as node) before its first hook.
-const registrySlowEvery = 60 * time.Second
-
-func (m Model) pollRegistryIfDue() tea.Cmd {
-	if !m.d.Registry {
+// registryCmd wraps a registry call of the pipeline as a command; nil when there is none.
+func registryCmd(f func() poller.RegistryMsg) tea.Cmd {
+	if f == nil {
 		return nil
 	}
-	if m.registryNeeded() || time.Since(m.registryAt) >= registrySlowEvery {
-		return m.pollRegistry()
-	}
-	return nil
+	return func() tea.Msg { return f() }
 }
 
-func (m Model) registryNeeded() bool {
-	for _, a := range m.snap.Agents {
-		if a.Kind != "claude" {
-			continue
-		}
-		if a.Source != "hook" || a.State == agent.Working || a.State == agent.Blocked {
-			return true
-		}
-	}
-	return false
-}
-
-func (m Model) pollRegistry() tea.Cmd {
-	return func() tea.Msg {
-		entries, err := claudereg.List(3 * time.Second)
-		if err != nil {
-			return registryMsg{}
-		}
-		return registryMsg{claudereg.ByTTY(entries)}
-	}
-}
+func (m Model) pollRegistryIfDue() tea.Cmd { return registryCmd(m.p.PollRegistryIfDue()) }
 
 // ClientTTY is the inner client the sidebar drives (for runtime.json).
 func (m Model) ClientTTY() string { return m.clientTTY }
@@ -354,215 +257,19 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) screenTick() tea.Cmd {
-	if m.d.Rules == nil || m.d.Cfg.Agents.ScreenRules == "never" {
+	if !m.p.ScreenEnabled() {
 		return nil
 	}
 	return tea.Tick(m.screenInterval(), func(time.Time) tea.Msg { return screenTickMsg{} })
 }
 
-// needsScreen decides which agents get a capture-pane evaluation: hook-less ones in "auto",
-// everyone in "always".
-func (m Model) needsScreen(a agent.Agent) bool {
-	switch m.d.Cfg.Agents.ScreenRules {
-	case "never":
-		return false
-	case "always":
-		return true
-	}
-	// hook-less agents always; hook agents while a turn or prompt is open, so an interrupted
-	// turn or a dismissed prompt (neither emits a hook) is noticed from the screen
-	return a.Source != "hook" || a.State == agent.Working || a.State == agent.Blocked
-}
-
 // pollScreen captures the relevant panes and evaluates their manifests in the background.
 func (m Model) pollScreen() tea.Cmd {
-	type target struct{ pane, kind, title, progress string }
-	var targets []target
-	inMode := map[string]bool{} // copy/view mode shows scrollback: an old prompt box is no evidence
-	for _, p := range m.tmuxSnap.Panes {
-		if p.InMode {
-			inMode[p.ID] = true
-		}
-	}
-	for _, a := range m.snap.Agents {
-		if m.needsScreen(a) && !inMode[a.PaneID] && m.d.Rules.Get(a.Kind) != nil {
-			targets = append(targets, target{a.PaneID, a.Kind, m.titles[a.PaneID], m.progress[a.PaneID]})
-		}
-	}
-	inner, set, n := m.d.Inner, m.d.Rules, m.d.Cfg.Sidebar.CaptureLines
-	return func() tea.Msg {
-		res := map[string]rules.Result{}
-		if len(targets) == 0 {
-			return screenMsg{res}
-		}
-		panes := make([]string, 0, len(targets))
-		for _, t := range targets {
-			panes = append(panes, t.pane)
-		}
-		screens := captureAll(inner, panes, n)
-		for _, t := range targets {
-			out, ok := screens[t.pane]
-			if !ok {
-				continue
-			}
-			sc := rules.NewScreen(out, t.title)
-			sc.Progress = t.progress
-			res[t.pane] = set.Get(t.kind).Evaluate(sc)
-		}
-		return screenMsg{res}
-	}
+	f := m.p.PollScreen()
+	return func() tea.Msg { return f() }
 }
 
-// persistCorrection writes an overruled hook state back to the record (under the record's
-// lock, and only if no newer hook event replaced it), so the fix outlives this poll.
-func (m Model) persistCorrection(c merge.Correction) {
-	now := time.Now()
-	m.debugf("correct %s %s -> idle (%s)", c.PaneID, c.From, c.Reason)
-	_, _, _ = m.d.Store.Update(c.PaneID, func(rec *agent.Agent) state.Effects {
-		if rec.State != c.From || !rec.StateSince.Equal(c.Since) {
-			return state.Effects{} // a hook event arrived meanwhile: it wins
-		}
-		rec.State, rec.StateSince, rec.Reason = agent.Idle, now, ""
-		rec.CurrentTool, rec.ToolDetail, rec.TurnStarted = "", "", time.Time{}
-		rec.LastEvent, rec.LastEventAt = "corrected:"+c.Reason, now
-		return state.Effects{}
-	})
-}
-
-// captureAll captures several panes in one tmux invocation (one fork instead of one per pane);
-// a marker line printed before each capture separates the sections. tmux stops the sequence at
-// the first missing pane, so anything absent from the output is captured on its own.
-func captureAll(c tmux.Client, panes []string, extra int) map[string]string {
-	const marker = "-=flok-capture=- "
-	var args []string
-	for i, p := range panes {
-		if i > 0 {
-			args = append(args, ";")
-		}
-		args = append(args, "display-message", "-p", "-t", p, marker+"#{pane_id}", ";")
-		args = append(args, CaptureArgs(p, extra)...)
-	}
-	out, err := c.Run(args...)
-	res := map[string]string{}
-	cur := ""
-	var buf strings.Builder
-	flush := func() {
-		if cur != "" {
-			res[cur] = buf.String()
-		}
-		buf.Reset()
-	}
-	for _, line := range strings.Split(strings.TrimSuffix(out, "\n"), "\n") {
-		if strings.HasPrefix(line, marker) {
-			flush()
-			cur = strings.TrimSpace(strings.TrimPrefix(line, marker))
-			continue
-		}
-		if cur != "" {
-			buf.WriteString(line)
-			buf.WriteByte('\n')
-		}
-	}
-	if err == nil {
-		flush()
-	} // else the section in progress is the failed capture: its marker printed, its screen did not
-	for _, p := range panes {
-		if _, ok := res[p]; !ok {
-			if o, err := c.Run(CaptureArgs(p, extra)...); err == nil {
-				res[p] = o
-			}
-		}
-	}
-	return res
-}
-
-// CaptureArgs captures the visible screen of a pane (agents redraw in place, so scrollback
-// would resurrect dismissed prompts); extra > 0 adds that many scrollback lines.
-func CaptureArgs(pane string, extra int) []string {
-	args := []string{"capture-pane", "-p", "-J", "-t", pane}
-	if extra > 0 {
-		args = append(args, "-S", fmt.Sprintf("-%d", extra))
-	}
-	return args
-}
-
-// soundTransitions plays sounds for agents the hooks do not cover (title/screen/registry
-// sources) when they turn blocked or done unseen (or, with when_focused, also while watched),
-// and, with player = "sidebar", for hook notifications the hook left unsounded.
-func (m *Model) soundTransitions() {
-	cfg := m.d.Cfg.Sounds
-	present := map[string]bool{}
-	for _, a := range m.snap.Agents {
-		present[a.PaneID] = true
-		prev := m.prevState[a.PaneID]
-		m.prevState[a.PaneID] = a.State
-		if !cfg.Enabled {
-			continue
-		}
-		focused := a.PaneID == m.snap.Focus.PaneID
-		if a.Source == "hook" {
-			if cfg.Player != "sidebar" || m.d.Store == nil {
-				continue
-			}
-			for i, n := range a.Notifications {
-				if n.Sounded || n.At.Before(m.started) || time.Since(n.At) > time.Minute {
-					continue
-				}
-				m.playIfAllowed(a.PaneID, n.Kind)
-				idx := i
-				_, _, _ = m.d.Store.Update(a.PaneID, func(rec *agent.Agent) state.Effects {
-					if idx < len(rec.Notifications) {
-						rec.Notifications[idx].Sounded = true
-					}
-					return state.Effects{}
-				})
-			}
-			continue
-		}
-		if prev == a.State {
-			continue
-		}
-		watched := focused && !m.lastUnfocused()
-		if watched && !cfg.WhenFocused {
-			continue
-		}
-		switch a.State {
-		case agent.Blocked:
-			m.playIfAllowed(a.PaneID, "blocked")
-		case agent.Done:
-			m.playIfAllowed(a.PaneID, "done")
-		case agent.Idle:
-			if watched && prev == agent.Working { // a watched turn ends idle, never done
-				m.playIfAllowed(a.PaneID, "done")
-			}
-		}
-	}
-	for pane := range m.prevState {
-		if !present[pane] {
-			delete(m.prevState, pane)
-		}
-	}
-}
-
-func (m Model) lastUnfocused() bool { return m.d.Store != nil && !m.d.Store.TerminalFocused() }
-
-func (m Model) playIfAllowed(pane, kind string) {
-	dir := ""
-	if m.d.Store != nil {
-		dir = m.d.Store.Dir
-	}
-	if dir != "" && !notify.Allowed(dir, pane+"-"+kind, 2*time.Second, time.Duration(m.d.Cfg.Sounds.MinIntervalMs)*time.Millisecond, time.Now()) {
-		return
-	}
-	_ = m.sounder.Play(kind)
-}
-
-func (m Model) pollRegistryIfEnabled() tea.Cmd {
-	if !m.d.Registry {
-		return nil
-	}
-	return m.pollRegistry()
-}
+func (m Model) pollRegistryIfEnabled() tea.Cmd { return registryCmd(m.p.PollRegistry()) }
 
 func (m Model) tick() tea.Cmd {
 	return tea.Tick(m.pollInterval(), func(time.Time) tea.Msg { return tickMsg{} })
@@ -575,40 +282,11 @@ func (m Model) tick() tea.Cmd {
 // reads as a stall.
 func (m Model) idle() bool { return m.hidden }
 
-func (m Model) idlePollMs() int {
-	ms := m.d.Cfg.Sidebar.IdlePollMs
-	if ms <= 0 {
-		ms = 3000
-	}
-	if ms < 1000 {
-		ms = 1000
-	}
-	return ms
-}
-
 // pollInterval is the tmux snapshot cadence: poll_ms, stretched to idle_poll_ms while idle.
-func (m Model) pollInterval() time.Duration {
-	ms := m.d.Cfg.Sidebar.PollMs
-	if ms < 200 {
-		ms = 200
-	}
-	if m.idle() && m.idlePollMs() > ms {
-		ms = m.idlePollMs()
-	}
-	return time.Duration(ms) * time.Millisecond
-}
+func (m Model) pollInterval() time.Duration { return m.p.PollInterval(m.idle()) }
 
 // screenInterval is the capture-pane cadence, stretched the same way while idle.
-func (m Model) screenInterval() time.Duration {
-	ms := m.d.Cfg.Sidebar.ScreenPollMs
-	if ms < 500 {
-		ms = 500
-	}
-	if m.idle() && m.idlePollMs() > ms {
-		ms = m.idlePollMs()
-	}
-	return time.Duration(ms) * time.Millisecond
-}
+func (m Model) screenInterval() time.Duration { return m.p.ScreenInterval(m.idle()) }
 
 func (m Model) anim() tea.Cmd {
 	ms := m.d.Cfg.Sidebar.SpinnerMs
@@ -624,13 +302,13 @@ func (m Model) anim() tea.Cmd {
 const focusCheckEvery = 5
 
 func (m Model) poll() tea.Cmd {
-	inner, store, outer, sb := m.d.Inner, m.d.Store, m.d.Outer, m.d.SidebarPane
+	outer, sb := m.d.Outer, m.d.SidebarPane
 	// while hidden, check every poll (they are idle_poll_ms apart) so an un-hide that raced a poll
 	// is noticed within one interval
 	checkFocus := m.polls%focusCheckEvery == 0 || m.hidden
+	inner := m.p.Poll()
 	return func() tea.Msg {
-		s, raw, err := tmux.TakeSnapshotRaw(inner)
-		msg := snapshotMsg{snap: s, raw: raw, err: err}
+		msg := snapshotMsg{SnapshotMsg: inner()}
 		if checkFocus && outer != nil && sb != "" {
 			// pane_active: keyboard-focus fallback; window_zoomed_flag: the work pane is zoomed over
 			// us (flok hide), which overrules a stale sidebar-hidden marker
@@ -643,52 +321,15 @@ func (m Model) poll() tea.Cmd {
 				msg.zoomed = &zoomed
 			}
 		}
-		if store != nil {
-			msg.hook, msg.seen = store.LoadAgents(), store.LoadSeen()
-			keepAwake := store.KeepAwake()
-			msg.unfocused, msg.hidden, msg.keepAwake = !store.TerminalFocused(), store.SidebarHidden(), &keepAwake
-			msg.theme, _ = store.TerminalTheme()
-		}
-		msg.fp = fingerprint(raw, msg.hook, msg.seen, msg.unfocused)
 		return msg
 	}
 }
 
-// fingerprint covers everything Build looks at, so an unchanged poll costs no rebuild.
-func fingerprint(raw string, hook map[string]agent.Agent, seen map[string]time.Time, unfocused bool) uint64 {
-	h := fnv.New64a()
-	h.Write([]byte(raw))
-	if b, err := json.Marshal(hook); err == nil {
-		h.Write(b)
-	}
-	if b, err := json.Marshal(seen); err == nil {
-		h.Write(b)
-	}
-	fmt.Fprintf(h, "%v", unfocused)
-	return h.Sum64()
-}
-
-// rebuild re-runs the merge on the cached tmux snapshot without spawning tmux: after a screen or
-// registry sample, or when hook records or the focus/hidden markers changed on disk
-// (reloadStore). Before the first poll nothing is cached, so it polls.
+// rebuild re-runs the merge on the cached tmux snapshot without spawning tmux (see
+// poller.Rebuild); before the first poll it polls.
 func (m Model) rebuild(reloadStore bool) tea.Cmd {
-	if m.lastRaw == "" {
-		return m.poll()
-	}
-	store := m.d.Store
-	snap, raw := m.tmuxSnap, m.lastRaw
-	hook, seen, unfocused, hidden, theme := m.lastHook, m.lastSeen, m.unfocused, m.hidden, m.themeRec
-	return func() tea.Msg {
-		var keepAwake *bool
-		if reloadStore && store != nil {
-			hook, seen = store.LoadAgents(), store.LoadSeen()
-			k := store.KeepAwake()
-			unfocused, hidden, keepAwake = !store.TerminalFocused(), store.SidebarHidden(), &k
-			theme, _ = store.TerminalTheme()
-		}
-		return snapshotMsg{snap: snap, raw: raw, hook: hook, seen: seen, unfocused: unfocused, hidden: hidden, theme: theme, keepAwake: keepAwake,
-			fp: fingerprint(raw, hook, seen, unfocused), rebuilt: true}
-	}
+	f := m.p.Rebuild(reloadStore)
+	return func() tea.Msg { return snapshotMsg{SnapshotMsg: f()} }
 }
 
 // animCmd starts the spinner when an agent works and someone can see it.
@@ -783,8 +424,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case snapshotMsg:
 		var keepChanged bool
 		var keepErr error
-		if msg.keepAwake != nil {
-			keepChanged, keepErr = m.keep.sync(*msg.keepAwake)
+		if msg.KeepAwake != nil {
+			keepChanged, keepErr = m.keep.sync(*msg.KeepAwake)
 		}
 		if keepErr != nil {
 			m.debugf("keep-awake: %v", keepErr)
@@ -795,8 +436,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			keepChanged = true
 			m.debugf("keep-awake presence=%q", m.keep.presence())
 		}
-		if msg.err != nil {
-			m.errText = msg.err.Error()
+		if msg.Err != nil {
+			m.errText = msg.Err.Error()
 			if keepChanged {
 				m.publish()
 			}
@@ -807,31 +448,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.focused, focusChanged = *msg.focus, true
 		}
 		themeChanged := false
-		if dark := m.d.Cfg.Theme.IsDark(msg.theme); dark != m.dark {
+		if dark := m.d.Cfg.Theme.IsDark(msg.Theme); dark != m.dark {
 			m.setTheme(dark)
 			themeChanged = true
 		}
-		m.themeRec = msg.theme
+		m.themeRec = msg.Theme
 		wasIdle := m.idle()
-		m.unfocused, m.hidden = msg.unfocused, msg.hidden
+		m.unfocused, m.hidden = msg.Unfocused, msg.Hidden
 		if msg.zoomed != nil {
 			m.hidden = *msg.zoomed
-			if m.d.Store != nil && *msg.zoomed != msg.hidden { // marker went stale (crash between zoom and write)
+			if m.d.Store != nil && *msg.zoomed != msg.Hidden { // marker went stale (crash between zoom and write)
 				_ = m.d.Store.SetSidebarHidden(*msg.zoomed)
 			}
 		}
 		if wasIdle != m.idle() {
 			m.debugf("idle=%v (unfocused=%v hidden=%v)", m.idle(), m.unfocused, m.hidden)
 		}
-		m.tmuxSnap, m.lastRaw, m.lastHook, m.lastSeen = msg.snap, msg.raw, msg.hook, msg.seen
 		var cmds []tea.Cmd
 		if themeChanged {
 			cmds = append(cmds, m.borderCmd())
 		}
-		if wasIdle && !m.idle() && msg.rebuilt { // someone is looking again: cached tmux data may be idle_poll_ms old
+		if wasIdle && !m.idle() && msg.Rebuilt { // someone is looking again: cached tmux data may be idle_poll_ms old
 			cmds = append(cmds, m.poll())
 		}
-		if msg.fp == m.lastFP && m.registrySeq == m.lastRegSeq && m.screenSeq == m.lastScrSeq && m.errText == "" {
+		merged := m.p.ApplySnapshot(msg.SnapshotMsg, m.errText != "") // a shown error forces a merge that clears it
+		if msg.zoomed != nil {
+			m.p.SetHidden(m.hidden) // ApplySnapshot cached the marker value; keep the corrected one
+		}
+		if !merged {
 			m.vc.valid = !focusChanged && !themeChanged // identical inputs: keep the frame, skip the merge
 			if keepChanged {
 				m.publish()
@@ -840,33 +484,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, batch(append(cmds, m.animCmd())...)
 		}
-		m.lastFP, m.lastRegSeq, m.lastScrSeq = msg.fp, m.registrySeq, m.screenSeq
 		m.errText = ""
-		titles := make(map[string]string, len(msg.snap.Panes))
-		progress := make(map[string]string, len(msg.snap.Panes))
-		for _, p := range msg.snap.Panes {
-			titles[p.ID] = p.Title
-			progress[p.ID] = rules.OSCProgress(p.PBState, p.PBProgress)
-		}
-		m.titles, m.progress = titles, progress
-		m.snap = m.tracker.Build(merge.Inputs{Tmux: msg.snap, ClientTTY: m.clientTTY, Adapters: m.d.Adapters, SessionOrder: m.d.Cfg.Sidebar.SessionOrder,
-			BranchOf: m.d.BranchOf, BranchFromSessionPath: m.d.Cfg.Sidebar.BranchSource == "session_path",
-			Hook: msg.hook, Seen: msg.seen, Registry: m.registry, RegistrySeq: m.registrySeq, RegistryAt: m.registryAt,
-			Screen: m.screen, ScreenSeq: m.screenSeq, ScreenAt: m.screenAt, TerminalUnfocused: msg.unfocused,
-			StaleWorking: time.Duration(m.d.Cfg.Sidebar.StaleWorkingMin) * time.Minute})
-		if m.d.Store != nil {
-			for _, pane := range m.snap.NewlySeen {
-				_ = m.d.Store.MarkSeen(pane, time.Now())
-			}
-			for _, c := range m.snap.Corrections {
-				m.persistCorrection(c)
-			}
-			for _, stale := range m.snap.StaleHooks {
-				_ = m.d.Store.DeleteAgentIfUnchanged(stale.PaneID, stale.AgentSessionID, stale.LastEventAt)
-			}
-		}
+		m.snap = m.p.Snap()
 		m.publish() // for flok-bar and other out-of-process readers
-		m.soundTransitions()
 		m.clamp()
 		return m, batch(append(cmds, m.animCmd())...)
 	case switchedMsg:
@@ -879,22 +499,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case registryTickMsg:
 		return m, tea.Batch(m.pollRegistryIfDue(), m.registryTick())
 	case registryMsg:
-		if msg.entries != nil {
-			m.registry = msg.entries
-			m.registrySeq++
-			m.registryAt = time.Now()
+		if m.p.ApplyRegistry(msg) {
 			return m, m.rebuild(false)
 		}
 		return m, nil
 	case screenTickMsg:
 		return m, tea.Batch(m.pollScreen(), m.screenTick())
 	case screenMsg:
-		m.screen = msg.results
-		if len(msg.results) == 0 { // nothing was evaluated: not a sample
+		if !m.p.ApplyScreen(msg) { // nothing was evaluated: not a sample
 			return m, nil
 		}
-		m.screenSeq++ // one sample per tick, identical or not: the merge counts samples
-		m.screenAt = time.Now()
 		return m, m.rebuild(false)
 	case tea.FocusMsg: // tmux forwards pane focus (focus-events on in the outer)
 		m.debugf("focus in")
@@ -1019,10 +633,7 @@ func (m Model) activate(panel, idx int, keepFocus bool) tea.Cmd {
 		}
 		a := m.snap.Agents[idx]
 		sess, win, pane = a.SessionID, a.WindowID, a.PaneID
-		m.tracker.MarkSeen(pane)
-		if m.d.Store != nil {
-			_ = m.d.Store.MarkSeen(pane, time.Now())
-		}
+		m.p.MarkSeen(pane)
 	}
 	return func() tea.Msg {
 		err := nav.Go(inner, tty, sess, win, pane)
