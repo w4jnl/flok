@@ -80,12 +80,19 @@ expect "last_connected recorded" '"last_connected"' "$(cat "$CLI_STATE/hosts.jso
 expect "gamma has a local store of its own" '^dir$' "$([ -d "$CLI_STATE/hosts/gamma/agents" ] && echo dir || echo none)"
 json=$(cli host status --json)
 expect "status --json reports the hello" '"tmux_version": "[0-9]' "$json"
+doc=$(cli doctor 2>&1 || true)
+expect "doctor probes beta: tmux, flok and its protocol" '^ok +host beta \(full\): tmux [0-9][^,]*, flok [^ ]+ \(protocol 1\)' "$doc"
+expect "doctor probes gamma" '^ok +host gamma \(plain\): tmux [0-9]' "$doc"
+expect "doctor notices the missing hooks on beta" '^warn +host beta \(full\): no ~/.claude/settings.json' "$doc"
 touch "$T/down-gamma" "$T/auth-beta"
 rc=0; out=$(cli host status 2>&1) || rc=$?
 echo "--- host status, both failing ---"; printf '%s\n' "$out" | sed 's/^/      | /'
 expect "a refused connection is unreachable with the reason" '^gamma +plain +unreachable +- +- +Connection refused' "$out"
 expect "a rejected key needs auth with the hint" '^beta +full +needs auth +- +- +.*Permission denied.*run `ssh beta` once' "$out"
 expect "status exits 1 when a host fails" '^1$' "$rc"
+doc=$(cli doctor 2>&1 || true)
+expect "doctor reports the failing hosts with hints" '^FAIL +host beta \(full\): needs auth \(.*Permission denied.*\); run `ssh beta` once' "$doc"
+expect "doctor reports a refused connection" '^FAIL +host gamma \(plain\): unreachable \(Connection refused\)' "$doc"
 rm -f "$T/down-gamma" "$T/auth-beta"
 cli host disconnect gamma >/dev/null
 expect "a disabled host is skipped by status" '^0$' "$(cli host status | grep -c '^gamma' || true)"

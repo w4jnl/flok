@@ -94,8 +94,8 @@ func bashCompletion() string {
                     remove|connect|disconnect|front) COMPREPLY=( $(compgen -W "$(flok host list --names 2>/dev/null) local" -- "$cur") ) ;;
                     add) case "$prev" in
                              --mode) COMPREPLY=( $(compgen -W "full plain" -- "$cur") ) ;;
-                             --socket|--session|--flok) ;;
-                             *) COMPREPLY=( $(compgen -W "--mode --socket --session --flok --disabled" -- "$cur") ) ;;
+                             --socket|--session|--flok|--term) ;;
+                             *) COMPREPLY=( $(compgen -W "--mode --socket --session --flok --term --disabled" -- "$cur") ) ;;
                          esac ;;
                     list) COMPREPLY=( $(compgen -W "--json --names" -- "$cur") ) ;;
                     status) COMPREPLY=( $(compgen -W "--json" -- "$cur") ) ;;
@@ -140,7 +140,7 @@ func zshCompletion() string {
                         local -a hosts
                         hosts=(${(f)"$(flok host list --names 2>/dev/null)"} local)
                         _describe -t hosts 'host' hosts ;;
-                    add) _arguments '--mode[full (flok serve on the host) or plain (tmux only)]:mode:(full plain)'                             '--socket[remote tmux socket name]:socket' '--session[session to attach or create]:session'                             '--flok[remote flok binary]:path:_files' '--disabled[register without connecting]' ;;
+                    add) _arguments '--mode[full (flok serve on the host) or plain (tmux only)]:mode:(full plain)'                             '--socket[remote tmux socket name]:socket' '--session[session to attach or create]:session'                             '--flok[remote flok binary]:path:_files' '--term[TERM for the attach (screen-256color)]:term' '--disabled[register without connecting]' ;;
                     list) _arguments '--json[machine-readable output]' '--names[one name per line]' ;;
                     status) _arguments '--json[machine-readable output]' ;;
                 esac

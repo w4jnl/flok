@@ -64,7 +64,7 @@ func TestClassify(t *testing.T) {
 	if d := Detail("warning: x\nssh: connect to host beta port 22: Connection refused\n"); d != "Connection refused" {
 		t.Fatalf("detail %q", d)
 	}
-	st, d := ClassifyErr(&tmux.ExitError{Code: 255, Stderr: "Permission denied (publickey)", Cmd: "beta: tmux -V"})
+	st, d := ClassifyErr(&tmux.ExitError{Code: 255, Stderr: "jaro@beta: Permission denied (publickey).", Cmd: "beta: tmux -V"})
 	if st != Auth || d != "Permission denied (publickey)" {
 		t.Fatalf("ClassifyErr: %s %q", st, d)
 	}

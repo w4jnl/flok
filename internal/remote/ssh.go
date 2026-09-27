@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -171,11 +172,17 @@ func Detail(stderr string) string {
 	if i := strings.Index(line, "port 22: "); i >= 0 && strings.HasPrefix(line, "connect to host") {
 		line = line[i+len("port 22: "):]
 	}
+	if m := targetPrefixRe.FindStringSubmatch(line); m != nil { // "jaro@beta: Permission denied (publickey)."
+		line = m[1]
+	}
+	line = strings.TrimSuffix(line, ".")
 	if len(line) > 80 {
 		line = line[:77] + "..."
 	}
 	return line
 }
+
+var targetPrefixRe = regexp.MustCompile(`^[A-Za-z0-9._@:-]+: ((?:Permission denied|Too many authentication failures|Authentication failed).*)$`)
 
 // Backoff is the reconnect delay after attempt failures in a row: 1, 2, 4 … maxS seconds.
 func Backoff(attempt int, maxS int) time.Duration {
