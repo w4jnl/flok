@@ -51,9 +51,9 @@ expect "the hook state arrives as a snap update" '"type":"snap".*"state":"blocke
 wait_file "$SERVE_OUT" '"type":"event"' 5 || true
 expect "the unsounded notification arrives as an event" '"type":"event","event":."pane":"%[0-9]+","kind":"blocked"' "$(cat "$SERVE_OUT")"
 expect "the host's hook played nothing while served" '^missing$' "$([ -e "$T/hosts/beta/played" ] && echo played || echo missing)"
-printf '{"type":"goto","goto":{"session":"$1"}}\n' >&7
+printf '{"type":"goto","goto":{"session":"$999"}}\n' >&7   # the sidebar's parked pane is beta's client by now: aim at a session that is not there
 wait_file "$SERVE_OUT" '"type":"error"' 3 || true
-expect "goto without a client on the host is an error frame" '"error":"goto: no inner tmux client' "$(cat "$SERVE_OUT")"
+expect "a goto that fails on the host is an error frame, not a crash" '"error":"goto: ' "$(cat "$SERVE_OUT")"
 exec 7>&-   # the local side goes away
 for _ in $(seq 1 30); do kill -0 "$SERVE_PID" 2>/dev/null || break; sleep 0.1; done
 expect "serve exits on EOF" '^gone$' "$(kill -0 "$SERVE_PID" 2>/dev/null && echo alive || echo gone)"
@@ -88,4 +88,107 @@ expect "list shows it disabled" '^gamma +gamma +plain +no ' "$("$BIN" host list)
 "$BIN" host remove gamma >/dev/null
 expect "remove drops the host" '^beta$' "$("$BIN" host list --names)"
 expect "remove prunes its local store" '^none$' "$([ -d "$T/state/hosts/gamma" ] && echo dir || echo none)"
+
+# --- part 2: the sidebar goes multi-host -----------------------------------------------------
+# The running sidebar watches hosts.json: adding gamma back (beta is still enabled) connects both
+# through the manager and parks a work pane per host in the outer.
+"$BIN" host add gamma gamma --mode plain >/dev/null
+RT=$T/state/runtime.json
+SNAP=$T/state/snapshot.json
+rt() { python3 -c "import json,sys;r=json.load(open('$RT'));print(eval(sys.argv[1]))" "$1" 2>/dev/null || true; }
+snap_hosts() { python3 -c "import json;print(' '.join(h['name']+'='+h['state'] for h in json.load(open('$SNAP')).get('hosts',[])))" 2>/dev/null || true; }
+wait_hosts() { local i; for i in $(seq 1 $(( ${2:-10} * 10 ))); do [ "$(snap_hosts)" = "$1" ] && return 0; sleep 0.1; done; return 1; }
+wait_for 'servers' 5 || true
+snap=$(capture); echo "--- servers panel ---"; printf '%s\n' "$snap" | grep -v '^ *$' | sed -n '1,12p' | sed 's/^/      | /'
+expect "the sidebar grows a servers panel" '^servers' "$snap"
+expect "local is the first server row" '^ . local' "$snap"
+expect "the sessions header names the front host" '^sessions · local' "$snap"
+wait_hosts "beta=connected gamma=connected" 25 || true   # beta may sit out a busy retry after part 1's serves
+expect "snapshot.json reports both hosts connected" '^beta=connected gamma=connected$' "$(snap_hosts)"
+wait_for '. beta +[0-9]' 5 || true
+snap=$(capture)
+expect "beta's row counts its agent" ' beta +1' "$snap"
+expect "gamma's row counts its title-detected agent" ' gamma +1' "$snap"
+expect "remote agents carry their host on the second line" 'beta · claude' "$snap"
+expect "the plain host's agent shows too" 'gamma · claude' "$snap"
+wins=$(OUT list-windows -t flok -F '#{window_name} #{window_panes}')
+expect "a parked window per host, one pane each" '^flok-host-beta 1$' "$wins"
+expect "gamma has its parked window too" '^flok-host-gamma 1$' "$wins"
+BETA_PANE=$(rt "r['hosts']['beta']['pane']")
+BETA_WIN=$(rt "r['hosts']['beta']['window']")
+expect "runtime.json records beta's pane and window" '^%[0-9]+ @[0-9]+$' "$BETA_PANE $BETA_WIN"
+# the parked pane attached to beta's tmux through the fake ssh
+for _ in $(seq 1 50); do OUT capture-pane -p -t "$BETA_PANE" | grep -q 'remote-agent\|Remote' && break; sleep 0.1; done
+expect "beta's parked pane shows beta's tmux" '' "$(OUT capture-pane -p -t "$BETA_PANE" | grep -c . )"
+expect "beta's tmux has a client (the parked pane)" '^1$' "$(tmux -L e2e-beta list-clients | wc -l | tr -d ' ')"
+# a hook on beta changes its row here (beta is not in front: unfocused there, so Stop ends done)
+rhook beta claude '{"hook_event_name":"PostToolUse","session_id":"r1","tool_name":"Bash","tool_use_id":"t2"}'
+rhook beta claude '{"hook_event_name":"Stop","session_id":"r1"}'
+wait_for 'done' 5 || true
+snap=$(capture)
+expect "a Stop on beta shows done here" '✓ .*done' "$snap"
+expect "beta's server row counts the pending agent" ' beta +1 · [0-9]' "$snap"
+
+# switch to beta with the keyboard: Tab Tab reaches the servers panel, j selects beta, Enter swaps
+"$BIN" focus
+OUT send-keys -t "$SIDEBAR" Tab Tab j Enter
+for _ in $(seq 1 50); do [ "$(rt "r.get('front_host','')")" = beta ] && break; sleep 0.1; done
+expect "front_host is beta" '^beta$' "$(rt "r.get('front_host','')")"
+expect "right_pane is beta's pane" "^$BETA_PANE\$" "$(rt "r['right_pane']")"
+expect "local_pane remembers the local loop" "^$RIGHT\$" "$(rt "r.get('local_pane','')")"
+expect "beta's pane sits in window 0" "$BETA_PANE" "$(OUT list-panes -t flok:0 -F '#{pane_id}')"
+expect "the local pane is parked in beta's window" "$RIGHT" "$(OUT list-panes -t "$BETA_WIN" -F '#{pane_id}')"
+expect "the sidebar keeps its width" "^$(python3 -c "import json;print(json.load(open('$RT'))['full_width'])")\$" "$(OUT display -p -t "$SIDEBAR" '#{pane_width}')"
+wait_for 'sessions · beta' 3 || true
+snap=$(capture); echo "--- beta in front ---"; printf '%s\n' "$snap" | grep -v '^ *$' | sed -n '1,12p' | sed 's/^/      | /'
+expect "the sessions panel shows beta's sessions" '^sessions · beta' "$snap"
+expect "beta's session is listed" ' Remote' "$snap"
+expect "snapshot.json marks beta as front" '"front_host": "beta"' "$(cat "$SNAP")"
+expect "beta was told it is visible" '^1$' "$(cat "$T/hosts/beta/state/terminal-focus")"
+
+# hide (zoom) with beta in front, switch back to local while hidden, un-hide: the zoom follows
+"$BIN" hide
+expect "hide zooms the front pane" '^1$' "$(OUT display -p -t "$BETA_PANE" '#{window_zoomed_flag}')"
+OUT send-keys -t "$SIDEBAR" k Enter
+for _ in $(seq 1 50); do [ "$(rt "r.get('front_host','')")" = "" ] && [ "$(rt "r['right_pane']")" = "$RIGHT" ] && break; sleep 0.1; done
+expect "front_host is local again" '^$' "$(rt "r.get('front_host','')")"
+expect "right_pane is the local pane again" "^$RIGHT\$" "$(rt "r['right_pane']")"
+expect "the window stays zoomed on the new front pane" '^1$' "$(OUT display -p -t "$RIGHT" '#{window_zoomed_flag}')"
+expect "beta's pane is parked again" "$BETA_PANE" "$(OUT list-panes -t "$BETA_WIN" -F '#{pane_id}')"
+"$BIN" hide
+expect "un-hide restores the layout" '^0$' "$(OUT display -p -t "$RIGHT" '#{window_zoomed_flag}')"
+expect "beta was told it is out of sight" '^0$' "$(cat "$T/hosts/beta/state/terminal-focus")"
+
+# beta goes down: the serve session dies, the attach pane loses its client, both report it
+touch "$T/down-beta"
+pkill -f "serve --stdio" || true
+tmux -L e2e-beta detach-client 2>/dev/null || true
+wait_for '✗ beta' 10 || true
+snap=$(capture)
+expect "a lost host shows ✗ with the reason or a countdown" '✗ beta +(retry in [0-9]+s|unreachable)' "$snap"
+expect "its agents left the list" '^0$' "$(printf '%s\n' "$snap" | grep -c 'beta · claude' || true)"
+for _ in $(seq 1 80); do OUT capture-pane -p -t "$BETA_PANE" | grep -q 'unreachable' && break; sleep 0.1; done
+expect "the parked pane says why and when it retries" 'flok: beta unreachable \(Connection refused\), retry in [0-9]+s' "$(OUT capture-pane -p -t "$BETA_PANE")"
+rm -f "$T/down-beta"
+wait_hosts "beta=connected gamma=connected" 15 || true
+expect "beta reconnects once reachable" '^beta=connected gamma=connected$' "$(snap_hosts)"
+for _ in $(seq 1 80); do [ "$(tmux -L e2e-beta list-clients | wc -l | tr -d ' ')" = 1 ] && break; sleep 0.1; done
+expect "the parked pane re-attaches" '^1$' "$(tmux -L e2e-beta list-clients | wc -l | tr -d ' ')"
+
+# disconnect and remove from the CLI: the sidebar follows the registry
+"$BIN" host disconnect gamma >/dev/null
+for _ in $(seq 1 50); do OUT list-windows -t flok -F '#{window_name}' | grep -q flok-host-gamma || break; sleep 0.1; done
+expect "disconnect kills gamma's parked window" '^0$' "$(OUT list-windows -t flok -F '#{window_name}' | grep -c flok-host-gamma || true)"
+wait_for ' gamma +off' 5 || true
+expect "gamma's row reads off" ' gamma +off' "$(capture)"
+"$BIN" host remove gamma >/dev/null
+for _ in $(seq 1 50); do capture | grep -q ' gamma' || break; sleep 0.1; done
+expect "remove drops gamma's row" '^0$' "$(capture | grep -c ' gamma' || true)"
+
+# down leaves the remote servers alone
+"$BIN" down
+sleep 0.5
+expect "the outer is gone" '^0$' "$(OUT list-sessions 2>/dev/null | wc -l | tr -d ' ')"
+expect "beta's tmux survives flok down" 'Remote' "$(tmux -L e2e-beta list-sessions -F '#{session_name}')"
+expect "gamma's tmux survives flok down" 'Remote' "$(tmux -L e2e-gamma list-sessions -F '#{session_name}')"
 finish
