@@ -46,7 +46,10 @@ pane. Suites: m1 title-driven states, m2 hook-driven states, m3 nav/toggle/keys,
 rules for hook-less agents, m5 launcher lifecycle (detach, killed session, reattach), m6
 snapshot.json / goto / flok-bar plumbing, m7 the terminal bell (an outer `alert-bell` hook
 observes the BEL), m8 `flok resurrect save`, m9 keep-awake (`pmset -g assertions` against the
-sidebar pid on macOS, the macOS-only message elsewhere). They need a real `tmux` on PATH and `python3` (to read `runtime.json`).
+sidebar pid on macOS, the macOS-only message elsewhere), m10 remote hosts: `fake_ssh_setup` /
+`fake_host` in lib.sh put a fake `ssh` on PATH that runs the remote command locally against
+isolated servers `e2e-<host>` with per-host state and config (`$T/down-<host>` / `$T/auth-<host>`
+simulate failures) and `rhook` replays a hook on a host. They need a real `tmux` on PATH and `python3` (to read `runtime.json`).
 `lib.sh` exports `TMUX_VER`/`tmux_at_least MAJ MIN` for checks older servers cannot pass.
 
 ## Architecture
