@@ -315,8 +315,11 @@ func (c hostCmd) status(args []string) int {
 			detail = "no answer within " + timeout.String()
 		}
 		if hint := st.State.Hint(h); hint != "" {
-			detail = strings.TrimSpace(detail + "; " + hint)
-			detail = strings.TrimPrefix(detail, "; ")
+			detail = strings.TrimSuffix(strings.TrimSpace(detail), ".")
+			if detail != "" {
+				detail += "; "
+			}
+			detail += hint
 		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", st.Host, h.Mode, st.State.Label(), remoteCol, agents, detail)
 	}

@@ -27,7 +27,8 @@ export PATH="$FAKE:$PATH" FLOK_E2E_REGISTRY=$T/registry.json   # the sidebar's `
 registry() { printf '%s' "$1" > "$FLOK_E2E_REGISTRY"; }     # registry '[{"pid":N,"status":"idle",...}]'
 IN() { tmux -L e2e-inner "$@"; }
 OUT() { tmux -L e2e-outer "$@"; }
-cleanup() { OUT kill-server 2>/dev/null || true; IN kill-server 2>/dev/null || true; rm -rf "$T"; }
+cleanup() { OUT kill-server 2>/dev/null || true; IN kill-server 2>/dev/null || true
+  for h in ${FAKE_HOSTS:-}; do tmux -L "e2e-$h" kill-server 2>/dev/null || true; done; rm -rf "$T"; }
 trap cleanup EXIT
 IN kill-server 2>/dev/null || true; OUT kill-server 2>/dev/null || true
 
@@ -76,3 +77,73 @@ expect "runtime.json records the tmux version" "^$TMUX_MAJOR\\.$TMUX_MINOR" "$(p
 
 # hook <agent> <json>  — replays a hook payload as if the agent in $AGENT had emitted it.
 hook() { printf '%s' "$2" | TMUX="$INNER_SOCK,0,0" TMUX_PANE="$AGENT" "$BIN" hook "$1"; }
+
+# ---- remote hosts (m10) -------------------------------------------------------------------
+# fake_ssh_setup: $FAKE/ssh runs "ssh [options] [--] <host> <command…>" locally under the host's
+# private environment (state dir, config, HOME, a PATH whose tmux and flok are shims); $T/down-<host>
+# makes it fail like a refused connection, $T/auth-<host> like a rejected key. The real ssh is
+# never used by the suites.
+fake_ssh_setup() {
+  REAL_TMUX=$(command -v tmux)
+  cat > "$FAKE/ssh" <<SSH
+#!/usr/bin/env bash
+host=""
+while [ \$# -gt 0 ]; do
+  case "\$1" in
+    -o) shift 2 ;;
+    -t|-T|-q|-tt|-o*) shift ;;
+    --) shift; host=\$1; shift; break ;;
+    -*) shift ;;
+    *) host=\$1; shift; break ;;
+  esac
+done
+[ -n "\$host" ] || { echo "usage: ssh host command" >&2; exit 255; }
+[ -e "$T/down-\$host" ] && { echo "ssh: connect to host \$host port 22: Connection refused" >&2; exit 255; }
+[ -e "$T/auth-\$host" ] && { echo "\$host: Permission denied (publickey)." >&2; exit 255; }
+[ -d "$FAKE/hosts/\$host" ] || { echo "ssh: Could not resolve hostname \$host: nodename nor servname provided" >&2; exit 255; }
+unset TMUX TMUX_PANE FLOK_OUTER FLOK_RIGHT_PANE
+export PATH="$FAKE/hosts/\$host/bin:\$PATH" FLOK_STATE="$T/hosts/\$host/state" FLOK_CONFIG="$T/hosts/\$host/config.toml" \\
+  HOME="$T/hosts/\$host/home" FLOK_E2E_REGISTRY="$T/hosts/\$host/registry.json" SSH_CONNECTION="127.0.0.1 1 127.0.0.1 22"
+[ \$# -gt 0 ] || exit 0
+exec sh -c "\$*"
+SSH
+  chmod +x "$FAKE/ssh"
+}
+# fake_host <name>: an isolated tmux server e2e-<name> with a fake agent window (like Alpha:agent
+# here), reachable through the fake ssh as <name>. Sounds on that host append the file name to
+# $T/hosts/<name>/played instead of playing.
+fake_host() {
+  local h=$1 d=$T/hosts/$1 pane
+  mkdir -p "$d/state" "$d/home" "$FAKE/hosts/$h/bin"
+  cat > "$FAKE/hosts/$h/bin/tmux" <<TMUX
+#!/usr/bin/env bash
+# the host's tmux: whatever socket is asked for, it is the isolated server e2e-$h
+args=(); while [ \$# -gt 0 ]; do case "\$1" in -L) shift 2 ;; *) args+=("\$1"); shift ;; esac; done
+exec "$REAL_TMUX" -L "e2e-$h" "\${args[@]}"
+TMUX
+  printf '#!/usr/bin/env bash\nexec "%s" "$@"\n' "$BIN" > "$FAKE/hosts/$h/bin/flok"
+  chmod +x "$FAKE/hosts/$h/bin/tmux" "$FAKE/hosts/$h/bin/flok"
+  cat > "$d/config.toml" <<CFG
+[inner]
+socket = "e2e-$h"
+[sidebar]
+poll_ms = 250
+registry_poll_ms = 1000
+[sounds]
+enabled = true
+command = "echo {file} >> $d/played"
+CFG
+  tmux -L "e2e-$h" kill-server 2>/dev/null || true
+  tmux -L "e2e-$h" -f /dev/null new-session -d -s Remote -x 200 -y 50 -c "$R"
+  tmux -L "e2e-$h" new-window -t Remote -n agent -c "$R"
+  pane=$(tmux -L "e2e-$h" display -p -t Remote:agent '#{pane_id}')
+  tmux -L "e2e-$h" select-pane -t "$pane" -T "✳ remote-agent"
+  tmux -L "e2e-$h" send-keys -t "$pane" "exec $FAKE/claude" Enter
+  tmux -L "e2e-$h" select-window -t Remote:0
+  FAKE_HOSTS="${FAKE_HOSTS:-} $h"
+  eval "HOST_${h}_PANE=\$pane; HOST_${h}_SOCK=\$(tmux -L e2e-$h display -p '#{socket_path}')"
+  sleep 0.3
+}
+# rhook <host> <agent> <json>: replays a hook payload on the host, as its agent pane would emit it.
+rhook() { local sock pane; eval "sock=\$HOST_$1_SOCK; pane=\$HOST_$1_PANE"
+  printf '%s' "$3" | TMUX="$sock,0,0" TMUX_PANE="$pane" FLOK_STATE="$T/hosts/$1/state" FLOK_CONFIG="$T/hosts/$1/config.toml" "$BIN" hook "$2"; }
