@@ -183,6 +183,11 @@ What flok does about it:
   the Mac from idle-sleeping and keeps the display on while agents run unattended, until you
   turn it off or flok stops; a ⚡ in the menu bar shows it is on. With
   `[keep_awake] presence = true` Teams, Slack & co. keep showing you as active as well.
+- **Remote hosts**: one flok shows and drives tmux servers on other machines over plain ssh. A
+  servers panel above the sessions, remote agents tagged with their host in the agents panel and
+  the menu bar, a persistent attach pane per host swapped in next to the sidebar when you pick
+  it; the host runs `flok serve` (hooks and all) or, where flok cannot be installed, is read
+  through tmux alone.
 - **Zero footprint by default** on your tmux: no plugin and no pane injected into your windows.
 - **tmux-resurrect** (opt-in): saves each Claude Code and Copilot pane with its exact session ID,
   so a restore resumes the same conversations.
@@ -367,6 +372,67 @@ says whether that is in place; `flok keep-awake status`, `flok status` (`"KeepAw
 in `--json`) and the menu bar tooltip report the presence as active, or blocked when macOS
 drops the events. The key is read when the sidebar starts; `flok reload` applies a change.
 
+### Remote hosts
+
+One flok can show and drive tmux servers on other machines, over plain `ssh` with your
+`~/.ssh/config` (aliases, jump hosts, keys or an agent; flok never answers a password prompt):
+
+```sh
+flok host add beta jaro@beta              # full: flok on the host streams its agents
+flok host add gpu-1 gpu-1 --mode plain    # plain: tmux only, titles and screen rules
+flok host status                          # connect to each once and report
+flok doctor                               # probes every host: tmux, flok, hooks, terminfo
+```
+
+Hosts live in `hosts.json` in the state dir, not in `config.toml`: `flok host add|remove|
+connect|disconnect` (or `c` on a row of the servers panel) changes the set while flok runs, and
+`flok up` reconnects the enabled ones. `[hosts]` in `config.toml` holds the ssh defaults.
+
+In **full** mode the local flok runs `flok serve --stdio` on the host: the same hooks, Claude
+registry and screen rules the sidebar would use there, merged on the host and streamed back as
+JSON lines over the ssh session. The sounds play here; the host's own hooks stay silent while it
+is served (a `served` record in its state dir says so). In **plain** mode the local flok drives the
+host's tmux over ssh itself: titles and screen rules, no hook states, slower polls; for hosts
+where flok cannot be installed.
+
+The sidebar grows a **servers** panel above the sessions: local first, then the hosts in the
+order they were added, each with its rollup glyph and agent count (an orange `· 2` for agents
+waiting there), or its connection state (`connecting`, `retry in 8s`, `needs auth`, `no flok`,
+`busy`, `incompatible`, `off`). `Enter` on a host brings its work pane next to the sidebar; the
+sessions panel then shows that host's sessions (`sessions · beta`). The agents panel shows every
+host, attention-sorted, remote rows tagged with their host (`beta · claude · fix login`).
+
+```
+local machine                                              host "beta" (mode full)
+outer tmux -L flok                                         ┌───────────────────────────┐
+ window 0        [ sidebar | work pane of the front host ] │ tmux server (yours)       │
+ flok-host-beta  [ ssh -t beta tmux attach ]  ◄── swap ──► │  ▲ attached from the pane │
+ flok-host-gpu-1 [ ssh -t gpu-1 tmux attach ]              │ flok serve --stdio ◄ hooks│
+ sidebar ─ remote.Manager ── ssh -T beta flok serve ──────►│  agents, sessions, focus  │
+           merge.Federate ◄── snap / event ── goto / seen ►└───────────────────────────┘
+```
+
+Every enabled host keeps a persistent `ssh -t … tmux attach` pane parked in a hidden window of
+the outer server, so switching hosts is one `swap-pane`: instant, no reconnect, `flok hide`
+keeps working. The parked pane re-attaches by itself when you detach inside the remote tmux, and
+shows one status line and a countdown while the host is unreachable. The data channel
+reconnects with a backoff of 1, 2, 4 … 30 s; `needs auth`, `host key`, `no flok` and
+`incompatible` are retried once a minute with the fix spelled out, `busy` (another flok already
+serves that host) every 10 s. A laptop going to sleep ends the dead ssh within about 45 s; the
+host's `flok serve` exits on the closed pipe and its hooks play there again.
+
+Navigation crosses hosts: `prefix o` goes to the agent needing you on any host, `1`-`9`, a
+click and the menu bar reach any row, `flok goto beta:%12` scripts it; `prefix a` / `A` walk the
+agents of the host in front, so a step never swaps the work pane. `flok host front beta` (or
+`local`) switches hosts from a key binding.
+
+Security: ssh only, no listening sockets, no daemons. The local side execs the ssh argv (never a
+shell) with `BatchMode=yes`, its own ControlMaster socket under `~/.local/state/flok/ssh`
+(0700) and no agent forwarding unless `[hosts] ssh_options` adds it; the remote commands are
+fixed strings built from validated fields. Host keys are accepted by you, once, with a plain
+`ssh <target>`. `flok serve` reads only its own state dir and drives only its own tmux server.
+tmux-resurrect stays per host; "restoring" the local side is reconnecting at `flok up`.
+
 ### The help popup
 
 `prefix ?` runs `flok keys` in a tmux popup. It reads `list-keys` for the prefix, root and
@@ -412,8 +478,9 @@ In tmux (your prefix; the snippet assumes `C-a`):
 | `prefix u` | keep the Mac awake, display on, while flok runs; toggles, the state shows on the status line (macOS) |
 | `prefix ?` | keybinds help popup (`?` inside the sidebar opens the same) |
 
-Menu bar (when enabled): click an agent row to return to it, "Show flok" to bring the terminal
-window to the front, "Keep awake" to toggle it (checked while it is on), "Edit config…" to
+Menu bar (when enabled): click an agent row to return to it (remote agents read `project ·
+claude @beta`, and a row per host under them brings that host's pane to the front), "Show
+flok" to bring the terminal window to the front, "Keep awake" to toggle it (checked while it is on), "Edit config…" to
 open `config.toml` (in a new tmux window with `[bar] editor`
 set, else with the default app), "Reload sidebar" to apply it, "Quit flok-bar" to remove the item
 (flok keeps running). The version row at the bottom opens the release notes (`CHANGELOG.md`,
@@ -424,8 +491,9 @@ Inside the sidebar (`prefix g`, a click, or `flok focus`):
 | key | action |
 |---|---|
 | `j` `k` / arrows / wheel | move the cursor |
-| `Tab` | switch between the sessions and agents panels |
-| `Enter` | open the selected row and hand the keyboard to the work pane |
+| `Tab` / `Shift-Tab` | cycle the panels: servers (with remote hosts), sessions, agents |
+| `c` | servers panel: connect / disconnect the selected host |
+| `Enter` | open the selected row and hand the keyboard to the work pane (a servers row brings that host's work pane to the front) |
 | `1`-`9` | open agent N; `!` `@` `#` … open session N |
 | `g` / `G` | first / last row |
 | `?` | keybinds help |
@@ -445,14 +513,20 @@ flok keep-awake [on|off|toggle|status] [--notify]   keep the Mac awake, display 
 flok status [--json]        one-shot dump of sessions and agents
 flok jump | next | prev     navigation, used by the bindings           [--client <tty>]
 flok toggle | hide | focus  sidebar layout and keyboard focus
-flok goto [pane-id] [--no-focus]   switch to an agent pane and bring the terminal window to the front
+flok goto [pane] [--no-focus]   switch to an agent pane (%12 here, beta:%12 on a host) and bring the
+                            terminal window to the front
 flok edit-config [--no-focus]      open config.toml (new tmux window with [bar] editor, else default app)
 flok reload                 restart the sidebar pane after editing config.toml
 flok keys [--print [--filter q]]   keybinds help; --print dumps it as text
 flok explain [pane ...]     which screen-detection rules match agent panes
 flok install [--claude] [--copilot] [--tmux]
-flok doctor
+flok doctor                 checks tmux, hooks, sounds, the outer session and every remote host
 flok completion bash|zsh
+flok host add <name> <user@host> [--mode full|plain] [--socket name] [--session name]
+              [--flok /path/to/flok] [--term name] [--disabled]     register a remote host
+flok host remove | connect | disconnect <name>
+flok host list [--json|--names]  |  flok host status [--json]  |  flok host front <name>|local [--focus]
+flok serve --stdio | --hello      run headless on this host for a flok elsewhere (started over ssh by it)
 ```
 
 ## Configuration
@@ -539,6 +613,17 @@ presence = false            # true: while keep-awake is on, also keep you "activ
                             # other apps that watch input idle time (an empty modifier-key event after
                             # 60 s without input; needs Accessibility for your terminal app)
 
+[hosts]                     # remote tmux servers shown next to the local one; the list itself is
+                            # dynamic: flok host add <name> <user@host> (flok host --help)
+ssh = "ssh"                 # ssh binary; aliases, jump hosts and keys come from ~/.ssh/config
+ssh_options = []            # extra ssh arguments, e.g. ["-o", "IdentitiesOnly=yes"]; yours come first
+connect_timeout_s = 10
+backoff_max_s = 30          # reconnect backoff 1, 2, 4 … up to this many seconds
+multiplex = true            # one ControlMaster connection per host, shared by the data channel,
+                            # tmux calls and the work pane (sockets under the state dir)
+serve_command = "flok serve --stdio"   # what mode full runs on the host; flok host add --flok <path>
+                            # names the binary per host when it is not on the non-interactive PATH
+
 [theme]                     # Dracula by default; state tokens may name a colour or a hex value
 mode = "auto"               # auto: follow the terminal's background, asked at `flok up` | dark | light
 working = "cyan"
@@ -565,6 +650,11 @@ brand = "#12999D"
 | `~/.local/state/flok/flok-bar.pid` | the menu bar process started by `flok up` |
 | `~/.local/state/flok/keep-awake` | `1` while `flok keep-awake` asks the sidebar to keep the Mac awake |
 | `~/.local/state/flok/outer.conf` | the generated outer tmux config |
+| `~/.local/state/flok/hosts.json` | the remote hosts (`flok host …`), with `enabled`, a probed `flok` path and `last_connected` |
+| `~/.local/state/flok/hosts/<name>/` | a plain-mode host's local store (records, seen marks) |
+| `~/.local/state/flok/ssh/` | flok's ssh control sockets (0700) |
+| `~/.local/state/flok/requests/` | one-shot commands for the running sidebar (`flok goto beta:%12`, `flok host front`) |
+| `~/.local/state/flok/serve.lock`, `served` | on a served host: the lock `flok serve` holds and who holds it |
 | `~/.claude/settings.json` | the hook entries `flok install --claude` adds (a backup is written) |
 | `~/.copilot/hooks/flok.json` | the Copilot CLI hook file |
 
@@ -581,6 +671,15 @@ brand = "#12999D"
 - `FLOK_DEBUG=1 flok up` logs every key the sidebar receives to `sidebar.log` in the state dir.
 - If you moved the binary (for example from `make install` to Homebrew), run `flok install` again;
   it rewrites the hook commands to the new absolute path.
+- A host reads `needs auth` or `host key`: run `ssh <target>` once by hand (flok uses
+  `BatchMode=yes`, so it never types a password or accepts a key); `no flok`: flok is not on the
+  host's non-interactive PATH, register it with `--flok /path/to/flok` or use `--mode plain`;
+  `incompatible`: the two floks speak different protocols, upgrade one side; `busy`: another flok
+  (or a `flok host status` still running) serves that host. `flok doctor` runs the same probe on
+  every host and says which of tmux, flok, the hooks or the terminfo entry is missing there.
+- Agents on a full-mode host show only title and screen states: `flok install --claude` was not
+  run on that host (`flok doctor` reports it). Sounds for remote agents play on the local side;
+  `FLOK_DEBUG=1` writes the connection log to `remote.log` in the state dir.
 
 ## Development
 
