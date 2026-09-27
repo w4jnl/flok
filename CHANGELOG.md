@@ -6,6 +6,10 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+- `prefix u` in the tmux snippet toggles keep-awake and shows the new state on the status line;
+  the keybinds popup labels it. Existing installs add the line by hand (`flok install --tmux`
+  prints it).
+
 ## 0.4.6 (2026-09-25)
 
 - `[keep_awake] presence = true`: while keep-awake is on, Teams, Slack and other apps that

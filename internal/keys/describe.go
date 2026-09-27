@@ -9,7 +9,7 @@ import (
 var (
 	wsRe       = regexp.MustCompile(`\s+`)
 	pluginRe   = regexp.MustCompile(`/plugins/([^/]+)/(?:scripts/|bindings/)?([^/\s"']+?)(?:\.sh|\.tmux)?(?:\s|"|'|$)`)
-	flokRe     = regexp.MustCompile(`flok\S*\s+(\w+)`)
+	flokRe     = regexp.MustCompile(`flok\S*\s+(\w[\w-]*)`) // the subcommand, also inside $(…)
 	resizeRe   = regexp.MustCompile(`^resize-pane -([LRUD]) ?(\d+)?`)
 	selWinRe   = regexp.MustCompile(`^select-window -t :?=?(\d+)`)
 	layoutRe   = regexp.MustCompile(`^select-layout (\S+)`)
@@ -22,6 +22,7 @@ var (
 var flokLabels = map[string]string{
 	"next": "next agent", "prev": "previous agent", "jump": "jump to agent needing input",
 	"toggle": "toggle sidebar rail", "hide": "hide/show sidebar", "keys": "keybinds", "focus": "focus sidebar",
+	"keep-awake": "keep the Mac awake (toggle)",
 }
 
 // Label returns a short human description for a binding: the tmux note when present, an

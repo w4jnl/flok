@@ -344,7 +344,8 @@ moment the sidebar exits, including a crash or a killed tmux server, and `flok d
 end of the session turns keep-awake off; the next `flok up` starts with it off. `flok reload`
 keeps it (the new sidebar takes the assertions again).
 
-`flok keep-awake` with no argument toggles; `on`, `off` and `status` do what they say. It waits
+`flok keep-awake` with no argument toggles (`prefix u` in the tmux snippet); `on`, `off` and
+`status` do what they say. It waits
 until the sidebar confirms the change and prints the result. While it is on, `flok status`
 adds a `keep-awake: on` line (`"KeepAwake": true` in `--json`), `flok doctor` reports it, and
 `pmset -g assertions` lists both assertions for the sidebar's pid under the name
@@ -407,6 +408,7 @@ In tmux (your prefix; the snippet assumes `C-a`):
 | `prefix g` | move the keyboard into the sidebar, or back to the work pane |
 | `prefix o` | jump to the newest agent needing input, else the newest finished one |
 | `prefix a` / `prefix A` | next / previous agent pane, in sidebar order |
+| `prefix u` | keep the Mac awake, display on, while flok runs; toggles, the state shows on the status line (macOS) |
 | `prefix ?` | keybinds help popup (`?` inside the sidebar opens the same) |
 
 Menu bar (when enabled): click an agent row to return to it, "Show flok" to bring the terminal

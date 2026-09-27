@@ -13,6 +13,7 @@ bind-key    -T prefix a       run-shell -b "/Users/jaro/.local/bin/flok next --c
 bind-key    -T prefix |       split-window -h -c "#{pane_current_path}"
 bind-key    -T prefix 3       select-window -t :=3
 bind-key    -T prefix \"      split-window
+bind-key    -T prefix u       run-shell -b "msg=$(/Users/jaro/.local/bin/flok keep-awake 2>&1); tmux display-message \"\$msg\""
 `
 
 const rootSample = `bind-key  -T root MouseDown1Pane            select-pane -t = \; send-keys -M
@@ -26,7 +27,7 @@ C-a Up      Select the pane above the active pane
 
 func TestParseAndLabel(t *testing.T) {
 	bs := ParseListKeys(sample)
-	if len(bs) != 11 {
+	if len(bs) != 12 {
 		t.Fatalf("parsed %d bindings", len(bs))
 	}
 	if bs[2].Key != "r" || bs[2].Command != `source-file /Users/jaro/.tmux.conf \; display-message "Config Reloaded!"` {
@@ -54,6 +55,7 @@ func TestParseAndLabel(t *testing.T) {
 		"|":     "split right",
 		"3":     "window 3",
 		"\"":    "split below",
+		"u":     "keep the Mac awake (toggle)", // the subcommand is found inside $(…) and keeps its hyphen
 	}
 	for _, b := range bs {
 		if got := Label(b, nil); got != want[b.Key] {
