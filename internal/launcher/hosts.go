@@ -42,24 +42,26 @@ type WorkPanes struct {
 	Window map[string]string   // pane id -> window id
 }
 
-// ScanWorkPanes lists the outer's panes once and sorts them by what they run.
+// ScanWorkPanes lists the outer's panes once and sorts them by what they run. The format has
+// no control characters (tmux 3.4 vis-escapes list-* output) and the answer is decoded like a
+// snapshot: ids never contain spaces, so the command is everything after the second one.
 func ScanWorkPanes(outer tmux.Client) (WorkPanes, error) {
-	out, err := outer.Run("list-panes", "-a", "-F", "#{pane_id}\t#{window_id}\t#{window_name}\t#{pane_start_command}")
+	out, err := outer.Run("list-panes", "-a", "-F", "#{pane_id} #{window_id} #{pane_start_command}")
 	if err != nil {
 		return WorkPanes{}, err
 	}
-	return parseWorkPanes(out), nil
+	return parseWorkPanes(tmux.Decode(out, tmux.Escapes(outer))), nil
 }
 
 func parseWorkPanes(out string) WorkPanes {
 	w := WorkPanes{Hosts: map[string]string{}, Extra: map[string][]string{}, Window: map[string]string{}}
 	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
-		f := strings.SplitN(line, "\t", 4)
-		if len(f) != 4 {
+		f := strings.SplitN(line, " ", 3)
+		if len(f) != 3 {
 			continue
 		}
 		id, win := f[0], f[1]
-		cmd := strings.Trim(strings.TrimSpace(f[3]), `"`) // tmux prints the command in double quotes
+		cmd := strings.Trim(strings.TrimSpace(f[2]), `"`) // tmux prints the command in double quotes
 		w.Window[id] = win
 		switch {
 		case strings.HasSuffix(cmd, " _attach-loop"):

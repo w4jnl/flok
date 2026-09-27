@@ -36,11 +36,11 @@ func TestHostCommands(t *testing.T) {
 func TestParseWorkPanes(t *testing.T) {
 	// panes are known by what they run (tmux quotes the command), wherever a swap put them:
 	// beta's pane sits in window 0, the local pane in beta's window, a stray twin of gpu-2 exists
-	wp := parseWorkPanes("%1\t@0\tmain\t\"env FLOK_OUTER=1 FLOK_RIGHT_PANE=%0 '/x/flok' sidebar\"\n" +
-		"%7\t@0\tmain\t\"env FLOK_OUTER=1 '/x/flok' _attach-loop --host beta\"\n" +
-		"%0\t@3\tflok-host-beta\t\"env FLOK_OUTER=1 '/x/flok' _attach-loop\"\n" +
-		"%9\t@4\tflok-host-gpu-2\t\"env FLOK_OUTER=1 '/x/flok' _attach-loop --host gpu-2\"\n" +
-		"%11\t@5\tflok-host-gpu-2\t\"env FLOK_OUTER=1 '/x/flok' _attach-loop --host gpu-2\"\n")
+	wp := parseWorkPanes("%1 @0 \"env FLOK_OUTER=1 FLOK_RIGHT_PANE=%0 '/x/flok' sidebar\"\n" +
+		"%7 @0 \"env FLOK_OUTER=1 '/x/flok' _attach-loop --host beta\"\n" +
+		"%0 @3 \"env FLOK_OUTER=1 '/x/flok' _attach-loop\"\n" +
+		"%9 @4 \"env FLOK_OUTER=1 '/x/flok' _attach-loop --host gpu-2\"\n" +
+		"%11 @5 \"env FLOK_OUTER=1 '/x/flok' _attach-loop --host gpu-2\"\n")
 	if wp.Local != "%0" || wp.Hosts["beta"] != "%7" || wp.Hosts["gpu-2"] != "%9" || wp.Window["%7"] != "@0" || len(wp.Hosts) != 2 {
 		t.Fatalf("%+v", wp)
 	}
