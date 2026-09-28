@@ -380,9 +380,24 @@ One flok can show and drive tmux servers on other machines, over plain `ssh` wit
 ```sh
 flok host add beta jaro@beta              # full: flok on the host streams its agents
 flok host add gpu-1 --mode plain          # plain: tmux only, titles and screen rules
+flok host install beta                    # no flok there yet? put this one there over ssh
 flok host status                          # connect to each once and report
 flok doctor                               # probes every host: tmux, flok, hooks, terminfo
 ```
+
+A host with tmux but without flok reads `no flok`; `flok host install <name>` (or `I` on its row
+in the servers panel, which shows the progress in a popup, or `flok host add … --install`) puts
+flok there from your machine, over the same ssh, into `~/.local/bin/flok` on the host, which
+flok already looks at, so nothing on the host needs configuring and no root is involved. A
+host with your OS and CPU gets this very binary (it works offline and carries dev builds);
+another gets the release tarball from GitHub, checked against its `sha256sums.txt`
+(`--version` picks one; a local build that is no release takes the latest release). The new
+flok must answer `flok version` on the host before it replaces an old one, so a build that
+cannot run there changes nothing. `--from <file>` pushes a binary you built yourself.
+`--hooks` also runs `flok install --claude` / `--copilot` there for the agent folders it finds
+(`~/.claude`, `~/.copilot`). The same command upgrades an old flok; the sidebar reconnects by
+itself. A Homebrew flok on the host is shadowed afterwards (`flok host set <name> --flok ""`
+returns to it).
 
 The first argument of `flok host add` is flok's **name** for the host, the second the ssh
 **target**, passed to `ssh` exactly as typed. With the target alone the name is taken from it:
@@ -567,7 +582,9 @@ flok install [--claude] [--copilot] [--tmux]
 flok doctor                 checks tmux, hooks, sounds, the outer session and every remote host
 flok completion bash|zsh
 flok host add [<name>] <user@host|ssh alias> [--mode full|plain] [--socket name] [--session name]
-              [--flok /path/to/flok] [--term name] [--disabled]     register a remote host
+              [--flok /path/to/flok] [--term name] [--disabled] [--install [--hooks]]   register a remote host
+flok host install <name> [--from file] [--version v] [--hooks] [--open] [--wait]   put or upgrade flok on the host from here
+flok host reconnect <name>        the running sidebar redials the host now
 flok host set <name> [--mode full|plain] [--target t] [--socket s] [--session s] [--flok p] [--term t]
 flok host remove | connect | disconnect <name>
 flok host list [--json|--names]  |  flok host status [--json]  |  flok host front <name>|local|<N> [--focus]
@@ -725,16 +742,19 @@ brand = "#12999D"
 - If you moved the binary (for example from `make install` to Homebrew), run `flok install` again;
   it rewrites the hook commands to the new absolute path.
 - A host reads `needs auth` or `host key`: run `ssh <target>` once by hand (flok uses
-  `BatchMode=yes`, so it never types a password or accepts a key); `no flok`: flok is not on the
-  host's non-interactive PATH, register it with `--flok /path/to/flok` or use `--mode plain`;
-  `old flok`: the flok there predates `serve` (the row names its version), upgrade it; `no
+  `BatchMode=yes`, so it never types a password or accepts a key); `no flok`: the host has no
+  flok on its non-interactive PATH: `flok host install <name>` (or `I` on its row) puts this one
+  there, or register an existing one with `--flok /path/to/flok`, or use `--mode plain`;
+  `old flok`: the flok there predates `serve` (the row names its version), `flok host install
+  <name>` upgrades it; `no
   server`: tmux is there but not running for the user and socket you registered (the footer
   shows the socket path); the work pane starts one as soon as the host is connected in the
   sidebar (`[hosts] session`), so this only lingers when the sessions live under another user
   or socket, then `flok host set <name> --target user@host` or `--socket`; "no tmux
   on the host's PATH": tmux lives somewhere the non-interactive shell does not look, add that
   directory to `[hosts] remote_path` (Homebrew, /usr/local and ~/.local/bin are there by default);
-  `incompatible`: the two floks speak different protocols, upgrade one side; `busy`: another flok
+  `incompatible`: the two floks speak different protocols, `flok host install <name>` puts this
+  one's version there; `busy`: another flok
   (or a `flok host status` still running) serves that host. `flok doctor` runs the same probe on
   every host and says which of tmux, flok, the hooks or the terminfo entry is missing there.
 - Agents on a full-mode host show only title and screen states: `flok install --claude` was not

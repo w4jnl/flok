@@ -57,6 +57,16 @@ func (m *Model) runRequest(r state.Request) tea.Cmd {
 			}
 			return nil
 		})
+	case "reconnect": // `flok host reconnect`, or `flok host install` after an upgrade in place
+		if _, ok := m.hostSet.Get(r.Host); !ok || r.Host == "" {
+			m.errText = "no host " + r.Host
+			return nil
+		}
+		if m.remote == nil {
+			return nil
+		}
+		rem, host := m.remote, r.Host
+		return func() tea.Msg { rem.Reconnect(host); return nil }
 	default:
 		if remote.IsKeyCommand(r.Cmd) { // `flok relay <cmd>` on this machine
 			m.runKeyCommand(r.Cmd)

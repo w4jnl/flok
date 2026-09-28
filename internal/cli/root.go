@@ -44,8 +44,8 @@ usage: flok <command>
               the opt-in tmux-resurrect integration)
   resurrect   tmux-resurrect integration (save <state-file>; called by its save hook)
   host        remote tmux servers shown next to the local one: add <name> <user@host>
-              [--mode full|plain], set, remove, connect, disconnect, list, status, front
-              (flok host --help)
+              [--mode full|plain], set, remove, connect, disconnect, list, status, front,
+              install (put flok on the host from here), reconnect (flok host --help)
   serve       --stdio: run headless on this host for a flok on another machine (started over
               ssh by that flok; --hello prints the greeting and exits)
   relay       <toggle|hide|focus|jump|next|prev|keep-awake|host …>: a flok key pressed inside

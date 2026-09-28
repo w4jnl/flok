@@ -272,8 +272,8 @@ func TestPanelCycleAndKeys(t *testing.T) {
 	if next, cmd := m.Update(tea.KeyMsg{Type: tea.KeySpace}); cmd != nil || !next.(Model).focused {
 		t.Fatal("space keeps the keyboard in the sidebar")
 	}
-	if foot := render(m, 28, 40); !strings.HasPrefix(foot[len(foot)-1], "⏎ front · c d r m x i") {
-		t.Fatalf("servers footer hint: %q", foot[len(foot)-1])
+	if foot := render(m, 28, 40); !strings.HasPrefix(foot[len(foot)-2], "⏎ front · c d r m x i I") || strings.TrimSpace(foot[len(foot)-1]) != "? help" { // two lines at 28
+		t.Fatalf("servers footer hint: %q", foot[len(foot)-2:])
 	}
 	// a host whose flok predates the key relay is called out in the footer and the info overlay
 	m.onRemote(remote.Msg{Host: "beta", State: remote.Connected, Hello: &proto.Hello{Proto: 1, Version: "0.4.6", TmuxVersion: "3.4"}})
@@ -291,8 +291,8 @@ func TestPanelCycleAndKeys(t *testing.T) {
 	m = next.(Model)
 	m.onRemote(remote.Msg{Host: "beta", State: remote.Connected, Hello: &proto.Hello{Proto: 1, Version: "0.5.0", TmuxVersion: "3.4", Features: proto.ServeFeatures}})
 	m.refederate()
-	if foot := render(m, 28, 40); !strings.HasPrefix(foot[len(foot)-1], "⏎ front · c d r m x i") {
-		t.Fatalf("footer hint back with a current flok: %q", foot[len(foot)-1])
+	if foot := render(m, 28, 40); !strings.HasPrefix(foot[len(foot)-2], "⏎ front · c d r m x i I") {
+		t.Fatalf("footer hint back with a current flok: %q", foot[len(foot)-2:])
 	}
 	m.panel = panelAgents
 	if foot := render(m, 28, 40); !strings.HasPrefix(foot[len(foot)-1], "j/k ⏎ ⇥ 1-9") {
@@ -415,5 +415,64 @@ func TestRequestsMatchHostsInAnyCase(t *testing.T) {
 	}
 	if cmd := m.runRequest(state.Request{Cmd: "goto", Host: "nope", Pane: "%1"}); cmd != nil || m.errText == "" {
 		t.Fatalf("an unknown host still fails: cmd=%v err=%q", cmd != nil, m.errText)
+	}
+}
+
+func TestInstallKeyAndNoFlokNotice(t *testing.T) {
+	m := multiHostModel(t)
+	m.d.Bin = "/x/flok"
+	var started []string
+	old := startDetached
+	startDetached = func(bin string, args ...string) error {
+		started = append(started, bin+" "+strings.Join(args, " "))
+		return nil
+	}
+	defer func() { startDetached = old }()
+	m.focused, m.panel = true, panelHosts
+	m.cursor[panelHosts] = 1 // beta
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'I'}})
+	m = next.(Model)
+	if cmd == nil {
+		t.Fatal("I on a host row starts the install")
+	}
+	cmd()
+	if len(started) != 1 || started[0] != "/x/flok host install beta --open" {
+		t.Fatalf("started %v", started)
+	}
+	m.cursor[panelHosts] = 0
+	if _, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'I'}}); cmd != nil {
+		t.Fatal("I on the local row does nothing")
+	}
+	// a host without flok: the footer says how to install it, and the key hints stay
+	m.onRemote(remote.Msg{Host: "beta", State: remote.NoFlok})
+	lines := render(m, 40, 30)
+	if joined := strings.Join(lines, "\n"); !strings.Contains(joined, "beta: no flok there · I installs it") || !strings.Contains(joined, "(flok host install beta)") { // wrapped at 40
+		t.Fatalf("no-flok notice:\n%s", joined)
+	}
+	if foot := strings.TrimRight(lines[len(lines)-1], " "); !strings.HasPrefix(foot, "⏎ front · c d r m x i I") || !strings.HasSuffix(foot, "? help") {
+		t.Fatalf("footer at 40: %q", foot)
+	}
+	lines = render(m, 28, 30)
+	if keysLine, help := strings.TrimRight(lines[len(lines)-2], " "), strings.TrimRight(lines[len(lines)-1], " "); keysLine != "⏎ front · c d r m x i I" || help != "                      ? help" {
+		t.Fatalf("footer at 28 wraps the hints onto two lines: %q %q", keysLine, help)
+	}
+	m.onRemote(remote.Msg{Host: "beta", State: remote.OldFlok, Detail: "flok 0.4.4 there is too old (no serve)"})
+	if joined := strings.Join(render(m, 70, 30), "\n"); !strings.Contains(joined, "beta: flok 0.4.4 there is too old (no serve) · I installs this flok") {
+		t.Fatalf("old-flok notice:\n%s", joined)
+	}
+	// the reconnect request: an unknown host lands in the footer, a known one needs the manager
+	if cmd := m.runRequest(state.Request{Cmd: "reconnect", Host: "nope"}); cmd != nil || m.errText != "no host nope" {
+		t.Fatalf("reconnect unknown: %v %q", cmd, m.errText)
+	}
+	m.errText = ""
+	if cmd := m.runRequest(state.Request{Cmd: "reconnect", Host: "BETA"}); cmd != nil || m.errText != "" {
+		t.Fatalf("reconnect without a manager: %v %q", cmd, m.errText)
+	}
+	found := false
+	for _, b := range SidebarKeySections(true)[1].Bindings {
+		found = found || b.Key == "I"
+	}
+	if !found {
+		t.Fatal("the servers help lists I")
 	}
 }

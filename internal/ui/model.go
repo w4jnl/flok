@@ -680,7 +680,7 @@ func (m Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.focused = false
 		return m, m.activate(m.panel, m.cursor[m.panel], false)
-	case "c", "d", "m", "x", "i": // servers panel: connect, disconnect, mode, remove, info
+	case "c", "d", "m", "x", "i", "I": // servers panel: connect, disconnect, mode, remove, info, install flok there
 		if m.panel == panelHosts {
 			if host, ok := m.hostAt(m.cursor[panelHosts]); ok {
 				return m.hostKey(k, host)

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -27,7 +28,7 @@ import (
 const hostUsage = `usage: flok host <command>
 
   add [<name>] <target> [--mode full|plain] [--socket name] [--session name]
-                      [--flok /path/to/flok] [--term name] [--disabled]
+                      [--flok /path/to/flok] [--term name] [--disabled] [--install [--hooks]]
               register a remote tmux server; <target> is what ssh accepts (alias, host,
               user@host) and goes to ssh as typed. <name> is flok's label for it (letters,
               digits, _ -; any case, matched in any case), by default taken from the target
@@ -36,6 +37,7 @@ const hostUsage = `usage: flok host <command>
               and screen rules only)
                       --term sets TERM for the attach when the host lacks the tmux-256color
                       terminfo (flok doctor tells; screen-256color usually works)
+                      --install then puts flok on the host (see install)
   set <name> [--mode full|plain] [--target t] [--socket s] [--session s] [--flok p] [--term t]
               change a host in place (an empty value clears the field); the sidebar reconnects
   remove <name>       forget the host (and its local cache)
@@ -54,6 +56,18 @@ const hostUsage = `usage: flok host <command>
               rotate the front through local and the enabled hosts, or go back to the
               previous one (prefix N / P / O)
   menu        a tmux menu of the servers over the work pane (prefix S; tmux 3.0+)
+  install <name> [--from <file>] [--version <v>] [--hooks] [--open] [--wait]
+              put flok on the host, or upgrade it, from here over the same ssh: it lands in
+              ~/.local/bin/flok there, which [hosts] remote_path already covers, so nothing on
+              the host is configured. A host with this machine's OS and CPU gets this very
+              binary (works offline, dev builds too); another gets the release tarball from
+              GitHub, checked against its sha256sums (--version picks one; a local build that
+              is no release takes the latest). --from pushes that file instead. The new flok
+              must answer flok version there before it replaces the old one. --hooks then runs
+              flok install --claude / --copilot there for the agent folders it finds.
+              --open runs all this in a tmux popup over the sidebar (I on a servers row),
+              --wait holds the output until Enter
+  reconnect <name>    ask the running sidebar to redial the host now (r in the servers panel)
 
 Hosts live in the state dir (hosts.json); [hosts] in config.toml holds the ssh defaults.`
 
@@ -62,12 +76,14 @@ type hostCmd struct {
 	dir       string
 	cfg       config.Config
 	now       func() time.Time
+	in        io.Reader // --wait reads a line from it
 	out, errw io.Writer
-	manager   func(remote.Deps) *remote.Manager // nil = remote.New
+	manager   func(remote.Deps) *remote.Manager                                       // nil = remote.New
+	installer func(context.Context, remote.InstallOpts) (remote.InstallResult, error) // nil = remote.Install
 }
 
 func runHost(cfg config.Config, args []string) int {
-	return hostCmd{dir: config.StateDir(), cfg: cfg, now: time.Now, out: os.Stdout, errw: os.Stderr}.run(args)
+	return hostCmd{dir: config.StateDir(), cfg: cfg, now: time.Now, in: os.Stdin, out: os.Stdout, errw: os.Stderr}.run(args)
 }
 
 func (c hostCmd) run(args []string) int {
@@ -99,6 +115,10 @@ func (c hostCmd) run(args []string) int {
 		return c.rotate(args[0])
 	case "menu":
 		return c.menu()
+	case "install":
+		return c.install(args[1:])
+	case "reconnect":
+		return c.reconnect(args[1:])
 	}
 	fmt.Fprintf(c.errw, "flok host: unknown command %q\n\n%s\n", args[0], hostUsage)
 	return 2
@@ -112,6 +132,7 @@ func (c hostCmd) fail(err error) int {
 func (c hostCmd) add(args []string) int {
 	h := hosts.Host{Mode: hosts.ModeFull, Enabled: true, AddedAt: c.now()}
 	var pos []string
+	var install, hooks bool
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		value := func() (string, bool) {
@@ -152,6 +173,10 @@ func (c hostCmd) add(args []string) int {
 			h.Term = v
 		case "--disabled":
 			h.Enabled = false
+		case "--install":
+			install = true
+		case "--hooks":
+			hooks = true
 		default:
 			if strings.HasPrefix(a, "-") {
 				fmt.Fprintf(c.errw, "flok host add: unknown flag %s\n\n%s\n", a, hostUsage)
@@ -181,6 +206,9 @@ func (c hostCmd) add(args []string) int {
 		state = "disabled; flok host connect " + h.Name + " enables it"
 	}
 	fmt.Fprintf(c.out, "added %s (%s, %s): %s\n", h.Name, h.Target, h.Mode, state)
+	if install {
+		return c.runInstall(h, "", "", hooks)
+	}
 	return 0
 }
 

@@ -6,6 +6,18 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+- **Install flok on a host from here.** `flok host install <name>` (or `I` on the host's row in
+  the servers panel, which shows the progress in a tmux popup, or `flok host add … --install`)
+  puts flok on a host that has tmux but no flok, or upgrades an old one, over the same ssh:
+  a host with your OS and CPU gets this very binary, another gets the release tarball from
+  GitHub checked against its `sha256sums.txt` (`--version` picks one, `--from <file>` pushes
+  your own build). It lands in `~/.local/bin/flok` there, which flok already looks at, so
+  nothing on the host is configured, no root, no curl. The new flok must answer `flok
+  version` on the host before it replaces the old one. `--hooks` then wires the Claude Code /
+  Copilot hooks there for the agent folders it finds. A host without flok now says so in the
+  sidebar footer, with the key; the `no flok` / `old flok` hints, `flok host status` and
+  `flok doctor` name the command. `flok host reconnect <name>` asks the running sidebar to
+  redial a host (what `r` does). Releases now ship macOS tarballs next to the Linux ones.
 - Sidebar footer: a warning or error wraps over up to three lines above the key hints, with a
   blank line between the two, instead of replacing the hints cut off ("+N" counts further
   warnings); key hints that do not fit the width wrap onto a second line instead of overrunning.

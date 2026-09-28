@@ -17,7 +17,7 @@ const RequestsDir = "requests"
 
 // Request is one command for the sidebar.
 type Request struct {
-	Cmd  string    `json:"cmd"`            // goto | front
+	Cmd  string    `json:"cmd"`            // goto | front | reconnect | a flok key command
 	Host string    `json:"host,omitempty"` // "" = local
 	Pane string    `json:"pane,omitempty"` // goto: the pane on that host
 	At   time.Time `json:"at"`

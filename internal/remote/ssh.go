@@ -79,13 +79,13 @@ func (s State) Hint(h hosts.Host) string {
 	case HostKey:
 		return "run `ssh " + h.Target + "` once to accept the host key"
 	case NoFlok:
-		return "install flok on the host, set its path with `flok host add --flok`, or use --mode plain"
+		return "put flok there from here: `flok host install " + h.Name + "` (I in the servers panel); or `flok host set " + h.Name + " --flok <path>`, or --mode plain"
 	case OldFlok:
-		return "upgrade flok on the host (its version has no `serve`), or use --mode plain"
+		return "upgrade it from here: `flok host install " + h.Name + "` (I in the servers panel), or --mode plain"
 	case NoServer:
 		return "the sidebar's work pane starts one there once connected ([hosts] session, or --session); otherwise start tmux as " + h.Target + ", or point --target/--socket at the tmux that has the sessions"
 	case Incompatible:
-		return "upgrade flok on one side, or use --mode plain"
+		return "`flok host install " + h.Name + "` puts this flok's version there, or use --mode plain"
 	case Busy:
 		return "another flok serves this host; stop it or disconnect here"
 	}
@@ -254,6 +254,7 @@ func CloseMasters(cfg config.Hosts, stateDir string) {
 // Proc is a running remote command: what the manager needs from an ssh process.
 type Proc interface {
 	Stdin() io.Writer
+	CloseStdin() error // EOF to the remote command (a streamed file ends, a serve leaves); Kill closes it too
 	Stdout() io.Reader
 	Wait() (exit int, stderr string) // blocks until the process ended; exit -1 = killed
 	Kill()
@@ -303,6 +304,7 @@ type execProc struct {
 }
 
 func (p *execProc) Stdin() io.Writer  { return p.stdin }
+func (p *execProc) CloseStdin() error { return p.stdin.Close() }
 func (p *execProc) Stdout() io.Reader { return p.stdout }
 func (p *execProc) Wait() (int, string) {
 	p.once.Do(func() {
