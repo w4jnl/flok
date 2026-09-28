@@ -260,6 +260,16 @@ func max(a, b int) int {
 	return b
 }
 
+// WithSidebarSections slots the sidebar's own key sections into a help: after the flok
+// bindings (the first section, when tmux has any), before the tmux tables.
+func WithSidebarSections(secs []keys.Section, multiHost bool) []keys.Section {
+	side := SidebarKeySections(multiHost)
+	if len(secs) > 0 && secs[0].Name == keys.FlokSection {
+		return append(append([]keys.Section{secs[0]}, side...), secs[1:]...)
+	}
+	return append(side, secs...)
+}
+
 // SidebarKeySections describes the sidebar's own keys for the help overlay (the rest of it
 // lists the tmux bindings); the servers section appears with remote hosts.
 func SidebarKeySections(multiHost bool) []keys.Section {

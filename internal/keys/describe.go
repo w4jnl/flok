@@ -187,10 +187,13 @@ func Label(b Binding, overrides map[string]string) string {
 	return cmd
 }
 
+// FlokSection names the help section of the bindings that run flok; it comes first.
+const FlokSection = "flok"
+
 // SectionOf picks the group for a binding: "flok", "plugin:<name>", or by table.
 func SectionOf(b Binding, prefix string) string {
 	if strings.Contains(b.Command, "flok") {
-		return "flok"
+		return FlokSection
 	}
 	if m := pluginRe.FindStringSubmatch(b.Command); m != nil {
 		return "plugin:" + m[1]

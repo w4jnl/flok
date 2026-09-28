@@ -109,9 +109,9 @@ func TestServersPanelAndFederatedAgents(t *testing.T) {
 	if len(m.snap.Agents) != 1 || !strings.HasPrefix(lines[3], " ✗ beta") || !strings.Contains(lines[3], "retry in") || !m.retryCountdown() {
 		t.Fatalf("unreachable: agents=%d row=%q", len(m.snap.Agents), lines[3])
 	}
-	if !reflect.DeepEqual(m.snap.Warnings, []string{"beta: Connection refused"}) || !strings.HasPrefix(lines[len(lines)-2], "beta: Connection refused") ||
-		!strings.HasPrefix(lines[len(lines)-1], "click or prefix g to focus") {
-		t.Fatalf("the footer names the reason above the status line: warnings=%v footer=%q", m.snap.Warnings, lines[len(lines)-2:])
+	if !reflect.DeepEqual(m.snap.Warnings, []string{"beta: Connection refused"}) || !strings.HasPrefix(lines[len(lines)-3], "beta: Connection refused") ||
+		strings.TrimSpace(lines[len(lines)-2]) != "" || !strings.HasPrefix(lines[len(lines)-1], "click or prefix g to focus") {
+		t.Fatalf("the footer names the reason, a blank line, the status line: warnings=%v footer=%q", m.snap.Warnings, lines[len(lines)-3:])
 	}
 	m.onRemote(remote.Msg{Host: "beta", State: remote.NoServer, Detail: "no server running on /tmp/tmux-0/default"})
 	if lines = render(m, 28, 40); strings.TrimRight(lines[3], " ") != " ○ beta full  no tmux server" {
