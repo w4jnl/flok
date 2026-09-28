@@ -38,6 +38,7 @@ const (
 	TypePing    = "ping"
 	TypeRequest = "request" // remote to local: a flok key pressed inside the host's tmux
 	TypeNotify  = "notify"  // local to remote: show a short message on the host's status line
+	TypePrefix  = "prefix"  // local to remote: the local tmux prefix, for the host's tmux to take while served
 )
 
 // Frame is one line; Type says which payload field is set.
@@ -52,6 +53,7 @@ type Frame struct {
 	On    bool      `json:"on,omitempty"`   // visible
 	Cmd   string    `json:"cmd,omitempty"`  // request: toggle | hide | focus | jump | next | prev | keep-awake | host …
 	Text  string    `json:"text,omitempty"` // notify
+	Key   string    `json:"key,omitempty"`  // prefix: a tmux key name such as C-a
 }
 
 // Hello opens the stream.
@@ -63,6 +65,31 @@ type Hello struct {
 	TmuxVersion string   `json:"tmux_version"`
 	StateDir    string   `json:"state_dir"`
 	Warnings    []string `json:"warnings,omitempty"`
+	Features    []string `json:"features,omitempty"` // what this serve can do; an older flok sends none
+}
+
+// Features a serve advertises in its hello. The local side checks them before relying on a
+// behaviour, and a flok too old to send any is taken as having none, which is what it has.
+const (
+	FeatureKeys   = "keys"   // binds flok's keys in the host's tmux and relays them (request frames)
+	FeaturePrefix = "prefix" // takes the local prefix on a prefix frame
+	FeatureNotify = "notify" // shows notify frames on the status line
+)
+
+// ServeFeatures is what this flok's serve advertises.
+var ServeFeatures = []string{FeatureKeys, FeaturePrefix, FeatureNotify}
+
+// Has says whether the hello advertised a feature.
+func (h *Hello) Has(feature string) bool {
+	if h == nil {
+		return false
+	}
+	for _, f := range h.Features {
+		if f == feature {
+			return true
+		}
+	}
+	return false
 }
 
 // Snapshot is the host's merged view, the tagged twin of merge.Snapshot without its

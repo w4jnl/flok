@@ -18,6 +18,7 @@ import (
 	"github.com/w4jnl/flok/internal/hosts"
 	"github.com/w4jnl/flok/internal/launcher"
 	"github.com/w4jnl/flok/internal/remote"
+	"github.com/w4jnl/flok/internal/remote/proto"
 	"github.com/w4jnl/flok/internal/snapshot"
 	"github.com/w4jnl/flok/internal/state"
 	"github.com/w4jnl/flok/internal/tmux"
@@ -338,6 +339,9 @@ func (c hostCmd) status(args []string) int {
 			remoteCol = "tmux " + st.Hello.TmuxVersion
 			if st.Hello.Version != "" && st.Hello.Version != "plain" {
 				remoteCol = "flok " + strings.TrimPrefix(st.Hello.Version, "v") + ", " + remoteCol
+			}
+			if h.Mode == hosts.ModeFull && st.State == remote.Connected && c.cfg.Hosts.Keys && !st.Hello.Has(proto.FeatureKeys) {
+				remoteCol += ", no key relay"
 			}
 		}
 		if st.State == remote.Connected {

@@ -96,7 +96,13 @@ One binary, several roles selected by subcommand (`internal/cli/root.go`):
   and restores the host's own bindings on disconnect, one tmux invocation each way; the originals
   are recorded in that server as `@flok-orig-<key>` user options in the same invocation that
   binds, and an install reads them first, so a session that died between unbind and rebind (a
-  killed serve, a mode flip racing it) never costs the host a binding; `flok relay` files a request the serve
+  killed serve, a mode flip racing it) never costs the host a binding. `Keys.SetPrefix` mirrors
+  the local prefix (`remote.Deps.LocalPrefix`, `[hosts] prefix`): `prefix` ← local, `prefix2` ←
+  the host's own when it was None, `<local> send-prefix` / `<own> send-prefix -2`, recorded as
+  `@flok-orig-prefix`/`-prefix2` with the held key list in `@flok-orig-keys`; full mode learns it from
+  a `prefix` frame after the hello, gated on `hello.Features` (`proto.ServeFeatures`), which
+  doctor, `host status`, the info screen and the footer also read to flag a remote flok that
+  predates the relay; `flok relay` files a request the serve
   forwards as a `request` frame, `#{@flok-request}` rides in the clients snapshot format and
   `poller.Deps.OnRequest` clears it; the sidebar runs `flok <cmd>` against its own outer
   (`runKeyCommand`). Servers-panel keys: `hostKey` in `ui/hosts.go` (c d r m x i, Space peeks).

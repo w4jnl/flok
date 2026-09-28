@@ -71,7 +71,7 @@ func runServe(cfg config.Config, args []string) int {
 func serveHello() proto.Hello {
 	host, _ := os.Hostname()
 	return proto.Hello{Proto: proto.Version, Version: Version, Hostname: host, PID: os.Getpid(),
-		TmuxVersion: tmux.DetectVersion("").String(), StateDir: config.StateDir()}
+		TmuxVersion: tmux.DetectVersion("").String(), StateDir: config.StateDir(), Features: proto.ServeFeatures}
 }
 
 // serveLog appends to serve.log in the state dir (FLOK_DEBUG set).

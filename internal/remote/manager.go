@@ -66,9 +66,12 @@ type Deps struct {
 	// PlainPollFloorMs and PlainScreenFloorMs are the cadence floors of a plain-mode poller
 	// (a fork and a round trip per call); 0 = 1000 and 3000.
 	PlainPollFloorMs, PlainScreenFloorMs int
-	Now                                  func() time.Time
-	Sleep                                func(ctx context.Context, d time.Duration) bool // false when ctx ended; nil = timer
-	Debugf                               func(string, ...any)
+	// LocalPrefix is the inner server's prefix, which a host's tmux takes while connected
+	// ([hosts] prefix); "" leaves the hosts' own.
+	LocalPrefix string
+	Now         func() time.Time
+	Sleep       func(ctx context.Context, d time.Duration) bool // false when ctx ended; nil = timer
+	Debugf      func(string, ...any)
 }
 
 // Manager keeps one connection per enabled host and reconciles them against the registry.
@@ -574,6 +577,9 @@ func (c *conn) attemptFull(ctx context.Context) (State, string) {
 	now := c.m.d.Now()
 	c.persist(func(h *hosts.Host) { h.LastConnected = now })
 	c.setVisible(visible)
+	if p := c.m.d.LocalPrefix; p != "" && hello.Has(proto.FeaturePrefix) {
+		_ = send(proto.Frame{Type: proto.TypePrefix, Key: p})
+	}
 	ping := time.NewTicker(pingEvery)
 	defer ping.Stop()
 	lastFrame := time.Now()
@@ -679,8 +685,9 @@ func (c *conn) attemptPlain(ctx context.Context) (State, string) {
 	actx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	var keys *Keys
-	if c.m.d.Cfg.Hosts.Keys { // flok's keys inside that tmux, for as long as this session lasts
-		keys = InstallKeys(client, BindOptionArgs())
+	if c.m.d.Cfg.Hosts.Keys { // flok's keys (and the local prefix) inside that tmux, for as long as this session lasts
+		hello.Features = []string{proto.FeatureKeys, proto.FeaturePrefix}
+		keys = InstallKeys(client, BindOptionArgs(), c.m.d.LocalPrefix)
 		defer keys.Restore()
 	}
 	var lastErr error

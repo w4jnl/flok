@@ -40,7 +40,7 @@ func canned(answers map[string]*cannedProc) remote.Dialer {
 }
 
 const goodProbe = "tmux 3.4\n---\n/opt/homebrew/bin/flok\n---\n" +
-	`{"type":"hello","hello":{"proto":1,"version":"v0.5.0","hostname":"beta","pid":7,"tmux_version":"3.4","state_dir":"/h/.local/state/flok"}}` +
+	`{"type":"hello","hello":{"proto":1,"version":"v0.5.0","hostname":"beta","pid":7,"tmux_version":"3.4","state_dir":"/h/.local/state/flok","features":["keys","prefix","notify"]}}` +
 	"\n---\nterminfo=ok\n---\nhooks=9\n---\nflok 0.5.0\n---\nx\nx\n"
 
 func TestParseHostProbe(t *testing.T) {
@@ -65,6 +65,7 @@ func TestHostChecks(t *testing.T) {
 		{Name: "delta", Target: "delta", Mode: hosts.ModeFull, Enabled: true},
 		{Name: "old", Target: "old", Mode: hosts.ModePlain, Enabled: true},
 		{Name: "eps", Target: "eps", Mode: hosts.ModeFull, Enabled: true},
+		{Name: "nokeys", Target: "nokeys", Mode: hosts.ModeFull, Enabled: true},
 		{Name: "off", Target: "off", Mode: hosts.ModeFull},
 	}}
 	dial := canned(map[string]*cannedProc{
@@ -73,6 +74,8 @@ func TestHostChecks(t *testing.T) {
 		"delta": {exit: 255, stderr: "delta: Permission denied (publickey)."},
 		"old":   {out: "tmux 2.6\n---\nnone\n---\n---\nterminfo=ok\n---\nhooks=nofile\n"},
 		"eps":   {out: "tmux 3.4\n---\n/usr/local/bin/flok\n---\n---\nterminfo=ok\n---\nhooks=3\n---\nflok 0.4.4\n---\nno server running on /tmp/tmux-0/default\n"},
+		"nokeys": {out: "tmux 3.4\n---\n/usr/local/bin/flok\n---\n" +
+			`{"type":"hello","hello":{"proto":1,"version":"0.4.6","hostname":"nokeys","pid":7,"tmux_version":"3.4"}}` + "\n---\nterminfo=ok\n---\nhooks=3\n---\nflok 0.4.6\n---\nx\n"},
 	})
 	got := hostChecks(cfg, t.TempDir(), set, dial, time.Second)
 	var lines []string
@@ -88,6 +91,7 @@ func TestHostChecks(t *testing.T) {
 		"fail host old (plain): tmux 2.6 is too old, flok needs 2.7 or newer",
 		"warn host eps (full): tmux 3.4, flok 0.4.4 at /usr/local/bin/flok is too old, it has no `serve` (upgrade flok there, or use --mode plain)",
 		"warn host eps (full): tmux is installed but not running for eps: the sidebar's work pane starts a session there",
+		"warn host nokeys (full): tmux 3.4, flok 0.4.6 (protocol 1) predates the key relay: flok's keys do nothing inside its sessions (upgrade flok on the host)",
 		"ok host off (full): disabled (flok host connect off)",
 	} {
 		if !strings.Contains(joined, want) {

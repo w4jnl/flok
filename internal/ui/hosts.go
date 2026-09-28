@@ -253,6 +253,10 @@ func (m *Model) refederate() {
 					m.snap.Warnings = append(m.snap.Warnings, h.Name+": "+v.detail)
 				}
 			}
+			// a host whose flok cannot relay keys says so too: nothing else would
+			if v, ok := m.remotes[h.Name]; ok && h.Enabled && m.d.Cfg.Hosts.Keys && v.state == remote.Connected && v.hello != nil && !v.hello.Has(proto.FeatureKeys) {
+				m.snap.Warnings = append(m.snap.Warnings, h.Name+": flok"+versionWord(v.hello.Version)+" there has no key relay, upgrade it")
+			}
 		}
 	}
 	m.vc.valid = false
@@ -658,7 +662,23 @@ func (m Model) hostInfoSection(host string) keys.Section {
 		}
 	}
 	if m.d.Cfg.Hosts.Keys {
-		rows = append(rows, row("keys", "prefix b B g o a A u bound there while connected"))
+		keysRow, prefixRow := "prefix b B g o a A u N P O S F1-F9 bound there while connected", ""
+		if m.d.Cfg.Hosts.Prefix && m.prefixTmux != "" {
+			prefixRow = m.prefixTmux + " there too while connected (its own moves to prefix2)"
+		}
+		if v.hello != nil {
+			ver := versionWord(v.hello.Version)
+			switch {
+			case !v.hello.Has(proto.FeatureKeys):
+				keysRow, prefixRow = "none: flok"+ver+" there predates the key relay, upgrade it", ""
+			case prefixRow != "" && !v.hello.Has(proto.FeaturePrefix):
+				prefixRow = "the host's own: flok" + ver + " there predates prefix mirroring, upgrade it"
+			}
+		}
+		rows = append(rows, row("keys", keysRow))
+		if prefixRow != "" {
+			rows = append(rows, row("prefix", prefixRow))
+		}
 	}
 	if !h.AddedAt.IsZero() {
 		rows = append(rows, row("added", h.AddedAt.Local().Format("2006-01-02 15:04")))
@@ -915,4 +935,12 @@ func (m Model) Close() {
 	if m.remote != nil {
 		m.remote.Close()
 	}
+}
+
+// versionWord is " 0.4.6" for a version, "" when the host did not say.
+func versionWord(v string) string {
+	if v = strings.TrimPrefix(v, "v"); v != "" {
+		return " " + v
+	}
+	return ""
 }

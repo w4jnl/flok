@@ -227,6 +227,10 @@ func probeHost(cfg config.Config, stateDir string, h hosts.Host, dial remote.Dia
 			summary += fmt.Sprintf(", flok %s speaks protocol %d, this one %d (upgrade one side, or use --mode plain)", p.Hello.Version, p.Hello.Proto, proto.Version)
 		default:
 			summary += fmt.Sprintf(", flok %s (protocol %d)", strings.TrimPrefix(p.Hello.Version, "v"), p.Hello.Proto)
+			if !p.Hello.Has(proto.FeatureKeys) {
+				level = "warn"
+				summary += " predates the key relay: flok's keys do nothing inside its sessions (upgrade flok on the host)"
+			}
 		}
 	}
 	add(level, "%s: %s", name, summary) // the outer's feature gates do not apply to a remote inner server
