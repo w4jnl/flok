@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -86,5 +87,55 @@ func TestThemeFollowsTheTerminalRecord(t *testing.T) {
 	next, _ = m.Update(m.rebuild(true)().(snapshotMsg))
 	if m = next.(Model); !m.dark {
 		t.Fatal("[theme] mode = dark overrides a light terminal")
+	}
+}
+
+func TestFooterWrapsMessagesAboveTheStatusLine(t *testing.T) {
+	m := brandModel(t)
+	m.focused = false
+	m.snap.Warnings = []string{"macmini: upgrade flok there, no key relay (HEAD-e70d458)"}
+	lines := render(m, 28, 24)
+	if len(lines) != 24 {
+		t.Fatalf("%d lines, want the panel height", len(lines))
+	}
+	if got := []string{strings.TrimRight(lines[21], " "), strings.TrimRight(lines[22], " "), strings.TrimRight(lines[23], " ")}; !reflect.DeepEqual(got,
+		[]string{"macmini: upgrade flok there,", "no key relay (HEAD-e70d458)", "click or prefix g to focus"}) {
+		t.Fatalf("a long warning wraps, the status line stays: %q", got)
+	}
+	for _, l := range lines {
+		if ansi.StringWidth(l) > 28 {
+			t.Fatalf("overrun: %q", l)
+		}
+	}
+	// longer than two lines: the second ends with an ellipsis; a second warning is counted
+	m.snap.Warnings = []string{"beta: the quick brown fox jumps over the lazy dog again and again and again", "gamma: down"}
+	lines = render(m, 28, 24)
+	if !strings.HasPrefix(lines[21], "beta: the quick brown fox") || !strings.HasSuffix(strings.TrimRight(lines[22], " "), "…") || !strings.HasPrefix(lines[23], "click or prefix g") {
+		t.Fatalf("capped at two lines, the cut marked, the status line kept: %q", lines[21:24])
+	}
+	if lines = render(m, 60, 24); !strings.HasSuffix(strings.TrimRight(lines[22], " "), "(+1)") {
+		t.Fatalf("further warnings are counted: %q", lines[22])
+	}
+	// no message: one line, the status alone; a short panel keeps one line with the message
+	m.snap.Warnings = nil
+	if lines = render(m, 28, 24); strings.TrimRight(lines[22], " ") != "" || !strings.HasPrefix(lines[23], "click or prefix g") {
+		t.Fatalf("no message: %q", lines[22:])
+	}
+	m.snap.Warnings = []string{"beta: Connection refused"}
+	if lines = render(m, 28, 8); len(lines) != 8 || !strings.HasPrefix(lines[7], "beta: Connection refused") {
+		t.Fatalf("short panel: %q", lines[len(lines)-1])
+	}
+	// the hints never overrun either: the right side goes first
+	if got := joinLR("⏎ front · c d r m x i", "? help", 24); got != "⏎ front · c d r m x i   " {
+		t.Fatalf("joinLR narrow: %q", got)
+	}
+	if got := joinLR("j/k ⏎ ⇥ 1-9", "esc · ? help", 28); got != "j/k ⏎ ⇥ 1-9     esc · ? help" {
+		t.Fatalf("joinLR fits: %q", got)
+	}
+	if got := wrapWords("a bb ccc dddddddd ee", 5, 0); !reflect.DeepEqual(got, []string{"a bb", "ccc", "ddddd", "ddd", "ee"}) {
+		t.Fatalf("wrapWords: %q", got)
+	}
+	if got := wrapWords("one two three four five six", 9, 2); !reflect.DeepEqual(got, []string{"one two", "three fo…"}) {
+		t.Fatalf("wrapWords capped: %q", got)
 	}
 }
