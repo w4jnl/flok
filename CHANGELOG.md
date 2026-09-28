@@ -6,55 +6,67 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
-- Remote hosts take the local tmux prefix while connected (`[hosts] prefix`, on by default): the
-  host's own prefix moves to `prefix2`, so the chords you type at home work inside its sessions
-  and its native ones still do; both go back on disconnect. A host whose flok predates the key
-  relay or the prefix mirroring is called out by `flok doctor`, `flok host status`, the host
-  info screen and the sidebar footer instead of failing silently (the serve's hello now lists
-  its features).
-- Remote hosts: one local flok now shows and drives tmux servers on other machines over ssh.
-  `flok host add [<name>] <user@host|ssh alias> [--mode full|plain]` registers a host
-  (`hosts.json` in the state dir; `set` changes a host in place, `remove`, `connect`,
-  `disconnect`, `list`, `status`). The target goes to ssh as typed; the name defaults to the
-  target's alias or first DNS label, keeps its case (`dockerAMS`) and matches in any case;
-  `[hosts]` in config.toml
-  holds the ssh defaults. Mode `full` runs `flok serve --stdio` on the host (its hooks, Claude
-  registry and screen rules, streamed back; hooks there stay silent while served and the sounds
-  play here), mode `plain` drives the host's tmux over ssh with titles and screen rules only.
-  The sidebar grows a **servers** panel above the sessions (local first; `Tab` cycles the three
-  panels, `Enter` brings a host's work pane next to the sidebar, `Space` does the same with
-  the keyboard staying in the sidebar, `c`/`d` connect or disconnect it, `r` reconnects now,
-  `m` flips its mode, `x` removes it after a `y/n`, `i` shows its details; the footer lists
-  them); the sessions panel shows the front host, the agents panel every host, attention-sorted,
-  remote rows tagged with their host. Each host keeps a persistent `ssh -t … tmux attach` pane
-  parked in the outer, so switching is instant and survives `flok hide`. Hosts reconnect with
-  backoff; `needs auth`, `no flok`, `old flok` (a flok without `serve` there, named with its
-  version), `no tmux server` (the host answers but tmux is not running for that user or
-  socket; the work pane then starts one with the session from `[hosts] session`, default
-  `main`, or the host's `--session`), `busy` and `incompatible` say what to fix, and the sidebar
-  footer names the reason behind a failing host; `[hosts] remote_path` (Homebrew,
-  /usr/local, ~/.local/bin by default) is appended to the PATH of every command run on a host,
-  since a non-interactive ssh shell sees only the system PATH. `flok goto
-  beta:%12` and `flok jump` reach agents on any host (bringing that host to the front first),
-  `flok next`/`prev` walk the front host, `flok host front <name>|local` switches hosts from a
-  key binding or script. flok's keys (`prefix b B g o a A u`) work inside a remote session as
-  well: flok binds them in the host's running tmux while connected and restores the host's own
-  bindings on disconnect (`[hosts] keys`), relaying the key to the local sidebar through
-  `flok relay` on full-mode hosts or a tmux user option on plain ones. The same mechanism
-  covers the local server: without the snippet, the sidebar binds flok's keys for the session
-  at start (`[keys] bind`: `missing` leaves tmux's own `o` and `?` alone, `all` takes them over,
-  `off` never), `flok down` removes them again, and `flok doctor` reports per key what is bound.
-  Servers rotate from the keyboard: `prefix N`/`P` next and previous server, `prefix O` the
-  previous one again, `prefix S` a tmux menu of them, `prefix F1`…`F9` a server by position
-  (`flok host next|prev|last|menu`, `flok host front <N>`), inside remote sessions as well; the
-  server that comes to the front flashes `flok: now on <server>` on its status line. With the
-  keyboard in the sidebar the selected row is a full-width bar with a `›` in front. The menu bar tags remote agents with `@host` and lists a row per host
-  (agents and waiting count, or why it is down); clicking one brings its pane to the front.
-  Without any host nothing changes.
+## 0.5.0 (2026-09-28)
+
+flok goes multi-host: one local flok shows and drives tmux servers on other machines over
+ssh. Without a host registered nothing changes.
+
+- **Remote hosts.** `flok host add [<name>] <user@host|ssh alias> [--mode full|plain]`
+  registers a host in `hosts.json` (`set` changes it in place, `remove`, `connect`,
+  `disconnect`, `list`, `status`); `[hosts]` in config.toml holds the ssh defaults. The target
+  goes to ssh as typed; the name defaults to the alias or the first DNS label, keeps its case
+  (`dockerAMS`) and matches in any case. Mode `full` runs `flok serve --stdio` on the host (its
+  hooks, Claude registry and screen rules, streamed back; hooks there stay silent while served
+  and the sounds play here). Mode `plain` drives the host's tmux over ssh with titles and screen
+  rules only, for hosts where flok cannot be installed.
+- **Servers panel.** Above the sessions, local first: `Tab` cycles the three panels, `Enter`
+  brings a host's work pane next to the sidebar, `Space` does the same with the keyboard
+  staying in the sidebar, `c`/`d` connect or disconnect, `r` reconnects now, `m` flips the mode,
+  `x` removes after a `y/n`, `i` shows the host's details. The sessions panel shows the front
+  host, the agents panel every host, attention-sorted, remote rows tagged with their host; with
+  the keyboard in the sidebar the selected row is a full-width bar with a `›` in front. Each
+  host keeps a persistent `ssh -t … tmux attach` pane parked in the outer, so switching is
+  instant and survives `flok hide`.
+- **Connection states.** Hosts reconnect with backoff. `needs auth`, `no flok`, `old flok` (a
+  flok without `serve` there, named with its version), `no tmux server` (the host answers but
+  tmux is not running for that user or socket; the work pane then starts one with the session
+  from `[hosts] session`, default `main`, or the host's `--session`), `busy` and `incompatible`
+  say what to fix, and the sidebar footer names the reason behind a failing host.
+  `[hosts] remote_path` (Homebrew, /usr/local and ~/.local/bin by default) is appended to the
+  PATH of every command run on a host, since a non-interactive ssh shell sees only the system
+  PATH.
+- **Navigation across hosts.** `flok goto beta:%12` and `flok jump` reach agents on any host,
+  bringing that host to the front first; `flok next`/`prev` walk the front host;
+  `flok host front <name>|local` switches hosts from a key binding or script. Servers rotate
+  from the keyboard: `prefix N`/`P` next and previous server, `prefix O` the previous one again,
+  `prefix S` a tmux menu of them, `prefix F1`…`F9` a server by position (`flok host
+  next|prev|last|menu`, `flok host front <N>`), inside remote sessions as well; the server that
+  comes to the front flashes `flok: now on <server>` on its status line.
+- **flok's keys inside remote sessions.** While a host is connected flok binds `prefix b B g o
+  a A u` and the server keys in its running tmux and restores the host's own bindings on
+  disconnect (`[hosts] keys`), relaying the key to the local sidebar through `flok relay` on
+  full-mode hosts or a tmux user option on plain ones. The host also takes your local prefix
+  while connected (`[hosts] prefix`, on by default): its own moves to `prefix2`, so the chords
+  you type at home work there and its native ones still do; everything goes back on disconnect.
+  A host whose flok predates the key relay is called out by `flok doctor`, `flok host status`,
+  the host info screen and the sidebar footer instead of failing silently.
+- **Local keys without the snippet.** The sidebar binds flok's keys in the local server at
+  start (`[keys] bind`: `missing` leaves tmux's own `o` and `?` alone, `all` takes them over,
+  `off` never); `flok down` removes them again, and `flok doctor` reports per key what is
+  bound.
+- **Menu bar.** Remote agents are tagged `@host`; a row per host shows its agents and waiting
+  count, or why it is down, and clicking it brings its pane to the front.
 - `prefix u` in the tmux snippet toggles keep-awake; `flok keep-awake --notify` shows the new
   state on tmux's status line instead of printing it, and the keybinds popup labels the key
   "keep the Mac awake (toggle)". Existing installs add the line by hand (`flok install --tmux`
   prints it).
+- `flok doctor` probes every registered host over ssh: reachability, tmux and flok versions,
+  protocol, Claude Code hooks and terminfo there.
+- Dependencies: charmbracelet/x/ansi 0.11.8 with the matching cellbuf, colorprofile and x/term.
+
+Upgrading: a full-mode host needs flok 0.5.0 too (`brew upgrade flok` there); the local
+tmux snippet gains `prefix u`, `N`, `P`, `O`, `S` and `F1`…`F9` (`flok install --tmux` prints
+it), or `[keys] bind` supplies whatever the snippet lacks.
 
 ## 0.4.6 (2026-09-25)
 
