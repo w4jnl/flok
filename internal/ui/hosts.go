@@ -3,10 +3,13 @@ package ui
 import (
 	"errors"
 	"fmt"
+	"os"
+	"os/exec"
 	"reflect"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -15,6 +18,7 @@ import (
 
 	"github.com/w4jnl/flok/internal/agent"
 	"github.com/w4jnl/flok/internal/hosts"
+	"github.com/w4jnl/flok/internal/keys"
 	"github.com/w4jnl/flok/internal/launcher"
 	"github.com/w4jnl/flok/internal/merge"
 	"github.com/w4jnl/flok/internal/nav"
@@ -262,10 +266,14 @@ func (m *Model) onRemote(msg remote.Msg) {
 	if msg.Event != nil {
 		m.p.PlaySound(agent.PaneRef{Host: msg.Host, ID: msg.Event.Pane}.String(), msg.Event.Kind)
 	}
+	if msg.Request != "" { // a flok key pressed inside that host's tmux
+		m.debugf("%s: key %s", msg.Host, msg.Request)
+		m.runKeyCommand(msg.Request)
+	}
 	if msg.Snap != nil {
 		v.snap, v.hasSnap, changed = msg.Snap.ToMerge(), true, true
 	}
-	if msg.Event == nil && msg.Snap == nil { // a state transition
+	if msg.Event == nil && msg.Snap == nil && msg.Request == "" { // a state transition
 		changed = v.state != msg.State || v.detail != msg.Detail
 		v.state, v.detail, v.retryAt = msg.State, msg.Detail, msg.RetryAt
 		if msg.Hello != nil {
@@ -384,6 +392,9 @@ func (m Model) swapCmd(host string, then func(pane string) error) tea.Cmd {
 		_ = launcher.UpdateRuntime(func(r *launcher.Runtime) {
 			if wp.Local != "" {
 				r.LocalPane = wp.Local
+			}
+			if r.FrontHost != host {
+				r.PreviousFront = hostLabel(r.FrontHost)
 			}
 			r.RightPane, r.FrontHost = target, host
 		})
@@ -508,24 +519,194 @@ func (m Model) gotoCmd(host, sess, win, pane string, keepFocus bool) tea.Cmd {
 	return func() tea.Msg { return switchedMsg{do(right)} }
 }
 
-// toggleHostCmd flips a host's enabled flag in the registry; the file change comes back as a
-// hostsMsg and the manager connects or disconnects.
-func (m Model) toggleHostCmd(host string) tea.Cmd {
-	if m.d.Store == nil || host == "" {
+// hostKey runs a servers-panel key on the selected row: c connect, d disconnect, r reconnect
+// now, m flip the mode, x remove (after y/n), i details. The registry keys go through
+// hosts.json like the CLI; the file change comes back as a hostsMsg and the manager follows.
+func (m Model) hostKey(k, host string) (tea.Model, tea.Cmd) {
+	if host == "" && k != "i" {
+		return m, nil
+	}
+	switch k {
+	case "c":
+		return m, m.hostEnabledCmd(host, true)
+	case "d":
+		return m, m.hostEnabledCmd(host, false)
+	case "r":
+		if m.remote == nil {
+			return m, nil
+		}
+		rem := m.remote
+		return m, func() tea.Msg { rem.Reconnect(host); return nil }
+	case "m":
+		return m, m.hostEditCmd(host, func(h *hosts.Host) {
+			if h.Mode == hosts.ModePlain {
+				h.Mode = hosts.ModeFull
+			} else {
+				h.Mode = hosts.ModePlain
+			}
+		})
+	case "x":
+		m.confirmRemove = host
+		return m, nil
+	case "i":
+		m.openHostInfo(host)
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m Model) hostEnabledCmd(host string, on bool) tea.Cmd {
+	if m.d.Store == nil {
 		return nil
 	}
 	dir := m.d.Store.Dir
 	return func() tea.Msg {
 		_, err := hosts.Update(dir, func(s *hosts.Set) error {
-			h, ok := s.Get(host)
-			if !ok {
+			if !s.SetEnabled(host, on) {
 				return errors.New("no host " + host)
 			}
-			s.SetEnabled(host, !h.Enabled)
 			return nil
 		})
 		return hostToggleMsg{err}
 	}
+}
+
+// hostEditCmd applies a validated edit to a host in the registry.
+func (m Model) hostEditCmd(host string, edit func(*hosts.Host)) tea.Cmd {
+	if m.d.Store == nil {
+		return nil
+	}
+	dir := m.d.Store.Dir
+	return func() tea.Msg {
+		_, err := hosts.Update(dir, func(s *hosts.Set) error { return s.Set(host, edit) })
+		return hostToggleMsg{err}
+	}
+}
+
+// removeHostCmd forgets a host and prunes its local cache, like `flok host remove`.
+func (m Model) removeHostCmd(host string) tea.Cmd {
+	if m.d.Store == nil {
+		return nil
+	}
+	dir := m.d.Store.Dir
+	return func() tea.Msg {
+		_, err := hosts.Update(dir, func(s *hosts.Set) error {
+			if !s.Remove(host) {
+				return errors.New("no host " + host)
+			}
+			return nil
+		})
+		if err == nil {
+			_ = os.RemoveAll(hosts.Dir(dir, host))
+		}
+		return hostToggleMsg{err}
+	}
+}
+
+// openHostInfo shows a host's details in the help overlay.
+func (m *Model) openHostInfo(host string) {
+	h := NewHelp(m.theme, []keys.Section{m.hostInfoSection(host)}, false)
+	h.width, h.height = m.width, m.height
+	m.help = &h
+}
+
+// hostInfoSection is what `i` shows on a servers row.
+func (m Model) hostInfoSection(host string) keys.Section {
+	row := func(k, v string) keys.Binding { return keys.Binding{Key: k, Label: v} }
+	if host == "" {
+		return keys.Section{Name: "local", Bindings: []keys.Binding{
+			row("tmux", m.d.Cfg.Inner.Socket+" (this machine)"),
+			row("sessions", strconv.Itoa(len(m.local.Spaces))),
+			row("agents", fmt.Sprintf("%d · %d waiting", len(m.local.Agents), m.local.Unseen)),
+		}}
+	}
+	h, _ := m.hostSet.Get(host)
+	v := m.remotes[host]
+	st := v.state
+	switch {
+	case !h.Enabled:
+		st = remote.Disabled
+	case st == "":
+		st = remote.Connecting
+	}
+	state := st.Label()
+	if v.detail != "" {
+		state += " · " + v.detail
+	}
+	rows := []keys.Binding{row("target", h.Target), row("mode", string(h.Mode)), row("state", state)}
+	if hint := st.Hint(h); hint != "" {
+		rows = append(rows, row("hint", hint))
+	}
+	if v.hello != nil {
+		if v.hello.Version != "" && v.hello.Version != "plain" {
+			rows = append(rows, row("flok", strings.TrimPrefix(v.hello.Version, "v")+" (protocol "+strconv.Itoa(v.hello.Proto)+")"))
+		}
+		if v.hello.TmuxVersion != "" {
+			rows = append(rows, row("tmux", v.hello.TmuxVersion))
+		}
+		if v.hello.Hostname != "" && v.hello.Hostname != h.Target {
+			rows = append(rows, row("hostname", v.hello.Hostname))
+		}
+	}
+	if v.hasSnap {
+		rows = append(rows, row("sessions", strconv.Itoa(len(v.snap.Spaces))),
+			row("agents", fmt.Sprintf("%d · %d waiting", len(v.snap.Agents), v.snap.Unseen)))
+	}
+	for _, kv := range [][2]string{{"socket", h.Socket}, {"session", h.Session}, {"term", h.Term}, {"flok path", h.Flok}} {
+		if kv[1] != "" {
+			rows = append(rows, row(kv[0], kv[1]))
+		}
+	}
+	if m.d.Cfg.Hosts.Keys {
+		rows = append(rows, row("keys", "prefix b B g o a A u bound there while connected"))
+	}
+	if !h.AddedAt.IsZero() {
+		rows = append(rows, row("added", h.AddedAt.Local().Format("2006-01-02 15:04")))
+	}
+	if !h.LastConnected.IsZero() {
+		rows = append(rows, row("last connected", h.LastConnected.Local().Format("2006-01-02 15:04")))
+	}
+	return keys.Section{Name: "host " + host, Bindings: rows}
+}
+
+// notifyFront flashes the name of the server that just came to the front on its own status
+// line (the one visible in the work pane), so a key-driven switch is confirmed where the eyes are.
+func (m Model) notifyFront(host string) tea.Cmd {
+	text := "flok: now on " + hostLabel(host)
+	if host != "" {
+		if m.remote == nil {
+			return nil
+		}
+		rem := m.remote
+		return func() tea.Msg { rem.Notify(host, text); return nil }
+	}
+	inner, tty := m.d.Inner, m.local.Focus.ClientTTY
+	if inner == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		args := []string{"display-message"}
+		if tty != "" {
+			args = append(args, "-c", tty)
+		}
+		_, _ = inner.Run(append(args, text)...)
+		return nil
+	}
+}
+
+// runKeyCommand runs a flok key pressed inside a host's tmux (or filed with `flok relay`) as
+// the local binding would: `flok <cmd>` against this outer, detached.
+func (m Model) runKeyCommand(cmd string) {
+	if m.d.Bin == "" || !remote.IsKeyCommand(cmd) {
+		return
+	}
+	c := exec.Command(m.d.Bin, strings.Fields(cmd)...)
+	c.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := c.Start(); err != nil {
+		m.debugf("key %s: %v", cmd, err)
+		return
+	}
+	go func() { _ = c.Wait() }()
 }
 
 // hostRowParts describes a servers-panel row: name, state glyph and its colour, the detail
@@ -603,10 +784,7 @@ func (m Model) hostRow(i, w int) string {
 	host, _ := m.hostAt(i)
 	tag := m.hostMode(host)
 	sel := m.panel == panelHosts && m.cursor[panelHosts] == i
-	base := lipgloss.NewStyle()
-	if host == m.front {
-		base = base.Background(t.CurrentLine)
-	}
+	base, lead := m.rowFrame(sel, host == m.front)
 	nameStyle := base.Foreground(t.FG)
 	if sel && m.focused {
 		nameStyle = nameStyle.Foreground(t.Pink).Bold(true)
@@ -640,7 +818,7 @@ func (m Model) hostRow(i, w int) string {
 	if gap < 0 {
 		gap = 0
 	}
-	row := base.Render(" ") + base.Foreground(col).Render(glyph) + base.Render(" ") + nameStyle.Render(name)
+	row := lead + base.Foreground(col).Render(glyph) + base.Render(" ") + nameStyle.Render(name)
 	if tag != "" {
 		row += base.Render(" ") + base.Foreground(t.Comment).Render(tag)
 	}

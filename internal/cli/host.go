@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"strconv"
 	"strings"
+	"syscall"
 	"text/tabwriter"
 	"time"
 
@@ -17,6 +20,7 @@ import (
 	"github.com/w4jnl/flok/internal/remote"
 	"github.com/w4jnl/flok/internal/snapshot"
 	"github.com/w4jnl/flok/internal/state"
+	"github.com/w4jnl/flok/internal/tmux"
 )
 
 const hostUsage = `usage: flok host <command>
@@ -38,9 +42,14 @@ const hostUsage = `usage: flok host <command>
   status [--json]
               connect to every enabled host once and report what answers (flok on the host,
               its tmux, agents); the sidebar keeps its own connections, this is a check
-  front <name>|local [--focus]
-              bring that host's work pane next to the running sidebar (--focus also brings
-              the terminal window to the front, as the menu bar does)
+  front <name>|local|<N> [--focus]
+              bring that host's work pane next to the running sidebar (N counts local first,
+              then the hosts in order; --focus also raises the terminal window, as the menu
+              bar does)
+  next | prev | last
+              rotate the front through local and the enabled hosts, or go back to the
+              previous one (prefix N / P / O)
+  menu        a tmux menu of the servers over the work pane (prefix S; tmux 3.0+)
 
 Hosts live in the state dir (hosts.json); [hosts] in config.toml holds the ssh defaults.`
 
@@ -82,6 +91,10 @@ func (c hostCmd) run(args []string) int {
 		return c.status(args[1:])
 	case "front":
 		return c.front(args[1:])
+	case "next", "prev", "last":
+		return c.rotate(args[0])
+	case "menu":
+		return c.menu()
 	}
 	fmt.Fprintf(c.errw, "flok host: unknown command %q\n\n%s\n", args[0], hostUsage)
 	return 2
@@ -365,33 +378,173 @@ func (c hostCmd) front(args []string) int {
 		fmt.Fprintf(c.errw, "flok host front: need <name> or local\n\n%s\n", hostUsage)
 		return 2
 	}
-	host := name
-	if name == agent.LocalHost {
-		host = ""
-	} else {
-		if err := hosts.ValidateName(name); err != nil {
-			return c.fail(err)
-		}
-		set, err := hosts.Load(c.dir)
-		if err != nil {
-			return c.fail(err)
-		}
-		if _, ok := set.Get(name); !ok {
-			return c.fail(fmt.Errorf("no host %q (flok host list)", name))
-		}
-	}
-	if _, f := snapshot.Load(c.dir, c.now()); f != snapshot.Fresh {
-		return c.fail(errors.New("the sidebar is not running (flok up)"))
-	}
-	if err := state.New(c.dir).WriteRequest(state.Request{Cmd: "front", Host: host}); err != nil {
+	host, err := c.resolveServer(name)
+	if err != nil {
 		return c.fail(err)
+	}
+	if rc := c.requestFront(host); rc != 0 {
+		return rc
 	}
 	if doFocus {
 		if rt, err := launcher.ReadRuntime(); err == nil {
 			_ = focusTerminal(c.cfg, rt, "")
 		}
 	}
-	fmt.Fprintf(c.out, "%s comes to the front\n", name)
+	return 0
+}
+
+// servers is the rotation order: local, then the enabled hosts as registered.
+func (c hostCmd) servers() ([]string, error) {
+	set, err := hosts.Load(c.dir)
+	if err != nil {
+		return nil, err
+	}
+	order := []string{""}
+	for _, h := range set.Enabled() {
+		order = append(order, h.Name)
+	}
+	return order, nil
+}
+
+// resolveServer turns "local", a host name or a 1-based position into a host ("" = local).
+func (c hostCmd) resolveServer(arg string) (string, error) {
+	if arg == agent.LocalHost {
+		return "", nil
+	}
+	if n, err := strconv.Atoi(arg); err == nil {
+		order, err := c.servers()
+		if err != nil {
+			return "", err
+		}
+		if n < 1 || n > len(order) {
+			return "", fmt.Errorf("no server %d (there are %d: local and the enabled hosts)", n, len(order))
+		}
+		return order[n-1], nil
+	}
+	if err := hosts.ValidateName(arg); err != nil {
+		return "", err
+	}
+	set, err := hosts.Load(c.dir)
+	if err != nil {
+		return "", err
+	}
+	if _, ok := set.Get(arg); !ok {
+		return "", fmt.Errorf("no host %q (flok host list)", arg)
+	}
+	return arg, nil
+}
+
+// requestFront asks the running sidebar to bring host to the front.
+func (c hostCmd) requestFront(host string) int {
+	if _, f := snapshot.Load(c.dir, c.now()); f != snapshot.Fresh {
+		return c.fail(errors.New("the sidebar is not running (flok up)"))
+	}
+	if err := state.New(c.dir).WriteRequest(state.Request{Cmd: "front", Host: host}); err != nil {
+		return c.fail(err)
+	}
+	label := host
+	if label == "" {
+		label = agent.LocalHost
+	}
+	fmt.Fprintf(c.out, "%s comes to the front\n", label)
+	return 0
+}
+
+// rotate implements next / prev / last from the published front.
+func (c hostCmd) rotate(dir string) int {
+	snap, f := snapshot.Load(c.dir, c.now())
+	if f != snapshot.Fresh {
+		return c.fail(errors.New("the sidebar is not running (flok up)"))
+	}
+	if dir == "last" {
+		rt, err := launcher.ReadRuntime()
+		if err != nil || rt.PreviousFront == "" {
+			return c.fail(errors.New("no previous server yet"))
+		}
+		host := rt.PreviousFront
+		if host == agent.LocalHost {
+			host = ""
+		}
+		return c.requestFront(host)
+	}
+	order, err := c.servers()
+	if err != nil {
+		return c.fail(err)
+	}
+	if len(order) < 2 {
+		return c.fail(errors.New("no enabled hosts to rotate through (flok host add)"))
+	}
+	cur := 0
+	for i, h := range order {
+		if h == snap.FrontHost {
+			cur = i
+		}
+	}
+	n := len(order)
+	if dir == "prev" {
+		cur = (cur - 1 + n) % n
+	} else {
+		cur = (cur + 1) % n
+	}
+	return c.requestFront(order[cur])
+}
+
+// menu shows the servers as a tmux menu over the work pane of the outer (whichever host is in
+// front, the outer is what the terminal shows); an item brings that server to the front. Older
+// tmux (before 3.0) has no menus: the keyboard goes to the sidebar's servers panel instead.
+func (c hostCmd) menu() int {
+	rt, err := launcher.ReadRuntime()
+	if err != nil || rt.SidebarPane == "" {
+		return c.fail(errors.New("the sidebar is not running (flok up)"))
+	}
+	outer := tmux.NewLocal(rt.OuterSocket).SetVersion(rt.Version())
+	if !outer.Features().Menu {
+		_, err := outer.Run("select-pane", "-t", rt.SidebarPane)
+		return report(err)
+	}
+	if clients, err := outer.Run("list-clients", "-F", "#{client_tty}"); err != nil || strings.TrimSpace(clients) == "" {
+		return c.fail(errors.New("no terminal is attached to flok (the menu needs one)"))
+	}
+	order, err := c.servers()
+	if err != nil {
+		return c.fail(err)
+	}
+	snap, _ := snapshot.Load(c.dir, c.now())
+	states := map[string]snapshot.Host{}
+	for _, h := range snap.Hosts {
+		states[h.Name] = h
+	}
+	args := []string{"display-menu", "-t", rt.RightPane, "-T", " servers ", "-x", "C", "-y", "C"}
+	for i, host := range order {
+		label := agent.LocalHost
+		if host != "" {
+			label = host
+			if h, ok := states[host]; ok {
+				switch h.State {
+				case "connected", "stale":
+					label += fmt.Sprintf(" · %s · %d", h.Mode, h.Agents)
+				default:
+					label += " · " + h.State
+				}
+			}
+		}
+		mark := "  "
+		if host == snap.FrontHost {
+			mark = "▸ "
+		}
+		key := ""
+		if i < 9 {
+			key = strconv.Itoa(i + 1)
+		}
+		args = append(args, mark+label, key, fmt.Sprintf("run-shell -b %s", tmux.ShellQuote(binPath()+" host front "+strconv.Itoa(i+1))))
+	}
+	// display-menu holds its caller until the menu closes: start it and let it be
+	cmd := exec.Command("tmux", outer.Argv(args...)...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := cmd.Start(); err != nil {
+		return c.fail(err)
+	}
+	go func() { _ = cmd.Wait() }()
 	return 0
 }
 

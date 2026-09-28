@@ -259,3 +259,30 @@ func max(a, b int) int {
 	}
 	return b
 }
+
+// SidebarKeySections describes the sidebar's own keys for the help overlay (the rest of it
+// lists the tmux bindings); the servers section appears with remote hosts.
+func SidebarKeySections(multiHost bool) []keys.Section {
+	row := func(k, l string) keys.Binding { return keys.Binding{Key: k, Label: l} }
+	secs := []keys.Section{{Name: "sidebar", Bindings: []keys.Binding{
+		row("j / k", "move the cursor"),
+		row("Tab / Shift-Tab", "next / previous panel"),
+		row("Enter", "open the row and hand the keyboard to the work pane"),
+		row("1-9 · ! @ # …", "agent N · session N"),
+		row("g / G", "first / last row"),
+		row("r", "refresh"),
+		row("Esc / q", "keyboard back to the work pane"),
+	}}}
+	if multiHost {
+		secs = append(secs, keys.Section{Name: "sidebar · servers", Bindings: []keys.Binding{
+			row("Enter", "bring the host's work pane to the front"),
+			row("Space", "the same, the keyboard stays in the sidebar"),
+			row("c / d", "connect / disconnect (persisted: off until c)"),
+			row("r", "reconnect now"),
+			row("m", "flip the mode: full ↔ plain"),
+			row("x", "remove the host (asks y/n)"),
+			row("i", "host details"),
+		}})
+	}
+	return secs
+}

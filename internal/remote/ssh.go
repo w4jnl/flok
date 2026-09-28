@@ -16,6 +16,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/w4jnl/flok/internal/config"
@@ -267,6 +268,7 @@ func Exec(ctx context.Context, argv []string) (Proc, error) {
 		return nil, errors.New("empty command")
 	}
 	cmd := exec.Command(argv[0], argv[1:]...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // Kill reaches the whole tree (a shell wrapper and its child)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err
@@ -316,12 +318,26 @@ func (p *execProc) Wait() (int, string) {
 	})
 	return p.exit, p.stderr.String()
 }
+
+// Kill ends the process: stdin closes first, which lets a remote `flok serve` see EOF and leave
+// cleanly (restoring the keys it bound), then after a short grace the whole process group is
+// killed, wrapper shells included.
 func (p *execProc) Kill() {
 	_ = p.stdin.Close()
-	if p.cmd.Process != nil {
-		_ = p.cmd.Process.Kill()
+	if p.cmd.Process == nil {
+		return
 	}
+	select {
+	case <-p.done:
+		return
+	case <-time.After(killGrace):
+	}
+	_ = syscall.Kill(-p.cmd.Process.Pid, syscall.SIGKILL)
+	_ = p.cmd.Process.Kill()
 }
+
+// killGrace is how long a dialed process gets to exit on EOF before it is killed.
+const killGrace = 700 * time.Millisecond
 
 // tailBuffer keeps the last few KB written to it: enough stderr to classify, never unbounded.
 type tailBuffer struct {

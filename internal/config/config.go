@@ -52,6 +52,7 @@ type Keys struct {
 	ShowMouse bool              `toml:"show_mouse"`
 	Tables    []string          `toml:"tables"`
 	Labels    map[string]string `toml:"labels"`
+	Bind      string            `toml:"bind"` // missing: bind flok's keys that are unbound at start | all: override | off
 }
 
 type Sounds struct {
@@ -98,6 +99,7 @@ type Hosts struct {
 	ServeCommand    string   `toml:"serve_command"`     // what mode full runs on the host
 	RemotePath      string   `toml:"remote_path"`       // appended to PATH for every command run on a host
 	Session         string   `toml:"session"`           // session the work pane creates on a host whose tmux is not running
+	Keys            bool     `toml:"keys"`              // bind flok's keys (prefix b B g o a A u) in a host's tmux while connected
 }
 
 // Palette is one set of sidebar colours.
@@ -168,12 +170,12 @@ func Default() Config {
 		Outer:   Outer{Socket: "flok", Session: "flok", ExtraConf: "~/.config/flok/outer.extra.conf"},
 		Sidebar: Sidebar{Width: 28, RailWidth: 6, RailThreshold: 12, SessionsMaxRatio: 0.4, AgentRows: 2, SessionOrder: "index", ShowBranch: true, Brand: true, BranchSource: "active_pane", PollMs: 1000, IdlePollMs: 3000, SpinnerMs: 250, FPS: 15, RegistryPollMs: 10000, ScreenPollMs: 2000, CaptureLines: 0, StaleWorkingMin: 30},
 		Agents:  Agents{Enabled: []string{"claude", "copilot"}, ManifestDir: "~/.config/flok/agents", ScreenRules: "auto"},
-		Keys:    Keys{Tables: []string{"prefix", "root", "copy-mode-vi"}},
+		Keys:    Keys{Tables: []string{"prefix", "root", "copy-mode-vi"}, Bind: "missing"},
 		Sounds: Sounds{Enabled: true, Player: "hook", Bell: "auto", Volume: 0.6, MinIntervalMs: 750,
 			Done: "", Blocked: "", Error: ""}, // empty = the bundled herdr sounds (done.wav / request.wav)
 		Bar: Bar{Enabled: false, Animate: true, Badge: true, Focus: "auto", MaxRows: 16, AnimateMs: 0, Color: true, IconSize: 18, Blink: true},
 		Hosts: Hosts{SSH: "ssh", ConnectTimeoutS: 10, BackoffMaxS: 30, Multiplex: true, ServeCommand: "flok serve --stdio",
-			RemotePath: "/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:/opt/local/bin", Session: "main"},
+			RemotePath: "/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:/opt/local/bin", Session: "main", Keys: true},
 		Theme: Theme{Mode: "auto",
 			Palette: Palette{BG: "#282a36", CurrentLine: "#44475a", FG: "#f8f8f2", Comment: "#6272a4", Cyan: "#8be9fd", Green: "#50fa7b",
 				Orange: "#ffb86c", Pink: "#ff79c6", Purple: "#bd93f9", Red: "#ff5555", Yellow: "#f1fa8c",

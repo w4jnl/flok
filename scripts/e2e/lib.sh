@@ -3,6 +3,7 @@
 set -euo pipefail
 unset TMUX TMUX_PANE FLOK_OUTER FLOK_RIGHT_PANE   # the suites drive their own isolated servers
 R=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+[ -z "${FLOK_DEBUG:-}" ] || export FLOK_TMUX_VERBOSE=1   # a debug run also keeps the outer tmux server's own log
 PROJ=$(basename "$R")   # agent rows show the cwd base name
 BIN=$R/bin/flok
 go build -o "$BIN" "$R/cmd/flok"
@@ -28,7 +29,14 @@ registry() { printf '%s' "$1" > "$FLOK_E2E_REGISTRY"; }     # registry '[{"pid":
 IN() { tmux -L e2e-inner "$@"; }
 OUT() { tmux -L e2e-outer "$@"; }
 cleanup() { OUT kill-server 2>/dev/null || true; IN kill-server 2>/dev/null || true
-  for h in ${FAKE_HOSTS:-}; do tmux -L "e2e-$h" kill-server 2>/dev/null || true; done; rm -rf "$T"; }
+  for h in ${FAKE_HOSTS:-}; do tmux -L "e2e-$h" kill-server 2>/dev/null || true; done
+  if [ -n "${FLOK_DEBUG:-}" ]; then # keep the sidebar/remote/serve logs of a debug run
+    d=/tmp/flok-e2e-logs/$(basename "$0" .sh); rm -rf "$d"; mkdir -p "$d"
+    cp "$T"/state/*.log "$d"/ 2>/dev/null || true
+    for h in ${FAKE_HOSTS:-}; do cp "$T/hosts/$h/state/serve.log" "$d/serve-$h.log" 2>/dev/null || true; done
+    mv "$R"/tmux-server-*.log "$R"/tmux-client-*.log "$d"/ 2>/dev/null || true   # written next to the suite by tmux -vv
+  fi
+  rm -rf "$T"; }
 trap cleanup EXIT
 IN kill-server 2>/dev/null || true; OUT kill-server 2>/dev/null || true
 
@@ -135,7 +143,11 @@ registry_poll_ms = 1000
 enabled = true
 command = "echo {file} >> $d/played"
 CFG
+  # a previous server (with the parked pane attached) takes a moment to go: wait for its pid,
+  # or the new-session below connects to the dying one and fails with "server exited unexpectedly"
+  pid=$(tmux -L "e2e-$h" display -p '#{pid}' 2>/dev/null || true)
   tmux -L "e2e-$h" kill-server 2>/dev/null || true
+  if [ -n "$pid" ]; then for _ in $(seq 1 50); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done; fi
   tmux -L "e2e-$h" -f /dev/null new-session -d -s Remote -x 200 -y 50 -c "$R"
   tmux -L "e2e-$h" new-window -t Remote -n agent -c "$R"
   pane=$(tmux -L "e2e-$h" display -p -t Remote:agent '#{pane_id}')

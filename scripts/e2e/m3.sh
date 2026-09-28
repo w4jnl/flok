@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 # M3: nav commands, toggle/hide, keybinds help.
 source "$(dirname "$0")/lib.sh"
+# the sidebar binds flok's keys in the inner server at start: the unbound ones, not tmux's own o and ?
+keys=$(IN list-keys -T prefix)
+expect "flok's b is bound in the inner at start" "prefix +b +run-shell -b \"$BIN toggle\"" "$keys"
+expect "... and a with the client argument" "prefix +a +run-shell -b \"$BIN next --client '#\{client_tty\}'\"" "$keys"
+expect "tmux's own o stays (mode missing)" 'prefix +o +select-pane -t :.\+' "$keys"
+expect "tmux's own ? stays" 'prefix +\? +list-keys' "$keys"
+expect "keys.json records what was bound" '"installed"' "$(cat "$T/state/keys.json")"
+expect "the server keys are bound too" "prefix +N +run-shell -b \"$BIN host next\"" "$keys"
+expect "... and F1 for the first server" "prefix +F1 +run-shell -b \"$BIN host front 1\"" "$keys"
 CLIENT=$(IN list-clients -F '#{client_tty}' | head -1)
 
 # second agent in Beta so next/prev have somewhere to go
@@ -92,7 +101,8 @@ KP=$(IN display -p -t Beta:keysui '#{pane_id}')
 ui=$(IN capture-pane -p -t "$KP")
 expect "keys UI title + badge"     'keybinds.*esc close' "$ui"
 expect "keys UI hint line"         'press / to filter'   "$ui"
-expect "keys UI shows a binding"   "$notepat"            "$ui"
+expect "keys UI shows a binding"   'hide/show sidebar'    "$ui"   # flok's own rows come first (b was rebound above); stock notes are checked in the dump
+expect "keys UI labels the server keys" 'server 1 to the front' "$ui"
 IN send-keys -t "$KP" /kill   # one chunk on purpose: multi-rune input must still work
 sleep 0.5
 ui=$(IN capture-pane -p -t "$KP")

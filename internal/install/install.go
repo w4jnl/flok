@@ -224,6 +224,19 @@ bind B run-shell -b "%[1]s hide"
 bind g run-shell -b "%[1]s focus"                        # keyboard into the sidebar: j/k, enter, esc back
 bind u run-shell -b "%[1]s keep-awake --notify"          # keep the Mac awake, toggles; state on the status line (macOS)
 bind ? run-shell -b "%[1]s keys --open --client '#{client_tty}'"   # popup on tmux 3.2+, a window before
+bind N run-shell -b "%[1]s host next"                     # servers (remote hosts): next / previous / last / menu
+bind P run-shell -b "%[1]s host prev"
+bind O run-shell -b "%[1]s host last"
+bind S run-shell -b "%[1]s host menu"                     # tmux 3.0+; older tmux focuses the sidebar instead
+bind F1 run-shell -b "%[1]s host front 1"                 # F1 … F9: local, then the hosts in order
+bind F2 run-shell -b "%[1]s host front 2"
+bind F3 run-shell -b "%[1]s host front 3"
+bind F4 run-shell -b "%[1]s host front 4"
+bind F5 run-shell -b "%[1]s host front 5"
+bind F6 run-shell -b "%[1]s host front 6"
+bind F7 run-shell -b "%[1]s host front 7"
+bind F8 run-shell -b "%[1]s host front 8"
+bind F9 run-shell -b "%[1]s host front 9"
 # <<< flok <<<
 `, bin)
 }

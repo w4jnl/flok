@@ -100,4 +100,22 @@ func TestHostCommandLifecycle(t *testing.T) {
 	if len(reqs) != 2 || reqs[0].Cmd != "front" || reqs[0].Host != "beta" || reqs[1].Host != "" {
 		t.Fatalf("requests %+v", reqs)
 	}
+	// rotation: local, then the enabled hosts; the front comes from the snapshot, "last" from runtime.json
+	t.Setenv("FLOK_STATE", dir)
+	run(0, "connect", "beta")
+	run(0, "front", "2")
+	run(1, "front", "3")
+	run(0, "next")
+	run(0, "prev")
+	run(1, "last") // nothing recorded yet
+	_ = os.WriteFile(filepath.Join(dir, "runtime.json"), []byte(`{"previous_front":"beta"}`), 0o644)
+	run(0, "last")
+	reqs = state.New(dir).DrainRequests(time.Now(), time.Minute)
+	var hostsSeen []string
+	for _, r := range reqs {
+		hostsSeen = append(hostsSeen, r.Cmd+":"+r.Host)
+	}
+	if strings.Join(hostsSeen, " ") != "front:beta front:beta front:beta front:beta" {
+		t.Fatalf("rotation requests %v", hostsSeen)
+	}
 }

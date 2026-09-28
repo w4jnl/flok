@@ -88,7 +88,7 @@ func bashCompletion() string {
 	b.WriteString("            COMPREPLY=( $(compgen -W \"--print --filter\" -- \"$cur\") ) ;;\n")
 	b.WriteString(`        host)
             if [ "$COMP_CWORD" -eq 2 ]; then
-                COMPREPLY=( $(compgen -W "add set remove connect disconnect list status front" -- "$cur") )
+                COMPREPLY=( $(compgen -W "add set remove connect disconnect list status front next prev last menu" -- "$cur") )
             else
                 case "${COMP_WORDS[2]}" in
                     remove|connect|disconnect|front) COMPREPLY=( $(compgen -W "$(flok host list --names 2>/dev/null) local" -- "$cur") ) ;;
@@ -139,7 +139,8 @@ func zshCompletion() string {
 	b.WriteString("        keys)\n            _arguments '--print[dump the help as text]' '--filter[keep bindings matching a substring]:filter' ;;\n")
 	b.WriteString(`        host)
             if (( CURRENT == 3 )); then
-                _values 'host command' 'add[register a remote tmux server]' 'set[change a host in place]' 'remove[forget a host]'                     'connect[enable a host]' 'disconnect[disable a host]' 'list[show the hosts]' 'status[connect once and report]' 'front[bring its work pane next to the sidebar]'
+                _values 'host command' 'add[register a remote tmux server]' 'set[change a host in place]' 'remove[forget a host]'                     'connect[enable a host]' 'disconnect[disable a host]' 'list[show the hosts]' 'status[connect once and report]' 'front[bring its work pane next to the sidebar]' \
+                    'next[next server to the front]' 'prev[previous server to the front]' 'last[the previous server again]' 'menu[a tmux menu of the servers]'
             else
                 case ${words[3]} in
                     remove|connect|disconnect|front)

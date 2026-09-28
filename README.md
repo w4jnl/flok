@@ -426,7 +426,21 @@ host's `flok serve` exits on the closed pipe and its hooks play there again.
 Navigation crosses hosts: `prefix o` goes to the agent needing you on any host, `1`-`9`, a
 click and the menu bar reach any row, `flok goto beta:%12` scripts it; `prefix a` / `A` walk the
 agents of the host in front, so a step never swaps the work pane. `flok host front beta` (or
-`local`) switches hosts from a key binding.
+`local`) switches hosts from a key binding, `flok host next|prev|last` rotates, `flok host menu`
+shows a tmux menu of them, and the same keys work with a remote server in front. Every switch
+flashes `flok: now on <server>` on the status line of the server that came to the front, the
+one the work pane shows.
+
+flok's keys work inside a remote session too, without touching the host's tmux config: while a
+host is connected, flok binds `prefix b B g o a A u` in that tmux server (`bind-key` lives in the
+running server, not in a file) and puts the host's own bindings of those keys back when it
+disconnects. What a key had before is noted in that server too (`@flok-orig-<key>` user
+options), so a session that ends abruptly loses nothing: the next one restores from the note.
+On a full-mode host the binding runs `flok relay <cmd>` and `flok serve` forwards it
+at once; on a plain host it sets a tmux user option that the next poll picks up (within a
+second). Either way the local sidebar runs the same `flok toggle|hide|focus|jump|next|prev|
+keep-awake` the local binding would. `[hosts] keys = false` turns it off. `prefix ?` stays the
+remote tmux's own list-keys.
 
 Security: ssh only, no listening sockets, no daemons. The local side execs the ssh argv (never a
 shell) with `BatchMode=yes`, its own ControlMaster socket under `~/.local/state/flok/ssh`
@@ -479,6 +493,17 @@ In tmux (your prefix; the snippet assumes `C-a`):
 | `prefix a` / `prefix A` | next / previous agent pane, in sidebar order |
 | `prefix u` | keep the Mac awake, display on, while flok runs; toggles, the state shows on the status line (macOS) |
 | `prefix ?` | keybinds help popup (`?` inside the sidebar opens the same) |
+| `prefix N` / `prefix P` | next / previous server to the front (local, then the hosts in order, wrapping) |
+| `prefix O` | the previous server again (back and forth) |
+| `prefix S` | a tmux menu of the servers over the work pane (tmux 3.0+) |
+| `prefix F1` … `F9` | server N to the front: F1 is local, F2 the first host |
+
+These come from the tmux snippet (`flok install --tmux`). Without it, the sidebar binds them in
+your tmux server for the session when it starts: by default only the keys nothing else uses, so
+tmux's own `prefix o` (next pane) and `prefix ?` (list-keys) keep working and flok's jump and help
+are reached from the sidebar instead; `[keys] bind = "all"` takes them over for the session too,
+and `flok down` puts everything back. `flok doctor` lists which keys flok has, which are unbound
+and which tmux or you bound to something else.
 
 Menu bar (when enabled): click an agent row to return to it (remote agents read `project ·
 claude @beta`, and a row per host under them brings that host's pane to the front), "Show
@@ -494,7 +519,12 @@ Inside the sidebar (`prefix g`, a click, or `flok focus`):
 |---|---|
 | `j` `k` / arrows / wheel | move the cursor |
 | `Tab` / `Shift-Tab` | cycle the panels: servers (with remote hosts), sessions, agents |
-| `c` | servers panel: connect / disconnect the selected host |
+| `Space` | servers panel: bring the host's work pane to the front, keyboard stays in the sidebar |
+| `c` / `d` | servers panel: connect / disconnect the host (persisted: `off` until `c`) |
+| `r` | servers panel: reconnect the host now (elsewhere: refresh) |
+| `m` | servers panel: flip the host's mode, full ↔ plain |
+| `x` | servers panel: remove the host (asks `y/n` in the footer) |
+| `i` | servers panel: host details (target, mode, state and hint, flok and tmux versions, agents) |
 | `Enter` | open the selected row and hand the keyboard to the work pane (a servers row brings that host's work pane to the front) |
 | `1`-`9` | open agent N; `!` `@` `#` … open session N |
 | `g` / `G` | first / last row |
@@ -528,7 +558,8 @@ flok host add <name> <user@host> [--mode full|plain] [--socket name] [--session 
               [--flok /path/to/flok] [--term name] [--disabled]     register a remote host
 flok host set <name> [--mode full|plain] [--target t] [--socket s] [--session s] [--flok p] [--term t]
 flok host remove | connect | disconnect <name>
-flok host list [--json|--names]  |  flok host status [--json]  |  flok host front <name>|local [--focus]
+flok host list [--json|--names]  |  flok host status [--json]  |  flok host front <name>|local|<N> [--focus]
+flok host next | prev | last | menu     rotate the server in front, or pick one from a tmux menu
 flok serve --stdio | --hello      run headless on this host for a flok elsewhere (started over ssh by it)
 ```
 
@@ -575,6 +606,8 @@ use_herdr_cache = false     # also read herdr's own manifest cache when herdr is
 screen_rules = "auto"       # auto | always | never
 
 [keys]
+bind = "missing"            # at start, bind flok's keys in your tmux for the session: missing = only
+                            # keys nothing else uses | all = override tmux's own o and ? too | off
 show_mouse = false
 tables = ["prefix", "root", "copy-mode-vi"]
 [keys.labels]               # command prefix -> label overrides for the help popup
@@ -625,6 +658,7 @@ backoff_max_s = 30          # reconnect backoff 1, 2, 4 … up to this many seco
 multiplex = true            # one ControlMaster connection per host, shared by the data channel,
                             # tmux calls and the work pane (sockets under the state dir)
 session = "main"            # a host whose tmux is not running gets this session from its work pane
+keys = true                 # bind flok's keys (prefix b B g o a A u) in a host's tmux while connected
 remote_path = "/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:/opt/local/bin"
                             # appended to PATH for every command flok runs on a host: a non-interactive
                             # ssh shell sees only the system PATH (Homebrew's tmux would be invisible)

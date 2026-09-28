@@ -7,22 +7,25 @@ import (
 )
 
 var (
-	wsRe       = regexp.MustCompile(`\s+`)
-	pluginRe   = regexp.MustCompile(`/plugins/([^/]+)/(?:scripts/|bindings/)?([^/\s"']+?)(?:\.sh|\.tmux)?(?:\s|"|'|$)`)
-	flokRe     = regexp.MustCompile(`flok\S*\s+(\w[\w-]*)`) // the subcommand, also inside $(…)
-	resizeRe   = regexp.MustCompile(`^resize-pane -([LRUD]) ?(\d+)?`)
-	selWinRe   = regexp.MustCompile(`^select-window -t :?=?(\d+)`)
-	layoutRe   = regexp.MustCompile(`^select-layout (\S+)`)
-	sendXRe    = regexp.MustCompile(`^send-keys -X ([a-z-]+)`)
-	vimAwareRe = regexp.MustCompile(`select-pane -([LRUDl])`)
-	sourceRe   = regexp.MustCompile(`^source-file`)
-	paneDirs   = map[string]string{"L": "left", "R": "right", "U": "up", "D": "down"}
+	wsRe             = regexp.MustCompile(`\s+`)
+	pluginRe         = regexp.MustCompile(`/plugins/([^/]+)/(?:scripts/|bindings/)?([^/\s"']+?)(?:\.sh|\.tmux)?(?:\s|"|'|$)`)
+	flokRe           = regexp.MustCompile(`flok\S*\s+(\w[\w-]*)(?:\s+(\w[\w-]*))?`) // the subcommand (and its verb), also inside $(…)
+	resizeRe         = regexp.MustCompile(`^resize-pane -([LRUD]) ?(\d+)?`)
+	selWinRe         = regexp.MustCompile(`^select-window -t :?=?(\d+)`)
+	layoutRe         = regexp.MustCompile(`^select-layout (\S+)`)
+	sendXRe          = regexp.MustCompile(`^send-keys -X ([a-z-]+)`)
+	vimAwareRe       = regexp.MustCompile(`select-pane -([LRUDl])`)
+	sourceRe         = regexp.MustCompile(`^source-file`)
+	hostFrontIndexRe = regexp.MustCompile(`host front (\d+)`)
+	paneDirs         = map[string]string{"L": "left", "R": "right", "U": "up", "D": "down"}
 )
 
 var flokLabels = map[string]string{
 	"next": "next agent", "prev": "previous agent", "jump": "jump to agent needing input",
 	"toggle": "toggle sidebar rail", "hide": "hide/show sidebar", "keys": "keybinds", "focus": "focus sidebar",
 	"keep-awake": "keep the Mac awake (toggle)",
+	"host next":  "next server to the front", "host prev": "previous server to the front",
+	"host last": "the previous server again", "host menu": "servers menu", "host front": "server by position",
 }
 
 // Label returns a short human description for a binding: the tmux note when present, an
@@ -35,6 +38,14 @@ func Label(b Binding, overrides map[string]string) string {
 		}
 	}
 	if m := flokRe.FindStringSubmatch(cmd); m != nil {
+		if l := flokLabels[m[1]+" "+m[2]]; l != "" {
+			if m[1] == "host" && m[2] == "front" {
+				if n := hostFrontIndexRe.FindStringSubmatch(cmd); n != nil {
+					return "server " + n[1] + " to the front"
+				}
+			}
+			return l
+		}
 		if l := flokLabels[m[1]]; l != "" {
 			return l
 		}

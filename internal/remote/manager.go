@@ -32,6 +32,7 @@ type Msg struct {
 	Hello   *proto.Hello    // with the Connected transition
 	Snap    *proto.Snapshot // a new merged view of the host
 	Event   *proto.Event    // a sound to play here
+	Request string          // a flok key pressed inside the host's tmux: toggle, hide, jump, …
 }
 
 // Status is a host's current connection, for `flok host status` and the servers panel.
@@ -182,6 +183,49 @@ func (m *Manager) MarkSeen(host, pane string) {
 func (m *Manager) SetVisible(host string, on bool) {
 	if c := m.get(host); c != nil {
 		c.setVisible(on)
+	}
+}
+
+// Reconnect drops a host's connection and starts over at once (a key after the user fixed
+// something; the states with a slow retry would otherwise wait up to a minute).
+func (m *Manager) Reconnect(host string) {
+	m.mu.Lock()
+	c := m.conns[host]
+	if c == nil || m.closed {
+		m.mu.Unlock()
+		return
+	}
+	delete(m.conns, host)
+	m.mu.Unlock()
+	c.stop()
+	m.mu.Lock()
+	if _, running := m.conns[host]; !running && !m.closed {
+		m.conns[host] = m.start(c.configured)
+	}
+	m.mu.Unlock()
+}
+
+// Notify shows a short message on the host's status line (the client the local side drives):
+// a notify frame in full mode, display-message over ssh in plain mode.
+func (m *Manager) Notify(host, text string) {
+	c := m.get(host)
+	if c == nil || text == "" {
+		return
+	}
+	c.mu.Lock()
+	send, cmds, client, p := c.send, c.cmds, c.client, c.poller
+	c.mu.Unlock()
+	switch {
+	case send != nil:
+		_ = send(proto.Frame{Type: proto.TypeNotify, Text: text})
+	case cmds != nil:
+		_ = c.enqueue(cmds, func() {
+			args := []string{"display-message"}
+			if tty := p.Snap().Focus.ClientTTY; tty != "" {
+				args = append(args, "-c", tty)
+			}
+			_, _ = client.Run(append(args, text)...)
+		})
 	}
 }
 
@@ -558,6 +602,10 @@ func (c *conn) attemptFull(ctx context.Context) (State, string) {
 				if f.Event != nil {
 					c.m.emit(actx, Msg{Host: c.host.Name, State: Connected, Event: f.Event})
 				}
+			case proto.TypeRequest:
+				if IsKeyCommand(f.Cmd) {
+					c.m.emit(actx, Msg{Host: c.host.Name, State: Connected, Request: f.Cmd})
+				}
 			case proto.TypeError:
 				switch st, detail := classifyRemoteError(f.Error); st {
 				case Busy:
@@ -630,6 +678,11 @@ func (c *conn) attemptPlain(ctx context.Context) (State, string) {
 	hello := &proto.Hello{Proto: proto.Version, Version: "plain", Hostname: c.host.Target, TmuxVersion: ver.String()}
 	actx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	var keys *Keys
+	if c.m.d.Cfg.Hosts.Keys { // flok's keys inside that tmux, for as long as this session lasts
+		keys = InstallKeys(client, BindOptionArgs())
+		defer keys.Restore()
+	}
 	var lastErr error
 	var errMu sync.Mutex
 	cc := &countingClient{PlainClient: client, limit: 3, onFail: func(err error) {
@@ -638,10 +691,21 @@ func (c *conn) attemptPlain(ctx context.Context) (State, string) {
 		errMu.Unlock()
 		cancel()
 	}}
+
 	store := state.New(hosts.Dir(c.m.d.StateDir, c.host.Name))
 	p := poller.New(poller.Deps{Cfg: c.m.d.Cfg, Tmux: cc, Store: store, Rules: c.m.d.Rules, Adapters: c.m.d.Adapters,
 		Sound: func(pane, kind string) {
 			c.m.emit(actx, Msg{Host: c.host.Name, State: Connected, Event: &proto.Event{Pane: pane, Kind: kind}})
+		},
+		OnRequest: func(cmd string) {
+			if IsKeyCommand(cmd) {
+				c.m.emit(actx, Msg{Host: c.host.Name, State: Connected, Request: cmd})
+			}
+		},
+		OnServerRestart: func() { // bindings live in the server: the new one needs them too
+			if keys != nil {
+				keys.Rebind()
+			}
 		},
 		PollFloorMs: c.m.d.PlainPollFloorMs, ScreenFloorMs: c.m.d.PlainScreenFloorMs, Debugf: c.m.d.Debugf})
 	defer p.Close()

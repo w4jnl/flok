@@ -45,6 +45,8 @@ IN detach-client -t "$(IN list-clients -F '#{client_tty}' | head -1)"; sleep 1.2
 if OUT has-session -t flok 2>/dev/null; then ok "outer kept with reattach_on_detach=true"; else bad "outer closed despite reattach_on_detach=true"; fi
 expect "client re-attached after detach" '^1$' "$(IN list-clients | wc -l | tr -d ' ')"
 "$BIN" down; sleep 0.5
+expect "flok down takes flok's keys out of the inner server" '^0$' "$(IN list-keys -T prefix | grep -c "$BIN" || true)"
+expect "tmux's own o is still there" 'prefix +o +select-pane' "$(IN list-keys -T prefix)"
 if OUT has-session -t flok 2>/dev/null; then bad "down left the outer running"; else ok "down closes the outer"; fi
 
 # `flok up` run interactively (in a pane of a third isolated server, which provides the tty)

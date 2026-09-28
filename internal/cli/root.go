@@ -48,6 +48,8 @@ usage: flok <command>
               (flok host --help)
   serve       --stdio: run headless on this host for a flok on another machine (started over
               ssh by that flok; --hello prints the greeting and exits)
+  relay       <toggle|hide|focus|jump|next|prev|keep-awake|host …>: a flok key pressed inside
+              a served host's tmux (bound there by flok while connected)
   hook        hook receiver used by the agents (stdin JSON; never call by hand)
   completion  print a bash or zsh completion script (flok completion bash|zsh)
   version     print the version
@@ -104,6 +106,8 @@ func Main(args []string) int {
 		return runHost(cfg, args[1:])
 	case "serve":
 		return runServe(cfg, args[1:])
+	case "relay":
+		return runRelay(cfg, args[1:])
 	case "_attach-loop":
 		if len(args) > 2 && args[1] == "--host" {
 			return report(launcher.AttachLoopHost(cfg, args[2]))

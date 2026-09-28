@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/w4jnl/flok/internal/config"
+	"github.com/w4jnl/flok/internal/hosts"
 	"github.com/w4jnl/flok/internal/keys"
 	"github.com/w4jnl/flok/internal/launcher"
 	"github.com/w4jnl/flok/internal/tmux"
@@ -49,6 +50,8 @@ func runKeys(cfg config.Config, args []string) int {
 		return report(err)
 	}
 	secs := keys.Organize(bindings, prefix, binPath(), cfg.Keys.Labels, cfg.Keys.ShowMouse)
+	set, _ := hosts.Load(config.StateDir())
+	secs = append(secs, ui.SidebarKeySections(len(set.Hosts) > 0)...)
 	if print {
 		fmt.Print(ui.Dump(secs, filter))
 		return 0

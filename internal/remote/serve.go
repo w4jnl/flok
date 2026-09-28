@@ -20,10 +20,13 @@ import (
 type ServeDeps struct {
 	Hello proto.Hello
 	// NewPoller builds the host's pipeline with the given sound callback (which Serve turns
-	// into event frames); Serve closes the poller when it returns.
-	NewPoller func(sound func(pane, kind string)) *poller.Poller
-	Inner     tmux.Client  // for goto
-	Store     *state.Store // visible → terminal-focus marker
+	// into event frames) and store-event hook (which drains the request mailbox); Serve closes
+	// the poller when it returns.
+	NewPoller func(sound func(pane, kind string), onStore, onRestart func()) *poller.Poller
+	Inner     tmux.Client  // for goto, and for flok's keys
+	Store     *state.Store // visible → terminal-focus marker; requests/ from `flok relay`
+	Keys      bool         // bind flok's keys in this tmux while served
+	Flok      string       // this executable, what the bindings run
 	In        io.Reader
 	Out       io.Writer
 	Heartbeat time.Duration // resend the last snapshot after this much silence; 0 = 5 s
@@ -49,8 +52,26 @@ func Serve(ctx context.Context, d ServeDeps) error {
 	if err := write(proto.Frame{Type: proto.TypeHello, Hello: &d.Hello}); err != nil {
 		return err
 	}
+	var keys *Keys
+	if d.Keys && d.Inner != nil && d.Flok != "" {
+		keys = InstallKeys(d.Inner, BindRelayArgs(d.Flok))
+		defer keys.Restore()
+	}
 	p := d.NewPoller(func(pane, kind string) {
 		_ = write(proto.Frame{Type: proto.TypeEvent, Event: &proto.Event{Pane: pane, Kind: kind}})
+	}, func() { // a flok key pressed here: `flok relay <cmd>` filed it
+		if d.Store == nil {
+			return
+		}
+		for _, r := range d.Store.DrainRequests(time.Now(), 10*time.Second) {
+			if IsKeyCommand(r.Cmd) {
+				_ = write(proto.Frame{Type: proto.TypeRequest, Cmd: r.Cmd})
+			}
+		}
+	}, func() { // the tmux server restarted: bind flok's keys in the new one
+		if keys != nil {
+			keys.Rebind()
+		}
 	})
 	defer p.Close()
 
@@ -156,6 +177,17 @@ func Serve(ctx context.Context, d ServeDeps) error {
 			case proto.TypeVisible:
 				if d.Store != nil {
 					_ = d.Store.SetTerminalFocus(f.On)
+				}
+			case proto.TypeNotify:
+				text := f.Text
+				if text != "" {
+					enqueue(func() { // the status line of the client the local side drives
+						args := []string{"display-message"}
+						if tty := p.Snap().Focus.ClientTTY; tty != "" {
+							args = append(args, "-c", tty)
+						}
+						_, _ = d.Inner.Run(append(args, text)...)
+					})
 				}
 			case proto.TypeGoto:
 				if f.Goto == nil {

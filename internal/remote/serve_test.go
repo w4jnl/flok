@@ -31,9 +31,9 @@ func TestServeSession(t *testing.T) {
 	go func() {
 		done <- Serve(ctx, ServeDeps{
 			Hello: proto.Hello{Proto: proto.Version, Hostname: "beta"},
-			NewPoller: func(s func(pane, kind string)) *poller.Poller {
+			NewPoller: func(s func(pane, kind string), onStore, onRestart func()) *poller.Poller {
 				sound = s
-				return poller.New(poller.Deps{Cfg: cfg, Tmux: ft, Store: st, Sound: s})
+				return poller.New(poller.Deps{Cfg: cfg, Tmux: ft, Store: st, Sound: s, OnStoreEvent: onStore, OnServerRestart: onRestart})
 			},
 			Inner: ft, Store: st, In: inR, Out: outW, Heartbeat: 300 * time.Millisecond,
 		})
@@ -92,17 +92,20 @@ func TestServeSession(t *testing.T) {
 	}
 	sound("%7", "done")
 	_ = proto.Write(inW, proto.Frame{Type: proto.TypeGoto, Goto: &proto.Goto{Session: "$1", Pane: "%7"}})
-	var sawEvent, sawGotoErr bool
-	for i := 0; i < 20 && !(sawEvent && sawGotoErr); i++ {
+	_ = st.WriteRequest(state.Request{Cmd: "toggle"}) // `flok relay toggle` on the host
+	var sawEvent, sawGotoErr, sawRequest bool
+	for i := 0; i < 30 && !(sawEvent && sawGotoErr && sawRequest); i++ {
 		switch f := next(); f.Type {
 		case proto.TypeEvent:
 			sawEvent = f.Event.Pane == "%7" && f.Event.Kind == "done"
 		case proto.TypeError:
 			sawGotoErr = f.Error == "goto: no inner tmux client to drive"
+		case proto.TypeRequest:
+			sawRequest = f.Cmd == "toggle"
 		}
 	}
-	if !sawEvent || !sawGotoErr {
-		t.Fatalf("event=%v gotoErr=%v", sawEvent, sawGotoErr)
+	if !sawEvent || !sawGotoErr || !sawRequest {
+		t.Fatalf("event=%v gotoErr=%v request=%v", sawEvent, sawGotoErr, sawRequest)
 	}
 	_ = inW.Close() // the local side went away
 	select {

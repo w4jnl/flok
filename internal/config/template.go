@@ -48,6 +48,10 @@ const Template = `# flok configuration - https://github.com/w4jnl/flok
 # screen_rules = "auto"       # auto | always | never
 
 [keys]
+# bind = "missing"            # at start the sidebar binds flok's keys (prefix a A o b B g u ?) in your
+                              # tmux server for the session: missing = only keys nothing else uses
+                              # (tmux's own o and ? stay), all = override them, off = never; the
+                              # snippet from flok install --tmux makes them permanent instead
 # show_mouse = false
 # tables = ["prefix", "root", "copy-mode-vi"]
 # [keys.labels]               # command prefix -> label in the help popup
@@ -106,6 +110,9 @@ const Template = `# flok configuration - https://github.com/w4jnl/flok
                               # tmux and flok would be invisible without it ($HOME expands there)
 # session = "main"            # a host whose tmux is not running gets this session from its work pane
                               # (tmux new-session); flok host add --session <name> sets it per host
+# keys = true                 # while a host is connected, bind flok's keys in its tmux (prefix b B g o
+                              # a A u, as the local snippet does) so they work inside its sessions;
+                              # the host's own bindings of those keys come back on disconnect
 
 [theme]                       # Dracula; state tokens may name a colour or a hex value
 # mode = "auto"               # auto: follow the terminal background, asked at flok up | dark | light
