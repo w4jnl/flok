@@ -2,6 +2,8 @@ package ui
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -194,23 +196,89 @@ func TestPanelCycleAndKeys(t *testing.T) {
 	if m.panel != panelHosts {
 		t.Fatalf("shift+tab twice from agents lands on servers, got %d", m.panel)
 	}
-	m.cursor[panelHosts] = 2 // gamma, disabled: c enables it in the registry
-	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
-	m = next.(Model)
-	if cmd == nil {
-		t.Fatal("c on a host row toggles it")
-	}
 	if _, err := hosts.Update(m.d.Store.Dir, func(s *hosts.Set) error {
 		return s.Add(hosts.Host{Name: "gamma", Target: "gamma", Mode: hosts.ModePlain})
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if msg, ok := cmd().(hostToggleMsg); !ok || msg.err != nil {
-		t.Fatalf("toggle: %+v", msg)
+	press := func(r rune) tea.Cmd {
+		t.Helper()
+		next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = next.(Model)
+		return cmd
 	}
-	set, _ := hosts.Load(m.d.Store.Dir)
-	if h, _ := set.Get("gamma"); !h.Enabled {
-		t.Fatal("gamma must be enabled now")
+	run := func(cmd tea.Cmd, what string) {
+		t.Helper()
+		if cmd == nil {
+			t.Fatalf("%s: no command", what)
+		}
+		if msg, ok := cmd().(hostToggleMsg); !ok || msg.err != nil {
+			t.Fatalf("%s: %+v", what, msg)
+		}
+	}
+	gamma := func() hosts.Host { set, _ := hosts.Load(m.d.Store.Dir); h, _ := set.Get("gamma"); return h }
+	m.cursor[panelHosts] = 2 // gamma, disabled
+	run(press('c'), "c connects")
+	if !gamma().Enabled {
+		t.Fatal("c must enable gamma")
+	}
+	run(press('d'), "d disconnects")
+	if gamma().Enabled {
+		t.Fatal("d must disable gamma")
+	}
+	run(press('m'), "m flips the mode")
+	if gamma().Mode != hosts.ModeFull {
+		t.Fatal("m must flip plain to full")
+	}
+	if press('r') != nil {
+		t.Fatal("r without a manager does nothing")
+	}
+	// x asks first; anything but y keeps the host
+	if press('x') != nil || m.confirmRemove != "gamma" {
+		t.Fatalf("x must ask, confirm=%q", m.confirmRemove)
+	}
+	if foot := render(m, 28, 40); !strings.HasPrefix(foot[len(foot)-1], "remove gamma? y/n") {
+		t.Fatalf("footer must ask: %q", foot[len(foot)-1])
+	}
+	if press('n') != nil || m.confirmRemove != "" || gamma().Name != "gamma" {
+		t.Fatal("n keeps the host")
+	}
+	press('x')
+	_ = os.MkdirAll(filepath.Join(hosts.Dir(m.d.Store.Dir, "gamma"), "agents"), 0o755)
+	run(press('y'), "y removes")
+	if set, _ := hosts.Load(m.d.Store.Dir); len(set.Hosts) != 0 {
+		t.Fatalf("y must remove gamma: %+v", set.Hosts)
+	}
+	if _, err := os.Stat(hosts.Dir(m.d.Store.Dir, "gamma")); !os.IsNotExist(err) {
+		t.Fatal("removal prunes the host's cache")
+	}
+	// i opens the details overlay (sized like the sidebar); Esc closes it
+	m.cursor[panelHosts] = 1
+	m.width, m.height = 40, 30
+	if press('i') != nil || m.help == nil {
+		t.Fatal("i opens the info overlay")
+	}
+	if view := strings.Join(render(m, 40, 30), "\n"); !strings.Contains(view, "host beta") || !strings.Contains(view, "target") || !strings.Contains(view, "connected") {
+		t.Fatalf("info overlay:\n%s", view)
+	}
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if m = next.(Model); m.help != nil {
+		t.Fatal("Esc closes the overlay")
+	}
+	// Space peeks: no outer here, so no command, and the keyboard stays in the sidebar
+	m.focused = true
+	if next, cmd := m.Update(tea.KeyMsg{Type: tea.KeySpace}); cmd != nil || !next.(Model).focused {
+		t.Fatal("space keeps the keyboard in the sidebar")
+	}
+	if foot := render(m, 28, 40); !strings.HasPrefix(foot[len(foot)-1], "⏎ front · c d r m x i") {
+		t.Fatalf("servers footer hint: %q", foot[len(foot)-1])
+	}
+	m.panel = panelAgents
+	if foot := render(m, 28, 40); !strings.HasPrefix(foot[len(foot)-1], "j/k ⏎ ⇥ 1-9") {
+		t.Fatalf("agents footer hint: %q", foot[len(foot)-1])
+	}
+	if secs := SidebarKeySections(true); len(secs) != 2 || secs[1].Name != "sidebar · servers" || len(SidebarKeySections(false)) != 1 {
+		t.Fatal("help sections")
 	}
 	// enter on the front host's row only hands focus to the work pane (a no-op without an
 	// outer); another host's row needs the outer to swap; a remote agent row needs the manager
@@ -286,5 +354,32 @@ func TestSiblingPaneAndFrontResync(t *testing.T) {
 	}
 	if m.front != "" || m.d.RightPane != "%1" {
 		t.Fatal("an empty window changes nothing without an outer")
+	}
+}
+
+func TestCursorBarWhenFocused(t *testing.T) {
+	m := multiHostModel(t)
+	m.panel, m.cursor[panelHosts] = panelHosts, 1
+	if lines := render(m, 28, 40); !strings.HasPrefix(lines[3], " ● beta full") {
+		t.Fatalf("unfocused: a blank first cell, %q", lines[3])
+	}
+	m.focused = true
+	if lines := render(m, 28, 40); !strings.HasPrefix(lines[3], "›● beta full") || !strings.HasPrefix(lines[2], " ○ local") {
+		t.Fatalf("focused: the selected row carries the cursor, %q / %q", lines[3], lines[2])
+	}
+	m.panel, m.cursor[panelAgents] = panelAgents, 0
+	lines := render(m, 28, 40)
+	agentsHdr := 0
+	for i, l := range lines {
+		if strings.HasPrefix(l, "agents") {
+			agentsHdr = i
+		}
+	}
+	if !strings.HasPrefix(lines[agentsHdr+1], "›● api") || !strings.HasPrefix(lines[agentsHdr+2], "   beta · claude") {
+		t.Fatalf("agent cursor: %q / %q", lines[agentsHdr+1], lines[agentsHdr+2])
+	}
+	m.panel = panelSpaces
+	if lines := render(m, 28, 40); !strings.HasPrefix(lines[7], "›○ Alpha") {
+		t.Fatalf("session cursor: %q", lines[7])
 	}
 }

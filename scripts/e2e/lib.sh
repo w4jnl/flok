@@ -28,7 +28,13 @@ registry() { printf '%s' "$1" > "$FLOK_E2E_REGISTRY"; }     # registry '[{"pid":
 IN() { tmux -L e2e-inner "$@"; }
 OUT() { tmux -L e2e-outer "$@"; }
 cleanup() { OUT kill-server 2>/dev/null || true; IN kill-server 2>/dev/null || true
-  for h in ${FAKE_HOSTS:-}; do tmux -L "e2e-$h" kill-server 2>/dev/null || true; done; rm -rf "$T"; }
+  for h in ${FAKE_HOSTS:-}; do tmux -L "e2e-$h" kill-server 2>/dev/null || true; done
+  if [ -n "${FLOK_DEBUG:-}" ]; then # keep the sidebar/remote/serve logs of a debug run
+    d=/tmp/flok-e2e-logs/$(basename "$0" .sh); rm -rf "$d"; mkdir -p "$d"
+    cp "$T"/state/*.log "$d"/ 2>/dev/null || true
+    for h in ${FAKE_HOSTS:-}; do cp "$T/hosts/$h/state/serve.log" "$d/serve-$h.log" 2>/dev/null || true; done
+  fi
+  rm -rf "$T"; }
 trap cleanup EXIT
 IN kill-server 2>/dev/null || true; OUT kill-server 2>/dev/null || true
 

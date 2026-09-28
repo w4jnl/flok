@@ -43,3 +43,14 @@ func TestParseSnapshotEscapedSeparator(t *testing.T) {
 		t.Fatalf("clients: %+v", s.Clients)
 	}
 }
+
+func TestParseSnapshotRequestLine(t *testing.T) {
+	out := "S" + sep + "$1" + sep + "main" + sep + "/p" + sep + "1" + sep + "1" + sep + "10" + sep + "5" + sep + "4242\nhide\n"
+	s := ParseSnapshot(out)
+	if len(s.Sessions) != 1 || s.Request != "hide" || s.ServerPID != 4242 {
+		t.Fatalf("request line and server pid: %+v", s)
+	}
+	if ParseSnapshot("S"+sep+"$1"+sep+"main"+sep+"/p"+sep+"1"+sep+"1"+sep+"10"+sep+"5\n").Request != "" {
+		t.Fatal("no bare line, no request")
+	}
+}

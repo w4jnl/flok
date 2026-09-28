@@ -55,39 +55,40 @@ const (
 )
 
 type Model struct {
-	d            Deps
-	theme        Theme
-	p            *poller.Poller // the state pipeline (polls, merge, sounds); shared by every Model copy
-	snap         merge.Snapshot // what the panels render: the federated view, sessions of the front host only
-	local        merge.Snapshot // the local poller's merge
-	fed          merge.Snapshot // local and every connected host (published)
-	remote       *remote.Manager
-	sink         chan remote.Msg
-	remotes      map[string]hostView // per remote host, keyed by name
-	hostSet      hosts.Set           // the registry as last applied
-	hostList     []hosts.Host
-	hostsApplied bool
-	restartPanes []string // hosts whose parked pane must be rebuilt (attach target changed)
-	front        string   // host whose work pane is next to the sidebar; "" = local
-	clientTTY    string
-	width        int
-	height       int
-	panel        int
-	cursor       [3]int // per panel: spaces, agents, hosts
-	offset       [3]int
-	frame        int
-	animating    bool
-	errText      string
-	help         *HelpModel
-	publisher    *snapshot.Publisher
-	vc           *viewCache // rendered frame, reused while nothing changed
-	polls        int        // 1 s polls so far (focus fallback cadence)
-	repinPending bool       // a select-layout is scheduled after a resize (tmux < 3.3)
-	unfocused    bool       // terminal-focus marker: the terminal window is not focused
-	hidden       bool       // sidebar-hidden marker / window_zoomed_flag: the pane is not visible
-	focused      bool       // the outer's active pane is the sidebar: keys arrive here
-	dark         bool       // the dark palette is in use (see config.Theme.IsDark)
-	themeRec     string     // terminal theme recorded by flok up ("dark", "light", "")
+	d             Deps
+	theme         Theme
+	p             *poller.Poller // the state pipeline (polls, merge, sounds); shared by every Model copy
+	snap          merge.Snapshot // what the panels render: the federated view, sessions of the front host only
+	local         merge.Snapshot // the local poller's merge
+	fed           merge.Snapshot // local and every connected host (published)
+	remote        *remote.Manager
+	sink          chan remote.Msg
+	remotes       map[string]hostView // per remote host, keyed by name
+	hostSet       hosts.Set           // the registry as last applied
+	hostList      []hosts.Host
+	hostsApplied  bool
+	restartPanes  []string // hosts whose parked pane must be rebuilt (attach target changed)
+	front         string   // host whose work pane is next to the sidebar; "" = local
+	confirmRemove string   // host `x` asked to remove; the next key answers (y removes)
+	clientTTY     string
+	width         int
+	height        int
+	panel         int
+	cursor        [3]int // per panel: spaces, agents, hosts
+	offset        [3]int
+	frame         int
+	animating     bool
+	errText       string
+	help          *HelpModel
+	publisher     *snapshot.Publisher
+	vc            *viewCache // rendered frame, reused while nothing changed
+	polls         int        // 1 s polls so far (focus fallback cadence)
+	repinPending  bool       // a select-layout is scheduled after a resize (tmux < 3.3)
+	unfocused     bool       // terminal-focus marker: the terminal window is not focused
+	hidden        bool       // sidebar-hidden marker / window_zoomed_flag: the pane is not visible
+	focused       bool       // the outer's active pane is the sidebar: keys arrive here
+	dark          bool       // the dark palette is in use (see config.Theme.IsDark)
+	themeRec      string     // terminal theme recorded by flok up ("dark", "light", "")
 	// Inner tmux prefix, so chords typed while the sidebar has focus are replayed into the work
 	// pane instead of being swallowed (prefixTmux "C-a", prefixKey "ctrl+a").
 	prefixTmux    string
@@ -547,7 +548,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.errText = msg.err.Error()
 		}
+		var flash tea.Cmd
 		if msg.pane != "" {
+			if m.front != msg.host {
+				flash = m.notifyFront(msg.host)
+			}
 			m.front, m.d.RightPane = msg.host, msg.pane
 			m.debugf("front %s (%s)", hostLabel(msg.host), msg.pane)
 			m.syncVisible()
@@ -555,7 +560,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.publish()
 			m.clamp()
 		}
-		return m, batch(m.hostPanesCmd(), m.poll()) // a host that left while in front loses its pane now
+		return m, batch(m.hostPanesCmd(), m.poll(), flash) // a host that left while in front loses its pane now
 	case hostsMsg: // hosts.json (re)read
 		if msg.err != nil {
 			m.errText = msg.err.Error()
@@ -636,6 +641,14 @@ func (m Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.forwardChord(msg)
 	}
+	if m.confirmRemove != "" { // "remove beta? y/n"
+		host := m.confirmRemove
+		m.confirmRemove = ""
+		if k == "y" || k == "Y" {
+			return m, m.removeHostCmd(host)
+		}
+		return m, nil
+	}
 	if m.prefixKey != "" && k == m.prefixKey {
 		m.prefixPending = true
 		return m, nil
@@ -658,16 +671,27 @@ func (m Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.cyclePanel(1)
 	case "shift+tab", "h", "left":
 		m.cyclePanel(-1)
-	case "enter", " ":
+	case "enter":
 		m.focused = false
 		return m, m.activate(m.panel, m.cursor[m.panel], false)
-	case "c": // servers panel: connect / disconnect the selected host
+	case " ":
+		if m.panel == panelHosts { // peek: the host comes to the front, the keyboard stays here
+			return m, m.activate(panelHosts, m.cursor[panelHosts], true)
+		}
+		m.focused = false
+		return m, m.activate(m.panel, m.cursor[m.panel], false)
+	case "c", "d", "m", "x", "i": // servers panel: connect, disconnect, mode, remove, info
 		if m.panel == panelHosts {
 			if host, ok := m.hostAt(m.cursor[panelHosts]); ok {
-				return m, m.toggleHostCmd(host)
+				return m.hostKey(k, host)
 			}
 		}
 	case "r":
+		if m.panel == panelHosts { // reconnect the selected host now
+			if host, ok := m.hostAt(m.cursor[panelHosts]); ok && host != "" {
+				return m.hostKey(k, host)
+			}
+		}
 		m.readPrefix()
 		return m, m.poll()
 	case "?":
@@ -774,6 +798,7 @@ func (m *Model) openHelpInline() {
 		return
 	}
 	secs := keys.Organize(bindings, prefix, "", m.d.Cfg.Keys.Labels, m.d.Cfg.Keys.ShowMouse)
+	secs = append(secs, SidebarKeySections(m.multiHost())...)
 	h := NewHelp(m.theme, secs, false)
 	h.width, h.height = m.width, m.height
 	m.help = &h

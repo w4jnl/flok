@@ -36,6 +36,8 @@ const (
 	TypeSeen    = "seen"
 	TypeVisible = "visible"
 	TypePing    = "ping"
+	TypeRequest = "request" // remote to local: a flok key pressed inside the host's tmux
+	TypeNotify  = "notify"  // local to remote: show a short message on the host's status line
 )
 
 // Frame is one line; Type says which payload field is set.
@@ -48,6 +50,8 @@ type Frame struct {
 	Goto  *Goto     `json:"goto,omitempty"`
 	Pane  string    `json:"pane,omitempty"` // seen
 	On    bool      `json:"on,omitempty"`   // visible
+	Cmd   string    `json:"cmd,omitempty"`  // request: toggle | hide | focus | jump | next | prev | keep-awake | host …
+	Text  string    `json:"text,omitempty"` // notify
 }
 
 // Hello opens the stream.

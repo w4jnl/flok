@@ -51,12 +51,15 @@ func runServe(cfg config.Config, args []string) int {
 	if os.Getenv("FLOK_DEBUG") != "" {
 		debugf = serveLog
 	}
+	exe, _ := os.Executable()
 	err = remote.Serve(ctx, remote.ServeDeps{Hello: hello, Inner: d.Inner, Store: d.Store, In: os.Stdin, Out: os.Stdout, Debugf: debugf,
-		NewPoller: func(sound func(pane, kind string)) *poller.Poller {
+		Keys: cfg.Hosts.Keys, Flok: exe,
+		NewPoller: func(sound func(pane, kind string), onStore, onRestart func()) *poller.Poller {
 			// ClientTTY stays empty: the focus follows the most recently active client, which
 			// is the local side's attach pane; the local plays every sound, hook ones included
 			return poller.New(poller.Deps{Cfg: cfg, Tmux: d.Inner, Store: d.Store, Registry: d.Registry, Rules: d.Rules,
-				Adapters: d.Adapters, BranchOf: d.BranchOf, Sound: sound, SoundHookNotifications: true, Debugf: debugf})
+				Adapters: d.Adapters, BranchOf: d.BranchOf, Sound: sound, SoundHookNotifications: true,
+				OnStoreEvent: onStore, OnServerRestart: onRestart, Debugf: debugf})
 		}})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "flok serve:", err)

@@ -80,7 +80,13 @@ func runSidebar(cfg config.Config) int {
 			time.AfterFunc(30*time.Second, func() { pprof.StopCPUProfile(); f.Close() })
 		}
 	}
-	m := ui.New(sidebarDeps(cfg))
+	deps := sidebarDeps(cfg)
+	// flok's keys in the inner server for this session (the snippet makes them permanent)
+	installed, conflicts := remote.InstallLocalKeys(deps.Inner, config.StateDir(), deps.Bin, cfg.Keys.Bind)
+	if os.Getenv("FLOK_DEBUG") != "" {
+		appendLog("sidebar.log", "keys bound: %v; left alone: %v", installed, conflicts)
+	}
+	m := ui.New(deps)
 	_ = launcher.UpdateRuntime(func(r *launcher.Runtime) {
 		r.SidebarPID = os.Getpid()
 		if tty := m.ClientTTY(); tty != "" {
@@ -97,6 +103,7 @@ func runSidebar(cfg config.Config) int {
 	_, err := p.Run()
 	m.ReleaseKeepAwake()
 	m.Close() // remote hosts: their serve sessions end on EOF
+	_ = remote.RestoreLocalKeys(deps.Inner, config.StateDir())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "flok sidebar:", err)
 		return 1

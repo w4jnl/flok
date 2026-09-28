@@ -90,7 +90,20 @@ One binary, several roles selected by subcommand (`internal/cli/root.go`):
   identified by their start command (`launcher.ScanWorkPanes`, `pane_start_command`, which tmux
   prints in double quotes), never by the window they sit in; a second loop for the same host is a
   stray and is killed; every 5th poll the sidebar re-reads which pane is next to it and resyncs
-  `front`/runtime.json (`resyncFront`). One-shot commands aimed at a remote host
+  `front`/runtime.json (`resyncFront`). flok's keys inside a remote session: `remote.InstallKeys`
+  binds `prefix b B g o a A u` in the host's running tmux (serve does it in full mode with
+  `run-shell "<flok> relay <cmd>"`, the plain-mode conn with `set-option -g @flok-request <cmd>`)
+  and restores the host's own bindings on disconnect; `flok relay` files a request the serve
+  forwards as a `request` frame, `#{@flok-request}` rides in the clients snapshot format and
+  `poller.Deps.OnRequest` clears it; the sidebar runs `flok <cmd>` against its own outer
+  (`runKeyCommand`). Servers-panel keys: `hostKey` in `ui/hosts.go` (c d r m x i, Space peeks).
+  Locally, `runSidebar` calls `remote.InstallLocalKeys` (mode `[keys] bind`: missing/all/off) so
+  the snippet is optional; what it bound is in `$FLOK_STATE/keys.json` and `RestoreLocalKeys`
+  (sidebar exit, `flok down`, the attach-loop teardown) undoes exactly that. Server keys:
+  `flok host next|prev|last|menu` and `front <N>` (rotation order = local + enabled hosts;
+  `runtime.json` `previous_front`; the menu is an outer `display-menu` over the work pane,
+  3.0+); `notifyFront` flashes the new front's name on that server's status line (`notify`
+  frame in full mode, `display-message` over ssh in plain mode). One-shot commands aimed at a remote host
   (`flok goto beta:%12`, `flok jump`/`next`/`prev` with hosts, `flok host front`) cannot open ssh
   themselves: they file a JSON request in `$FLOK_STATE/requests/` (`state.WriteRequest`), which
   the store watcher delivers and `ui/requests.go` runs (older than 10 s are dropped). `flok doctor`

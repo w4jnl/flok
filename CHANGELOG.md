@@ -14,8 +14,10 @@ updates this file first. Dates are the tag dates.
   registry and screen rules, streamed back; hooks there stay silent while served and the sounds
   play here), mode `plain` drives the host's tmux over ssh with titles and screen rules only.
   The sidebar grows a **servers** panel above the sessions (local first; `Tab` cycles the three
-  panels, `Enter` brings a host's work pane next to the sidebar, `c` connects or disconnects
-  it); the sessions panel shows the front host, the agents panel every host, attention-sorted,
+  panels, `Enter` brings a host's work pane next to the sidebar, `Space` does the same with
+  the keyboard staying in the sidebar, `c`/`d` connect or disconnect it, `r` reconnects now,
+  `m` flips its mode, `x` removes it after a `y/n`, `i` shows its details; the footer lists
+  them); the sessions panel shows the front host, the agents panel every host, attention-sorted,
   remote rows tagged with their host. Each host keeps a persistent `ssh -t … tmux attach` pane
   parked in the outer, so switching is instant and survives `flok hide`. Hosts reconnect with
   backoff; `needs auth`, `no flok`, `old flok` (a flok without `serve` there, named with its
@@ -27,7 +29,18 @@ updates this file first. Dates are the tag dates.
   since a non-interactive ssh shell sees only the system PATH. `flok goto
   beta:%12` and `flok jump` reach agents on any host (bringing that host to the front first),
   `flok next`/`prev` walk the front host, `flok host front <name>|local` switches hosts from a
-  key binding or script. The menu bar tags remote agents with `@host` and lists a row per host
+  key binding or script. flok's keys (`prefix b B g o a A u`) work inside a remote session as
+  well: flok binds them in the host's running tmux while connected and restores the host's own
+  bindings on disconnect (`[hosts] keys`), relaying the key to the local sidebar through
+  `flok relay` on full-mode hosts or a tmux user option on plain ones. The same mechanism
+  covers the local server: without the snippet, the sidebar binds flok's keys for the session
+  at start (`[keys] bind`: `missing` leaves tmux's own `o` and `?` alone, `all` takes them over,
+  `off` never), `flok down` removes them again, and `flok doctor` reports per key what is bound.
+  Servers rotate from the keyboard: `prefix N`/`P` next and previous server, `prefix O` the
+  previous one again, `prefix S` a tmux menu of them, `prefix F1`…`F9` a server by position
+  (`flok host next|prev|last|menu`, `flok host front <N>`), inside remote sessions as well; the
+  server that comes to the front flashes `flok: now on <server>` on its status line. With the
+  keyboard in the sidebar the selected row is a full-width bar with a `›` in front. The menu bar tags remote agents with `@host` and lists a row per host
   (agents and waiting count, or why it is down); clicking one brings its pane to the front.
   Without any host nothing changes.
 - `prefix u` in the tmux snippet toggles keep-awake; `flok keep-awake --notify` shows the new

@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"github.com/fsnotify/fsnotify"
 	"hash/fnv"
+	"sync"
 	"time"
 
 	"github.com/w4jnl/flok/internal/agent"
@@ -45,7 +46,16 @@ type Deps struct {
 	// PollFloorMs and ScreenFloorMs raise the cadence floors (defaults 200 and 500 ms); a
 	// remote host driven over ssh polls slower.
 	PollFloorMs, ScreenFloorMs int
-	Debugf                     func(format string, args ...any)
+	// OnRequest receives the @flok-request option a key binding set in this tmux server (a
+	// plain-mode host); the option is cleared right after. nil ignores it.
+	OnRequest func(cmd string)
+	// OnStoreEvent runs on the loop's goroutine when the store watcher fires (Run/RunLoop only):
+	// a serve session drains its request mailbox there.
+	OnStoreEvent func()
+	// OnServerRestart runs when the polled tmux server's pid changed between two polls: what
+	// lived in the old server (key bindings) is gone.
+	OnServerRestart func()
+	Debugf          func(format string, args ...any)
 }
 
 // SnapshotMsg is one tmux poll (or a Rebuild of the cached one) plus the store's view of the
@@ -79,6 +89,8 @@ type Poller struct {
 	snap                   merge.Snapshot
 	changes                chan struct{} // nil without a store
 	watcher                *fsnotify.Watcher
+	serverPID              int // pid of the polled tmux server as of the last poll
+	pollMu                 sync.Mutex
 	pollErr                error // the last tmux poll's error under Run/RunLoop, nil after a good one
 	registry               map[string]claudereg.Entry
 	registrySeq            int
@@ -116,7 +128,28 @@ func New(d Deps) *Poller {
 
 // PollError is the error of the last tmux poll under Run/RunLoop (nil after a successful one):
 // a serve session reports it so the local side can say "no tmux server" instead of nothing.
-func (p *Poller) PollError() error { return p.pollErr }
+func (p *Poller) PollError() error {
+	p.pollMu.Lock()
+	defer p.pollMu.Unlock()
+	return p.pollErr
+}
+
+func (p *Poller) setPollErr(err error) {
+	p.pollMu.Lock()
+	p.pollErr = err
+	p.pollMu.Unlock()
+}
+
+// handleRequest acts on a @flok-request value a binding set in the polled server and clears
+// it at once, so a value seen by the next poll is a new key press (the same key twice within a
+// poll interval must count twice: hide, hide).
+func (p *Poller) handleRequest(s tmux.Snapshot) {
+	if s.Request == "" {
+		return
+	}
+	_, _ = p.d.Tmux.Run("set-option", "-gu", tmux.RequestOption)
+	p.d.OnRequest(s.Request)
+}
 
 // Close stops the store watcher. The sidebar's poller lives as long as the process; a remote
 // host's poller is rebuilt on every reconnect and must not leak watchers.
@@ -221,6 +254,15 @@ func Fingerprint(raw string, hook map[string]agent.Agent, seen map[string]time.T
 // ran. Messages carrying Err must not be applied.
 func (p *Poller) ApplySnapshot(msg SnapshotMsg, force bool) (merged bool) {
 	p.tmuxSnap, p.lastRaw, p.lastHook, p.lastSeen = msg.Snap, msg.Raw, msg.Hook, msg.Seen
+	if p.d.OnRequest != nil && !msg.Rebuilt {
+		p.handleRequest(msg.Snap)
+	}
+	if pid := msg.Snap.ServerPID; pid != 0 && !msg.Rebuilt {
+		if p.serverPID != 0 && pid != p.serverPID && p.d.OnServerRestart != nil {
+			p.d.OnServerRestart()
+		}
+		p.serverPID = pid
+	}
 	p.lastUnfocused, p.lastHidden, p.lastTheme = msg.Unfocused, msg.Hidden, msg.Theme
 	if msg.FP == p.lastFP && p.registrySeq == p.lastRegSeq && p.screenSeq == p.lastScrSeq && !force {
 		return false // identical inputs: the caller keeps its frame
@@ -456,12 +498,12 @@ func RunLoop(ctx context.Context, p *Poller, onChange func(merge.Snapshot), cmds
 		if msg.Err != nil {
 			p.debugf("poll: %v", msg.Err)
 			if !msg.Rebuilt {
-				p.pollErr = msg.Err
+				p.setPollErr(msg.Err)
 			}
 			return
 		}
 		if !msg.Rebuilt {
-			p.pollErr = nil
+			p.setPollErr(nil)
 		}
 		if p.ApplySnapshot(msg, force) && onChange != nil {
 			onChange(p.snap)
@@ -500,6 +542,9 @@ func RunLoop(ctx context.Context, p *Poller, onChange func(merge.Snapshot), cmds
 				apply(p.Rebuild(false)(), false)
 			}
 		case <-p.changes:
+			if p.d.OnStoreEvent != nil {
+				p.d.OnStoreEvent()
+			}
 			apply(p.Rebuild(true)(), false)
 		case f := <-cmds:
 			f()

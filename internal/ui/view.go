@@ -228,14 +228,26 @@ func (m Model) viewFull() string {
 	return strings.Join(lines, "\n")
 }
 
+// rowFrame is a row's background and first cell: while the sidebar has the keyboard, the
+// selected row is a full-width bar with a pink › in front, so the cursor is never in doubt;
+// otherwise the cell is blank and only the current row keeps its quiet background.
+func (m Model) rowFrame(sel, current bool) (lipgloss.Style, string) {
+	t := m.theme
+	base := lipgloss.NewStyle()
+	if current || (sel && m.focused) {
+		base = base.Background(t.CurrentLine)
+	}
+	if sel && m.focused {
+		return base, base.Foreground(t.Pink).Bold(true).Render("›")
+	}
+	return base, base.Render(" ")
+}
+
 func (m Model) spaceRow(i, w int) string {
 	t := m.theme
 	s := m.snap.Spaces[i]
 	sel := m.panel == panelSpaces && m.cursor[panelSpaces] == i
-	base := lipgloss.NewStyle()
-	if s.Current {
-		base = base.Background(t.CurrentLine)
-	}
+	base, lead := m.rowFrame(sel, s.Current)
 	glyph, col := "○", t.Comment
 	if s.AgentCount > 0 {
 		glyph, col = t.Glyph(s.Rollup, m.frame), t.StateColor(s.Rollup)
@@ -266,7 +278,7 @@ func (m Model) spaceRow(i, w int) string {
 	if gap < 0 {
 		gap = 0
 	}
-	row := base.Render(" ") + base.Foreground(col).Render(glyph) + base.Render(" ") +
+	row := lead + base.Foreground(col).Render(glyph) + base.Render(" ") +
 		nameStyle.Render(name) + base.Render(strings.Repeat(" ", gap))
 	if branch != "" {
 		row += base.Render(" ") + base.Foreground(t.Comment).Render(branch)
@@ -312,10 +324,7 @@ func (m Model) agentRow(i, w, per int) []string {
 	a := m.snap.Agents[i]
 	sel := m.panel == panelAgents && m.cursor[panelAgents] == i
 	focused := a.PaneID != "" && a.PaneID == m.snap.Focus.PaneID && a.Host == m.snap.Focus.Host
-	base := lipgloss.NewStyle()
-	if focused {
-		base = base.Background(t.CurrentLine)
-	}
+	base, lead := m.rowFrame(sel, focused)
 	label := a.Name
 	if label == "" {
 		label = a.SessionName
@@ -355,7 +364,7 @@ func (m Model) agentRow(i, w, per int) []string {
 	if sel && m.focused {
 		nameStyle = nameStyle.Foreground(t.Pink).Bold(true)
 	}
-	row := base.Render(" ") + base.Foreground(t.StateColor(a.State)).Render(t.Glyph(a.State, m.frame)) + base.Render(" ") +
+	row := lead + base.Foreground(t.StateColor(a.State)).Render(t.Glyph(a.State, m.frame)) + base.Render(" ") +
 		nameStyle.Render(label) + base.Render(strings.Repeat(" ", gap))
 	if right != "" {
 		row += base.Render(" ") + base.Foreground(rcol).Render(right)
@@ -387,6 +396,9 @@ func genericTitle(title string) bool {
 func (m Model) footer(w int) string {
 	t := m.theme
 	dim := lipgloss.NewStyle().Foreground(t.Comment)
+	if m.confirmRemove != "" {
+		return pad(lipgloss.NewStyle().Foreground(t.Pink).Render("remove "+m.confirmRemove+"? y/n"), w, lipgloss.NewStyle())
+	}
 	if m.errText != "" {
 		return pad(lipgloss.NewStyle().Foreground(t.Red).Render(ansi.Truncate(m.errText, w, "…")), w, lipgloss.NewStyle())
 	}
@@ -398,6 +410,9 @@ func (m Model) footer(w int) string {
 	}
 	if m.prefixPending {
 		return pad(lipgloss.NewStyle().Foreground(t.Pink).Render(m.prefixTmux+" …"), w, lipgloss.NewStyle())
+	}
+	if m.panel == panelHosts && m.multiHost() {
+		return joinLR(dim.Render("⏎ front · c d r m x i"), dim.Render("? help"), w)
 	}
 	return joinLR(dim.Render("j/k ⏎ ⇥ 1-9"), dim.Render("esc · ? help"), w)
 }

@@ -265,15 +265,124 @@ sleep 0.6
 expect "next walks the front host only" '^beta$' "$(rt "r.get('front_host','')")"
 expect "front_host is published for the menu bar" '"front_host": "beta"' "$(cat "$SNAP")"
 
-# disconnect and remove from the CLI: the sidebar follows the registry
+# --- part 4: keys on the servers panel, and flok's keys inside a host's tmux -------------------
+"$BIN" host front local >/dev/null
+for _ in $(seq 1 50); do [ "$(rt "r.get('front_host','')")" = "" ] && break; sleep 0.1; done
+OUT select-pane -t "$SIDEBAR"
+wait_for '⇥ 1-9|c d r m x i' 3 || true   # the footer shows a key hint once the sidebar knows it has the keyboard
+# servers_panel: Tab until the footer shows the servers keys (the panel state is not observable otherwise)
+servers_panel() { local i; for i in 1 2 3 4 5 6; do capture | grep -q 'c d r m x i' && return 0; OUT send-keys -t "$SIDEBAR" Tab; sleep 0.4; done; capture | grep -q 'c d r m x i'; }
+servers_panel || true
+expect "the footer lists the servers keys" '⏎ front · c d r m x i' "$(capture)"
+OUT send-keys -t "$SIDEBAR" g j Space   # first row, beta, peek
+for _ in $(seq 1 50); do [ "$(rt "r.get('front_host','')")" = beta ] && break; sleep 0.1; done
+expect "space brings the host to the front" '^beta$' "$(rt "r.get('front_host','')")"
+expect "... and keeps the keyboard in the sidebar" '^1$' "$(OUT display -p -t "$SIDEBAR" '#{pane_active}')"
+OUT send-keys -t "$SIDEBAR" i
+wait_for 'target' 3 || true
+snap=$(capture); echo "--- host info ---"; printf '%s\n' "$snap" | grep -v '^ *$' | sed -n '1,9p' | sed 's/^/      | /'
+expect "i shows the host's details" '^host beta' "$snap"
+expect "... its target" '^ *beta *$' "$snap"
+expect "... its mode" '^ *full *$' "$snap"
+expect "... and the flok there" 'dev \(protocol 1\)' "$snap"
+OUT send-keys -t "$SIDEBAR" Escape
+wait_for '^servers' 3 || true
+# flok's keys inside the hosts' tmux: bound at connect; full mode relays, plain mode sets the option
+expect "beta's tmux got flok's keys (relay)" 'prefix +b +run-shell -b .*relay toggle' "$(tmux -L e2e-beta list-keys -T prefix)"
+expect "gamma's tmux got flok's keys (option)" 'prefix +b +set-option -g @flok-request toggle' "$(tmux -L e2e-gamma list-keys -T prefix)"
+FRONT=$(rt "r['right_pane']")
+tmux -L e2e-gamma set-option -g @flok-request hide   # what prefix B does inside gamma's session
+for _ in $(seq 1 40); do [ "$(OUT display -p -t "$FRONT" '#{window_zoomed_flag}')" = 1 ] && break; sleep 0.1; done
+expect "a key in the plain host's tmux reaches the sidebar: hide" '^1$' "$(OUT display -p -t "$FRONT" '#{window_zoomed_flag}')"
+tmux -L e2e-gamma set-option -g @flok-request hide
+for _ in $(seq 1 40); do [ "$(OUT display -p -t "$FRONT" '#{window_zoomed_flag}')" = 0 ] && break; sleep 0.1; done
+expect "... and again to un-hide" '^0$' "$(OUT display -p -t "$FRONT" '#{window_zoomed_flag}')"
+expect "the option is cleared after use" '^$' "$(tmux -L e2e-gamma show-options -gqv @flok-request)"
+[ "$(OUT display -p -t "$FRONT" '#{window_zoomed_flag}')" = 0 ] || "$BIN" hide   # toggle on a hidden sidebar would un-hide instead
+expect "the sidebar is at full width before the toggle test" '^28$' "$(OUT display -p -t "$SIDEBAR" '#{pane_width}')"
+FLOK_STATE=$T/hosts/beta/state "$BIN" relay toggle     # what prefix b does inside beta's session
+for _ in $(seq 1 40); do [ "$(OUT display -p -t "$SIDEBAR" '#{pane_width}')" = 6 ] && break; sleep 0.1; done
+expect "a key in the full host's tmux reaches the sidebar: toggle to the rail" '^6$' "$(OUT display -p -t "$SIDEBAR" '#{pane_width}')"
+FLOK_STATE=$T/hosts/beta/state "$BIN" relay toggle
+for _ in $(seq 1 40); do [ "$(OUT display -p -t "$SIDEBAR" '#{pane_width}')" = 28 ] && break; sleep 0.1; done
+expect "... and back to full width" '^28$' "$(OUT display -p -t "$SIDEBAR" '#{pane_width}')"
+[ "$(OUT display -p -t "$SIDEBAR" '#{pane_width}')" = 28 ] || "$BIN" toggle   # the rest reads the wide panel
+# d / c on gamma: the row, its window and its bindings follow; a binding of gamma's own survives a visit
+servers_panel || true
+OUT send-keys -t "$SIDEBAR" g j j d
+wait_for 'gamma +plain +off' 5 || true
+expect "d disconnects the host" 'gamma +plain +off' "$(capture)"
+expect "flok's keys leave gamma's tmux on disconnect" '^0$' "$(tmux -L e2e-gamma list-keys -T prefix | grep -c '@flok-request' || true)"
+tmux -L e2e-gamma bind-key -T prefix o select-pane -t :.+
+OUT send-keys -t "$SIDEBAR" c
+wait_for 'gamma +plain +[0-9]' 15 || true
+expect "c connects it again" 'gamma +plain +[0-9]' "$(capture)"
+expect "flok's o replaces gamma's own while connected" 'prefix +o +set-option -g @flok-request jump' "$(tmux -L e2e-gamma list-keys -T prefix)"
+OUT send-keys -t "$SIDEBAR" m
+wait_for 'gamma +full' 15 || true
+expect "m flips the mode" 'gamma +full' "$(capture)"
+expect "... in the registry too" '"mode": "full"' "$(python3 -c "import json;print(json.dumps([h for h in json.load(open('$T/state/hosts.json'))['hosts'] if h['name']=='gamma'][0]))")"
+OUT send-keys -t "$SIDEBAR" m
+wait_for 'gamma +plain +[0-9]' 15 || true
+expect "... and back" 'gamma +plain +[0-9]' "$(capture)"
+# r reconnects beta: a new serve session replaces the old one
+before=$(pgrep -f 'flok serve --stdio' | sort | tr '\n' ' ')
+OUT send-keys -t "$SIDEBAR" g j r
+sleep 1
+wait_hosts "beta=connected gamma=connected" 15 || true
+after=$(pgrep -f 'flok serve --stdio' | sort | tr '\n' ' ')
+expect "r reconnects the host (a new serve session)" '^changed$' "$([ -n "$after" ] && [ "$before" != "$after" ] && echo changed || echo "same: $before / $after")"
+expect "... and it is connected again" '^beta=connected gamma=connected$' "$(snap_hosts)"
+
+# rotate the front from the shell (prefix N / P / O / S and Alt-1..9 run these)
+front_is() { local i; for i in $(seq 1 50); do [ "$(rt "r.get('front_host','')")" = "$1" ] && return 0; sleep 0.1; done; return 1; }
+"$BIN" host front local >/dev/null; front_is "" || true
+"$BIN" host next >/dev/null;  front_is beta || true;  expect "host next: local -> beta" '^beta$' "$(rt "r.get('front_host','')")"
+"$BIN" host next >/dev/null;  front_is gamma || true; expect "host next: beta -> gamma" '^gamma$' "$(rt "r.get('front_host','')")"
+"$BIN" host next >/dev/null;  front_is "" || true;    expect "host next wraps to local" '^$' "$(rt "r.get('front_host','')")"
+"$BIN" host prev >/dev/null;  front_is gamma || true; expect "host prev: local -> gamma" '^gamma$' "$(rt "r.get('front_host','')")"
+"$BIN" host last >/dev/null;  front_is "" || true;    expect "host last goes back" '^$' "$(rt "r.get('front_host','')")"
+expect "runtime.json remembers the previous front" '^gamma$' "$(rt "r.get('previous_front','')")"
+"$BIN" host front 2 >/dev/null; front_is beta || true; expect "host front 2 is the first host" '^beta$' "$(rt "r.get('front_host','')")"
+# the servers menu needs a client looking at the outer (the terminal, in real life): attach one from a
+# throwaway tmux server acting as the terminal, read the menu through it, close it again
+TTYS=e2e-tty-m10
+tmux -L "$TTYS" -f /dev/null new-session -d -s t -x 160 -y 45 "tmux -L e2e-outer attach-session -t flok"
+sleep 1
+rc=0; out=$("$BIN" host menu 2>&1) || rc=$?
+expect "host menu opens (tmux ${TMUX_VER}): $out" '^0$' "$rc"
+if tmux_at_least 3 0; then
+  for _ in $(seq 1 30); do tmux -L "$TTYS" capture-pane -p -t t | grep -q 'servers' && break; sleep 0.1; done
+  menu=$(tmux -L "$TTYS" capture-pane -p -t t)
+  expect "the menu lists local and the hosts with their state" 'local' "$menu"
+  expect "... beta with its mode and agents" 'beta · full · [0-9]' "$menu"
+  expect "... the front marked" '▸ ' "$menu"
+  tmux -L "$TTYS" send-keys -t t Escape
+fi
+tmux -L "$TTYS" kill-server 2>/dev/null || true
+sleep 0.5
+FLOK_STATE=$T/hosts/beta/state "$BIN" relay host next   # prefix N inside beta's session
+front_is gamma || true; expect "a server key inside a remote session rotates the front" '^gamma$' "$(rt "r.get('front_host','')")"
+"$BIN" host front local >/dev/null; front_is "" || true
+
+# disconnect from the CLI, remove with the x key: the sidebar and the registry stay in step
 "$BIN" host disconnect gamma >/dev/null
 for _ in $(seq 1 50); do OUT list-windows -t flok -F '#{window_name}' | grep -q flok-host-gamma || break; sleep 0.1; done
 expect "disconnect kills gamma's parked window" '^0$' "$(OUT list-windows -t flok -F '#{window_name}' | grep -c flok-host-gamma || true)"
 wait_for 'gamma +plain +off' 5 || true
 expect "gamma's row reads off" 'gamma +plain +off' "$(capture)"
-"$BIN" host remove gamma >/dev/null
+expect "gamma's own binding of o is back after the disconnect" 'prefix +o +select-pane -t :.\+' "$(tmux -L e2e-gamma list-keys -T prefix)"
+servers_panel || true
+OUT send-keys -t "$SIDEBAR" g j j x
+wait_for 'remove gamma\? y/n' 3 || true
+expect "x asks before removing" 'remove gamma\? y/n' "$(capture)"
+OUT send-keys -t "$SIDEBAR" n
+sleep 0.5
+expect "n keeps the host" 'gamma +plain +off' "$(capture)"
+OUT send-keys -t "$SIDEBAR" x y
 for _ in $(seq 1 50); do capture | grep -q 'gamma' || break; sleep 0.1; done
-expect "remove drops gamma's row" '^0$' "$(capture | grep -c 'gamma' || true)"
+expect "x y removes the host: the row is gone" '^0$' "$(capture | grep -c 'gamma' || true)"
+expect "... and so is the registry entry" '^beta$' "$("$BIN" host list --names)"
 
 # down leaves the remote servers alone
 "$BIN" down

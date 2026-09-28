@@ -74,9 +74,41 @@ func runDoctor(cfg config.Config) int {
 	if conf := findTmuxConf(); conf != "" {
 		if data, err := os.ReadFile(conf); err == nil && strings.Contains(string(data), "flok") {
 			add("ok", "tmux.conf snippet present in %s", conf)
+		} else if cfg.Keys.Bind == "off" {
+			add("warn", "no flok bindings in %s and [keys] bind = off (run `flok install --tmux` and paste below the tpm line)", conf)
 		} else {
-			add("warn", "no flok bindings in %s (run `flok install --tmux` and paste below the tpm line)", conf)
+			add("ok", "no snippet in %s: the sidebar binds flok's keys at start ([keys] bind = %s; `flok install --tmux` makes them permanent)", conf, cfg.Keys.Bind)
 		}
+	}
+	if _, err := inner.Run("list-sessions"); err == nil {
+		var flok, other, unbound []string
+		status := remote.LocalKeyStatus(inner)
+		for _, k := range remote.LocalKeyCommands {
+			switch s := status[k.Key]; {
+			case s == "flok":
+				flok = append(flok, k.Key)
+			case s == "":
+				unbound = append(unbound, k.Key)
+			default:
+				other = append(other, k.Key+" → "+s)
+			}
+		}
+		line := "tmux keys: flok has " + strings.Join(flok, " ")
+		if len(flok) == 0 {
+			line = "tmux keys: flok has none"
+		}
+		if len(unbound) > 0 {
+			line += "; unbound: " + strings.Join(unbound, " ")
+		}
+		if len(other) > 0 {
+			line += "; tmux's or yours: " + strings.Join(other, ", ") + " (the snippet or [keys] bind = all would take them)"
+		}
+		level := "ok"
+		if len(flok) == 0 && cfg.Keys.Bind != "off" {
+			level = "warn"
+			line += " (the sidebar binds them when it runs)"
+		}
+		add(level, "%s", line)
 	}
 
 	// hooks

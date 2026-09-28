@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/w4jnl/flok/internal/remote"
 	"github.com/w4jnl/flok/internal/state"
 )
 
@@ -54,6 +55,10 @@ func (m *Model) runRequest(r state.Request) tea.Cmd {
 			return nil
 		})
 	default:
+		if remote.IsKeyCommand(r.Cmd) { // `flok relay <cmd>` on this machine
+			m.runKeyCommand(r.Cmd)
+			return nil
+		}
 		m.debugf("request %q ignored", r.Cmd)
 	}
 	return nil

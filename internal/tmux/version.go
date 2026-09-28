@@ -62,6 +62,7 @@ func (v Version) String() string {
 // not fatal, but tmux dumps the errors into a view-mode overlay the user has to dismiss).
 type Features struct {
 	PaneOptions        bool // 3.0  set-option -p (remain-on-exit for the sidebar pane)
+	Menu               bool // 3.0  display-menu
 	WindowSizeLatest   bool // 3.1  window-size latest
 	KeyNotes           bool // 3.1  list-keys -N
 	Popup              bool // 3.2  display-popup
@@ -80,7 +81,7 @@ type Features struct {
 // FeaturesFor maps a version to its capabilities.
 func FeaturesFor(v Version) Features {
 	return Features{
-		PaneOptions:        v.AtLeast(3, 0),
+		PaneOptions: v.AtLeast(3, 0), Menu: v.AtLeast(3, 0),
 		WindowSizeLatest:   v.AtLeast(3, 1),
 		KeyNotes:           v.AtLeast(3, 1),
 		Popup:              v.AtLeast(3, 2),

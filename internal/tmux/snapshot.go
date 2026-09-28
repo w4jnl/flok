@@ -35,15 +35,17 @@ type ClientInfo struct {
 }
 
 type Snapshot struct {
-	Sessions []Session
-	Panes    []Pane
-	Clients  []ClientInfo
-	TakenAt  time.Time
+	Request   string // value of the @flok-request user option, "" when unset
+	ServerPID int    // the tmux server's pid: a change means the server was restarted (bindings are gone)
+	Sessions  []Session
+	Panes     []Pane
+	Clients   []ClientInfo
+	TakenAt   time.Time
 }
 
 var (
 	sessionFmt = "S" + sep + strings.Join([]string{"#{session_id}", "#{session_name}", "#{session_path}",
-		"#{session_attached}", "#{session_windows}", "#{session_activity}", "#{session_created}"}, sep)
+		"#{session_attached}", "#{session_windows}", "#{session_activity}", "#{session_created}", "#{pid}"}, sep)
 	paneFmt = "P" + sep + strings.Join([]string{"#{pane_id}", "#{session_id}", "#{session_name}", "#{window_id}",
 		"#{window_index}", "#{pane_index}", "#{window_active}", "#{pane_active}", "#{pane_current_command}",
 		"#{pane_current_path}", "#{pane_tty}", "#{pane_pid}", "#{pane_dead}", "#{pane_pb_state}", "#{pane_pb_progress}", "#{pane_in_mode}", "#{pane_title}"}, sep)
@@ -61,7 +63,8 @@ func TakeSnapshot(c Client) (Snapshot, error) {
 // Output from a tmux that vis(3)-escapes its list-* output (3.4+) is decoded first; the
 // client says so through Features (see Decode).
 func TakeSnapshotRaw(c Client) (Snapshot, string, error) {
-	out, err := c.Run("list-sessions", "-F", sessionFmt, ";", "list-panes", "-a", "-F", paneFmt, ";", "list-clients", "-F", clientFmt)
+	out, err := c.Run("list-sessions", "-F", sessionFmt, ";", "list-panes", "-a", "-F", paneFmt, ";", "list-clients", "-F", clientFmt,
+		";", "show-options", "-gqv", RequestOption)
 	if err != nil {
 		return Snapshot{}, "", err
 	}
@@ -74,6 +77,10 @@ func TakeSnapshotRaw(c Client) (Snapshot, string, error) {
 // Sep is the field separator flok puts in its -F formats: tmux never emits it in names,
 // paths or titles.
 const Sep = sep
+
+// RequestOption is the tmux user option a key binding in a remote host's tmux sets; the
+// snapshot carries its value (Snapshot.Request) and the poller clears it after acting.
+const RequestOption = "@flok-request"
 
 // Escapes reports whether a client's tmux vis(3)-escapes list-* output (false for clients
 // that do not know their version, such as test fakes).
@@ -127,6 +134,10 @@ func ParseSnapshot(out string) Snapshot {
 			continue
 		}
 		f := strings.Split(line, sep)
+		if len(f) == 1 { // the show-options line of the batch: the @flok-request value
+			s.Request = strings.TrimSpace(line)
+			continue
+		}
 		switch f[0] {
 		case "S":
 			if len(f) < 8 {
@@ -134,6 +145,9 @@ func ParseSnapshot(out string) Snapshot {
 			}
 			s.Sessions = append(s.Sessions, Session{ID: f[1], Name: f[2], Path: f[3], Attached: atoi(f[4]),
 				Windows: atoi(f[5]), Activity: atoi64(f[6]), Created: atoi64(f[7])})
+			if len(f) > 8 && s.ServerPID == 0 {
+				s.ServerPID = atoi(f[8])
+			}
 		case "P":
 			if len(f) < 18 {
 				continue

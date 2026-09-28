@@ -50,9 +50,10 @@ type Runtime struct {
 	// window 0", which is the front host's work pane; LocalPane is the local attach loop's pane
 	// wherever it currently sits, FrontHost names whose pane is in front ("" = local) and Hosts
 	// the parked window and pane of every host.
-	LocalPane string              `json:"local_pane,omitempty"`
-	FrontHost string              `json:"front_host,omitempty"`
-	Hosts     map[string]HostPane `json:"hosts,omitempty"`
+	LocalPane     string              `json:"local_pane,omitempty"`
+	FrontHost     string              `json:"front_host,omitempty"`
+	PreviousFront string              `json:"previous_front,omitempty"` // the front before the last switch ("local" for local)
+	Hosts         map[string]HostPane `json:"hosts,omitempty"`
 }
 
 // Version is the tmux version recorded by `flok up` (detected when the record predates it).
@@ -641,6 +642,7 @@ func AttachLoop(cfg config.Config) error {
 		_, _ = outer.Run("kill-server")
 	}
 	remote.CloseMasters(cfg.Hosts, config.StateDir())
+	_ = remote.RestoreLocalKeys(inner, config.StateDir()) // the sidebar died with the outer: its keys go too
 	return nil
 }
 
@@ -655,6 +657,7 @@ func Down(cfg config.Config) error {
 	resetKeepAwake()
 	StopBar()
 	remote.CloseMasters(cfg.Hosts, config.StateDir())
+	_ = remote.RestoreLocalKeys(tmux.NewLocal(cfg.Inner.Socket), config.StateDir())
 	if err != nil && strings.Contains(err.Error(), "no server running") {
 		return nil
 	}
