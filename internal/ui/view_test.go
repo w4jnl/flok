@@ -135,9 +135,27 @@ func TestFooterWrapsMessagesAboveTheStatusLine(t *testing.T) {
 	if lines = render(m, 28, 8); len(lines) != 8 || !strings.HasPrefix(lines[7], "beta: Connection refused") {
 		t.Fatalf("very short panel: %q", lines[len(lines)-1])
 	}
-	// the hints never overrun either: the right side goes first
+	// the hints never overrun either: joinLR drops the right side, hintLines wraps instead
 	if got := joinLR("⏎ front · c d r m x i", "? help", 24); got != "⏎ front · c d r m x i   " {
 		t.Fatalf("joinLR narrow: %q", got)
+	}
+	dim := lipgloss.NewStyle()
+	if got := hintLines("⏎ front · c d r m x i I", "? help", 40, dim); len(got) != 1 || got[0] != "⏎ front · c d r m x i I           ? help" {
+		t.Fatalf("hints that fit stay on one line: %q", got)
+	}
+	if got := hintLines("⏎ front · c d r m x i I", "? help", 28, dim); !reflect.DeepEqual(got, []string{"⏎ front · c d r m x i I     ", "                      ? help"}) {
+		t.Fatalf("hints too wide wrap, the help right-aligned on its own line: %q", got)
+	}
+	if got := hintLines("⏎ front · c d r m x i I", "? help", 12, dim); !reflect.DeepEqual(got, []string{"⏎ front · c ", "d r m x i I ", "      ? help"}) {
+		t.Fatalf("a narrow panel wraps the keys too: %q", got)
+	}
+	if got := hintLines("⏎ front · c d r m x i I", "? help", 20, dim); !reflect.DeepEqual(got, []string{"⏎ front · c d r m x ", "i I           ? help"}) {
+		t.Fatalf("the help shares the last line when it fits: %q", got)
+	}
+	m.focused = true
+	m.snap.Warnings = nil
+	if lines = render(m, 20, 24); !strings.HasPrefix(lines[22], "j/k ⏎ ⇥ 1-9") || strings.TrimRight(lines[23], " ") != "        esc · ? help" {
+		t.Fatalf("a narrow panel gets the agent hints on two lines: %q", lines[22:])
 	}
 	if got := joinLR("j/k ⏎ ⇥ 1-9", "esc · ? help", 28); got != "j/k ⏎ ⇥ 1-9     esc · ? help" {
 		t.Fatalf("joinLR fits: %q", got)

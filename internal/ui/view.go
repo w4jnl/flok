@@ -450,21 +450,27 @@ func (m Model) footerLines(w int) []string {
 			msg += fmt.Sprintf(" (+%d)", n)
 		}
 	}
-	var status string
+	pink := lipgloss.NewStyle().Foreground(t.Pink)
+	var status []string
+	one := func(s string, style lipgloss.Style) { // a note; wrapped like the hints when it is too long
+		for _, l := range wrapWords(s, w, 2) {
+			status = append(status, pad(style.Render(l), w, plain))
+		}
+	}
 	switch {
 	case m.confirmRemove != "":
-		status = pad(lipgloss.NewStyle().Foreground(t.Pink).Render("remove "+m.confirmRemove+"? y/n"), w, plain)
+		one("remove "+m.confirmRemove+"? y/n", pink)
 	case !m.focused: // keys go to the work pane until the sidebar is clicked or `prefix g` is pressed
-		status = pad(dim.Render(ansi.Truncate("click or prefix g to focus", w, "…")), w, plain)
+		one("click or prefix g to focus", dim)
 	case m.prefixPending:
-		status = pad(lipgloss.NewStyle().Foreground(t.Pink).Render(m.prefixTmux+" …"), w, plain)
+		one(m.prefixTmux+" …", pink)
 	case m.panel == panelHosts && m.multiHost():
-		status = joinLR(dim.Render("⏎ front · c d r m x i"), dim.Render("? help"), w)
+		status = hintLines("⏎ front · c d r m x i", "? help", w, dim)
 	default:
-		status = joinLR(dim.Render("j/k ⏎ ⇥ 1-9"), dim.Render("esc · ? help"), w)
+		status = hintLines("j/k ⏎ ⇥ 1-9", "esc · ? help", w, dim)
 	}
 	if msg == "" {
-		return []string{status}
+		return status
 	}
 	style := lipgloss.NewStyle().Foreground(colour)
 	if m.height < 10 { // no room for two footers: the message matters more
@@ -477,7 +483,27 @@ func (m Model) footerLines(w int) []string {
 	if m.height >= 16 { // air between the message and the keys
 		lines = append(lines, strings.Repeat(" ", w))
 	}
-	return append(lines, status)
+	return append(lines, status...)
+}
+
+// hintLines lays the key hints out: left and right at the two ends of one line when they fit,
+// else left wrapped over lines of its own with right on the last one it shares, or on a line of
+// its own, right-aligned. Nothing is cut short of a panel narrower than a word.
+func hintLines(left, right string, w int, style lipgloss.Style) []string {
+	if ansi.StringWidth(left)+1+ansi.StringWidth(right) <= w {
+		return []string{joinLR(style.Render(left), style.Render(right), w)}
+	}
+	plain := lipgloss.NewStyle()
+	parts := wrapWords(left, w, 2)
+	var out []string
+	for i, l := range parts {
+		if i == len(parts)-1 && ansi.StringWidth(l)+1+ansi.StringWidth(right) <= w {
+			return append(out, joinLR(style.Render(l), style.Render(right), w))
+		}
+		out = append(out, pad(style.Render(l), w, plain))
+	}
+	r := ansi.Truncate(right, w, "…")
+	return append(out, strings.Repeat(" ", w-ansi.StringWidth(r))+style.Render(r))
 }
 
 func (m Model) viewRail() string {
