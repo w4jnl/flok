@@ -3,6 +3,7 @@
 set -euo pipefail
 unset TMUX TMUX_PANE FLOK_OUTER FLOK_RIGHT_PANE   # the suites drive their own isolated servers
 R=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+[ -z "${FLOK_DEBUG:-}" ] || export FLOK_TMUX_VERBOSE=1   # a debug run also keeps the outer tmux server's own log
 PROJ=$(basename "$R")   # agent rows show the cwd base name
 BIN=$R/bin/flok
 go build -o "$BIN" "$R/cmd/flok"
@@ -33,6 +34,7 @@ cleanup() { OUT kill-server 2>/dev/null || true; IN kill-server 2>/dev/null || t
     d=/tmp/flok-e2e-logs/$(basename "$0" .sh); rm -rf "$d"; mkdir -p "$d"
     cp "$T"/state/*.log "$d"/ 2>/dev/null || true
     for h in ${FAKE_HOSTS:-}; do cp "$T/hosts/$h/state/serve.log" "$d/serve-$h.log" 2>/dev/null || true; done
+    mv "$R"/tmux-server-*.log "$R"/tmux-client-*.log "$d"/ 2>/dev/null || true   # written next to the suite by tmux -vv
   fi
   rm -rf "$T"; }
 trap cleanup EXIT

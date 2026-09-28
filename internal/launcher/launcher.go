@@ -482,8 +482,12 @@ func createOuter(cfg config.Config, bin, confPath string, outer *tmux.Local, ses
 	_ = SetTerminalFocus(true)                                           // a fresh outer is visible and, until a hook says otherwise, focused
 	_ = SetSidebarHidden(false)
 	resetKeepAwake() // every session starts with keep-awake off
-	if _, err := outer.Run("-f", confPath, "new-session", "-d", "-s", sess, "-n", "main", "-x", strconv.Itoa(cols), "-y", strconv.Itoa(rows),
-		"-c", home, attachLoopCommand(bin)); err != nil {
+	create := []string{"-f", confPath, "new-session", "-d", "-s", sess, "-n", "main", "-x", strconv.Itoa(cols), "-y", strconv.Itoa(rows),
+		"-c", home, attachLoopCommand(bin)}
+	if os.Getenv("FLOK_TMUX_VERBOSE") != "" { // the outer server logs every command (tmux-server-<pid>.log in the cwd): e2e debugging
+		create = append([]string{"-vv"}, create...)
+	}
+	if _, err := outer.Run(create...); err != nil {
 		return fmt.Errorf("create outer session: %w", err)
 	}
 	right, err := tmux.Display(outer, sess, "#{pane_id}")

@@ -101,7 +101,8 @@ KP=$(IN display -p -t Beta:keysui '#{pane_id}')
 ui=$(IN capture-pane -p -t "$KP")
 expect "keys UI title + badge"     'keybinds.*esc close' "$ui"
 expect "keys UI hint line"         'press / to filter'   "$ui"
-expect "keys UI shows a binding"   "$notepat"            "$ui"
+expect "keys UI shows a binding"   'hide/show sidebar'    "$ui"   # flok's own rows come first (b was rebound above); stock notes are checked in the dump
+expect "keys UI labels the server keys" 'server 1 to the front' "$ui"
 IN send-keys -t "$KP" /kill   # one chunk on purpose: multi-rune input must still work
 sleep 0.5
 ui=$(IN capture-pane -p -t "$KP")
