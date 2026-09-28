@@ -292,6 +292,7 @@ func SidebarKeySections(multiHost bool) []keys.Section {
 			row("m", "flip the mode: full ↔ plain"),
 			row("x", "remove the host (asks y/n)"),
 			row("i", "host details"),
+			row("I", "install or upgrade flok on the host from here (a popup shows it)"),
 		}})
 	}
 	return secs

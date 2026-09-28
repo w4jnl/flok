@@ -88,10 +88,16 @@ func bashCompletion() string {
 	b.WriteString("            COMPREPLY=( $(compgen -W \"--print --filter\" -- \"$cur\") ) ;;\n")
 	b.WriteString(`        host)
             if [ "$COMP_CWORD" -eq 2 ]; then
-                COMPREPLY=( $(compgen -W "add set remove connect disconnect list status front next prev last menu" -- "$cur") )
+                COMPREPLY=( $(compgen -W "add set remove connect disconnect list status front next prev last menu install reconnect" -- "$cur") )
             else
                 case "${COMP_WORDS[2]}" in
-                    remove|connect|disconnect|front) COMPREPLY=( $(compgen -W "$(flok host list --names 2>/dev/null) local" -- "$cur") ) ;;
+                    remove|connect|disconnect|front|reconnect) COMPREPLY=( $(compgen -W "$(flok host list --names 2>/dev/null) local" -- "$cur") ) ;;
+                    install) if [ "$COMP_CWORD" -eq 3 ]; then COMPREPLY=( $(compgen -W "$(flok host list --names 2>/dev/null)" -- "$cur") )
+                         else case "$prev" in
+                             --from) COMPREPLY=( $(compgen -f -- "$cur") ) ;;
+                             --version) ;;
+                             *) COMPREPLY=( $(compgen -W "--from --version --hooks --open --wait" -- "$cur") ) ;;
+                         esac; fi ;;
                     set) if [ "$COMP_CWORD" -eq 3 ]; then COMPREPLY=( $(compgen -W "$(flok host list --names 2>/dev/null)" -- "$cur") )
                          else case "$prev" in
                              --mode) COMPREPLY=( $(compgen -W "full plain" -- "$cur") ) ;;
@@ -101,7 +107,7 @@ func bashCompletion() string {
                     add) case "$prev" in
                              --mode) COMPREPLY=( $(compgen -W "full plain" -- "$cur") ) ;;
                              --socket|--session|--flok|--term) ;;
-                             *) COMPREPLY=( $(compgen -W "--mode --socket --session --flok --term --disabled" -- "$cur") ) ;;
+                             *) COMPREPLY=( $(compgen -W "--mode --socket --session --flok --term --disabled --install --hooks" -- "$cur") ) ;;
                          esac ;;
                     list) COMPREPLY=( $(compgen -W "--json --names" -- "$cur") ) ;;
                     status) COMPREPLY=( $(compgen -W "--json" -- "$cur") ) ;;
@@ -140,13 +146,23 @@ func zshCompletion() string {
 	b.WriteString(`        host)
             if (( CURRENT == 3 )); then
                 _values 'host command' 'add[register a remote tmux server]' 'set[change a host in place]' 'remove[forget a host]'                     'connect[enable a host]' 'disconnect[disable a host]' 'list[show the hosts]' 'status[connect once and report]' 'front[bring its work pane next to the sidebar]' \
-                    'next[next server to the front]' 'prev[previous server to the front]' 'last[the previous server again]' 'menu[a tmux menu of the servers]'
+                    'next[next server to the front]' 'prev[previous server to the front]' 'last[the previous server again]' 'menu[a tmux menu of the servers]' \
+                    'install[put or upgrade flok on the host from here]' 'reconnect[redial the host now]'
             else
                 case ${words[3]} in
-                    remove|connect|disconnect|front)
+                    remove|connect|disconnect|front|reconnect)
                         local -a hosts
                         hosts=(${(f)"$(flok host list --names 2>/dev/null)"} local)
                         _describe -t hosts 'host' hosts ;;
+                    install)
+                        if (( CURRENT == 4 )); then
+                            local -a hosts
+                            hosts=(${(f)"$(flok host list --names 2>/dev/null)"})
+                            _describe -t hosts 'host' hosts
+                        else
+                            _arguments '--from[binary to push]:file:_files' '--version[release to download]:version' '--hooks[wire the agent hooks there too]' \
+                                '--open[in a tmux popup over the sidebar]' '--wait[hold the output until Enter]'
+                        fi ;;
                     set)
                         if (( CURRENT == 4 )); then
                             local -a hosts
@@ -156,7 +172,8 @@ func zshCompletion() string {
                             _arguments '--mode[full or plain]:mode:(full plain)' '--target[ssh target]:target' '--socket[remote tmux socket]:socket' \
                                 '--session[session to attach or create]:session' '--flok[remote flok binary]:path:_files' '--term[TERM for the attach]:term'
                         fi ;;
-                    add) _arguments '--mode[full (flok serve on the host) or plain (tmux only)]:mode:(full plain)'                             '--socket[remote tmux socket name]:socket' '--session[session to attach or create]:session'                             '--flok[remote flok binary]:path:_files' '--term[TERM for the attach (screen-256color)]:term' '--disabled[register without connecting]' ;;
+                    add) _arguments '--mode[full (flok serve on the host) or plain (tmux only)]:mode:(full plain)'                             '--socket[remote tmux socket name]:socket' '--session[session to attach or create]:session'                             '--flok[remote flok binary]:path:_files' '--term[TERM for the attach (screen-256color)]:term' '--disabled[register without connecting]' \
+                            '--install[put flok on the host right away]' '--hooks[with --install: wire the agent hooks there]' ;;
                     list) _arguments '--json[machine-readable output]' '--names[one name per line]' ;;
                     status) _arguments '--json[machine-readable output]' ;;
                 esac

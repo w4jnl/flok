@@ -465,7 +465,7 @@ func (m Model) footerLines(w int) []string {
 	case m.prefixPending:
 		one(m.prefixTmux+" …", pink)
 	case m.panel == panelHosts && m.multiHost():
-		status = hintLines("⏎ front · c d r m x i", "? help", w, dim)
+		status = hintLines("⏎ front · c d r m x i I", "? help", w, dim)
 	default:
 		status = hintLines("j/k ⏎ ⇥ 1-9", "esc · ? help", w, dim)
 	}

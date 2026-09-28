@@ -20,6 +20,7 @@ type cannedProc struct {
 }
 
 func (p *cannedProc) Stdin() io.Writer  { return io.Discard }
+func (p *cannedProc) CloseStdin() error { return nil }
 func (p *cannedProc) Stdout() io.Reader { return p.r }
 func (p *cannedProc) Wait() (int, string) {
 	return p.exit, p.stderr
@@ -89,9 +90,9 @@ func TestHostChecks(t *testing.T) {
 		"warn host gamma (plain): no tmux-256color terminfo",
 		"fail host delta (full): needs auth (Permission denied (publickey)); run `ssh delta` once",
 		"fail host old (plain): tmux 2.6 is too old, flok needs 2.7 or newer",
-		"warn host eps (full): tmux 3.4, flok 0.4.4 at /usr/local/bin/flok is too old, it has no `serve` (upgrade flok there, or use --mode plain)",
+		"warn host eps (full): tmux 3.4, flok 0.4.4 at /usr/local/bin/flok is too old, it has no `serve`: `flok host install eps` upgrades it (or --mode plain)",
 		"warn host eps (full): tmux is installed but not running for eps: the sidebar's work pane starts a session there",
-		"warn host nokeys (full): tmux 3.4, flok 0.4.6 (protocol 1) predates the key relay: flok's keys do nothing inside its sessions (upgrade flok on the host)",
+		"warn host nokeys (full): tmux 3.4, flok 0.4.6 (protocol 1) predates the key relay: flok's keys do nothing inside its sessions (`flok host install nokeys` upgrades it)",
 		"ok host off (full): disabled (flok host connect off)",
 	} {
 		if !strings.Contains(joined, want) {

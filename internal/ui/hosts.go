@@ -244,18 +244,31 @@ func (m *Model) refederate() {
 			}
 		}
 		m.snap.Spaces = sp
-		// a host that cannot deliver says why in the footer; the row only has room for the state
+		// a host that cannot deliver says why in the footer (the row only has room for the
+		// state); one without flok, or with one too old, says how to fix that from here
 		for _, h := range m.hostList {
-			if v, ok := m.remotes[h.Name]; ok && h.Enabled && v.detail != "" {
-				switch v.state {
-				case remote.Connected, remote.Stale, remote.Connecting, remote.Disabled, "":
-				default:
+			v, ok := m.remotes[h.Name]
+			if !ok || !h.Enabled {
+				continue
+			}
+			switch v.state {
+			case remote.Connected, remote.Stale, remote.Connecting, remote.Disabled, "":
+			case remote.NoFlok:
+				m.snap.Warnings = append(m.snap.Warnings, h.Name+": no flok there · I installs it (flok host install "+h.Name+")")
+			case remote.OldFlok, remote.Incompatible:
+				d := v.detail
+				if d == "" {
+					d = v.state.Label()
+				}
+				m.snap.Warnings = append(m.snap.Warnings, h.Name+": "+d+" · I installs this flok")
+			default:
+				if v.detail != "" {
 					m.snap.Warnings = append(m.snap.Warnings, h.Name+": "+v.detail)
 				}
 			}
 			// a host whose flok cannot relay keys says so too: nothing else would
-			if v, ok := m.remotes[h.Name]; ok && h.Enabled && m.d.Cfg.Hosts.Keys && v.state == remote.Connected && v.hello != nil && !v.hello.Has(proto.FeatureKeys) {
-				m.snap.Warnings = append(m.snap.Warnings, h.Name+": upgrade flok there, no key relay ("+strings.TrimSpace(versionWord(v.hello.Version))+")")
+			if m.d.Cfg.Hosts.Keys && v.state == remote.Connected && v.hello != nil && !v.hello.Has(proto.FeatureKeys) {
+				m.snap.Warnings = append(m.snap.Warnings, h.Name+": upgrade flok there, no key relay ("+strings.TrimSpace(versionWord(v.hello.Version))+") · I")
 			}
 		}
 	}
@@ -555,8 +568,37 @@ func (m Model) hostKey(k, host string) (tea.Model, tea.Cmd) {
 	case "i":
 		m.openHostInfo(host)
 		return m, nil
+	case "I": // put this flok on the host, or upgrade it: a popup over the outer shows the progress
+		return m, m.runFlok("host", "install", host, "--open")
 	}
 	return m, nil
+}
+
+// runFlok runs `flok <args…>` detached from this process, against this outer; a start error
+// goes to the footer.
+func (m Model) runFlok(args ...string) tea.Cmd {
+	if m.d.Bin == "" {
+		return nil
+	}
+	bin := m.d.Bin
+	return func() tea.Msg {
+		if err := startDetached(bin, args...); err != nil {
+			return hostToggleMsg{err}
+		}
+		return nil
+	}
+}
+
+// startDetached starts a command in its own session (it must not hold the sidebar's terminal or
+// die with it); tests replace it.
+var startDetached = func(bin string, args ...string) error {
+	c := exec.Command(bin, args...)
+	c.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := c.Start(); err != nil {
+		return err
+	}
+	go func() { _ = c.Wait() }()
+	return nil
 }
 
 func (m Model) hostEnabledCmd(host string, on bool) tea.Cmd {
@@ -720,13 +762,9 @@ func (m Model) runKeyCommand(cmd string) {
 	if m.d.Bin == "" || !remote.IsKeyCommand(cmd) {
 		return
 	}
-	c := exec.Command(m.d.Bin, strings.Fields(cmd)...)
-	c.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	if err := c.Start(); err != nil {
+	if err := startDetached(m.d.Bin, strings.Fields(cmd)...); err != nil {
 		m.debugf("key %s: %v", cmd, err)
-		return
 	}
-	go func() { _ = c.Wait() }()
 }
 
 // hostRowParts describes a servers-panel row: name, state glyph and its colour, the detail

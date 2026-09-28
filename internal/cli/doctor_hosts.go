@@ -214,22 +214,22 @@ func probeHost(cfg config.Config, stateDir string, h hosts.Host, dial remote.Dia
 		switch {
 		case p.Flok == "":
 			level = "warn"
-			summary += ", no flok on the remote's non-interactive PATH (the sidebar tries ~/.local/bin, /opt/homebrew/bin and /usr/local/bin; else `flok host add --flok <path>` or --mode plain)"
+			summary += ", no flok on the remote's non-interactive PATH: `flok host install " + h.Name + "` puts this flok there (or `flok host set " + h.Name + " --flok <path>`, or --mode plain)"
 		case p.Hello == nil:
 			level = "warn"
 			which := p.Flok
 			if p.Version != "" {
 				which = "flok " + p.Version + " at " + p.Flok
 			}
-			summary += fmt.Sprintf(", %s is too old, it has no `serve` (upgrade flok there, or use --mode plain)", which)
+			summary += fmt.Sprintf(", %s is too old, it has no `serve`: `flok host install %s` upgrades it (or --mode plain)", which, h.Name)
 		case p.Hello.Proto != proto.Version:
 			level = "warn"
-			summary += fmt.Sprintf(", flok %s speaks protocol %d, this one %d (upgrade one side, or use --mode plain)", p.Hello.Version, p.Hello.Proto, proto.Version)
+			summary += fmt.Sprintf(", flok %s speaks protocol %d, this one %d: `flok host install %s` puts this flok's version there (or --mode plain)", p.Hello.Version, p.Hello.Proto, proto.Version, h.Name)
 		default:
 			summary += fmt.Sprintf(", flok %s (protocol %d)", strings.TrimPrefix(p.Hello.Version, "v"), p.Hello.Proto)
 			if !p.Hello.Has(proto.FeatureKeys) {
 				level = "warn"
-				summary += " predates the key relay: flok's keys do nothing inside its sessions (upgrade flok on the host)"
+				summary += " predates the key relay: flok's keys do nothing inside its sessions (`flok host install " + h.Name + "` upgrades it)"
 			}
 		}
 	}

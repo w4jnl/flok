@@ -105,7 +105,18 @@ One binary, several roles selected by subcommand (`internal/cli/root.go`):
   predates the relay; `flok relay` files a request the serve
   forwards as a `request` frame, `#{@flok-request}` rides in the clients snapshot format and
   `poller.Deps.OnRequest` clears it; the sidebar runs `flok <cmd>` against its own outer
-  (`runKeyCommand`). Servers-panel keys: `hostKey` in `ui/hosts.go` (c d r m x i, Space peeks).
+  (`runKeyCommand`). Servers-panel keys: `hostKey` in `ui/hosts.go` (c d r m x i I, Space peeks).
+  `flok host install <name>` (`remote.Install`, `internal/remote/install.go`; the release side in
+  `internal/release`: target from `uname -sm`, version rules, `sha256sums.txt`, tar.gz in memory)
+  puts flok on a host over the same ssh: a probe, then the binary streamed to a fixed sh script's
+  stdin (`Proc.CloseStdin` ends it) that verifies `version` on a temp file before `mv` into
+  `~/.local/bin` (on `remote_path`, probed by the manager, so no host config); a same-OS/CPU host
+  gets this executable, another the release asset (latest resolved through the
+  `releases/latest/download/sha256sums.txt` redirect, no API); the path is recorded in
+  `hosts.json` (a change makes the manager reconnect) or a `reconnect` request is filed; `I` in
+  the servers panel runs `flok host install <name> --open` detached (a popup via
+  `keys.PopupArgsTitled`, a window before 3.2); the footer names the install for a `no flok`/
+  `old flok` host. Only ever write `~/.local/bin/flok` there.
   Locally, `runSidebar` calls `remote.InstallLocalKeys` (mode `[keys] bind`: missing/all/off) so
   the snippet is optional; what it bound is in `$FLOK_STATE/keys.json` and `RestoreLocalKeys`
   (sidebar exit, `flok down`, the attach-loop teardown) undoes exactly that. Server keys:

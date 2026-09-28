@@ -7,6 +7,11 @@ import "github.com/w4jnl/flok/internal/tmux"
 // in a window instead). The border and title flags need 3.3. client ("" = current) is the
 // tty of the client that pressed the key, as tmux bindings see it in #{client_tty}.
 func PopupArgs(f tmux.Features, client, cmd string) []string {
+	return PopupArgsTitled(f, client, cmd, " keybinds ")
+}
+
+// PopupArgsTitled is PopupArgs with the popup's title (shown from 3.3 on).
+func PopupArgsTitled(f tmux.Features, client, cmd, title string) []string {
 	if !f.Popup {
 		return nil
 	}
@@ -15,7 +20,7 @@ func PopupArgs(f tmux.Features, client, cmd string) []string {
 		args = append(args, "-c", client)
 	}
 	if f.PopupBorder {
-		args = append(args, "-b", "rounded", "-T", " keybinds ")
+		args = append(args, "-b", "rounded", "-T", title)
 	}
 	return append(args, cmd)
 }

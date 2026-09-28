@@ -48,6 +48,7 @@ func newFakeProc(argv []string) *fakeProc {
 }
 
 func (p *fakeProc) Stdin() io.Writer  { return p.inW }
+func (p *fakeProc) CloseStdin() error { return p.inW.Close() }
 func (p *fakeProc) Stdout() io.Reader { return p.outR }
 func (p *fakeProc) Wait() (int, string) {
 	<-p.exitc

@@ -98,7 +98,7 @@ expect "doctor notices the missing hooks on beta" '^warn +host beta \(full\): no
 # a host whose flok predates serve: named with its version, not mistaken for a missing flok
 cli host add delta delta >/dev/null
 out=$(cli host status 2>&1 || true)
-expect "status names an outdated flok with its version" '^delta +full +old flok +- +- +flok 0.4.4 there is too old \(no serve\); upgrade flok on the host' "$out"
+expect "status names an outdated flok with its version" '^delta +full +old flok +- +- +flok 0.4.4 there is too old \(no serve\); upgrade it from here: .flok host install delta.' "$out"
 doc=$(cli doctor 2>&1 || true)
 expect "doctor says the same" '^warn +host delta \(full\): tmux [0-9][^,]*, flok 0.4.4 at .*/flok is too old, it has no `serve`' "$doc"
 # a host with tmux installed but no server, seen from the CLI alone (no work pane to start one)
@@ -116,8 +116,19 @@ OLD
 chmod +x "$FAKE/hosts/epsilon/bin/flok"
 cli host add epsilon epsilon >/dev/null
 doc=$(cli doctor 2>&1 || true)
-expect "doctor warns when the host's flok predates the key relay" '^warn +host epsilon \(full\): tmux [0-9][^,]*, flok 0.4.6 \(protocol 1\) predates the key relay: flok.s keys do nothing inside its sessions \(upgrade flok on the host\)' "$doc"
+expect "doctor warns when the host's flok predates the key relay" '^warn +host epsilon \(full\): tmux [0-9][^,]*, flok 0.4.6 \(protocol 1\) predates the key relay: flok.s keys do nothing inside its sessions \(.flok host install epsilon. upgrades it\)' "$doc"
 cli host remove epsilon >/dev/null
+# tmux but no flok on a host: `add --install` registers it and puts this flok there in one go (the
+# shim answers like a shell that cannot find flok, so a flok on this machine's PATH never leaks in)
+fake_host eta
+printf '#!/bin/sh\necho "sh: flok: command not found" >&2\nexit 127\n' > "$FAKE/hosts/eta/bin/flok"
+rc=0; out=$(cli host add eta eta --install 2>&1) || rc=$?
+expect "add --install puts this flok on the host: $out" '^0$' "$rc"
+expect "... at ~/.local/bin there" "installed flok .* at $T/hosts/eta/home/.local/bin/flok" "$out"
+expect "... and the pushed flok runs there" '^flok ' "$("$T/hosts/eta/home/.local/bin/flok" version)"
+expect "... its path recorded" "\"flok\": \"$T/hosts/eta/home/.local/bin/flok\"" "$(cat "$CLI_STATE/hosts.json")"
+expect "... no sidebar: it connects at the next flok up" 'eta connects at the next flok up' "$out"
+cli host remove eta >/dev/null
 touch "$T/down-gamma" "$T/auth-beta"
 rc=0; out=$(cli host status 2>&1) || rc=$?
 echo "--- host status, both failing ---"; printf '%s\n' "$out" | sed 's/^/      | /'
@@ -287,7 +298,7 @@ wait_for '⇥ 1-9|c d r m x i' 3 || true   # the footer shows a key hint once th
 # servers_panel: Tab until the footer shows the servers keys (the panel state is not observable otherwise)
 servers_panel() { local i; for i in 1 2 3 4 5 6; do capture | grep -q 'c d r m x i' && return 0; OUT send-keys -t "$SIDEBAR" Tab; sleep 0.4; done; capture | grep -q 'c d r m x i'; }
 servers_panel || true
-expect "the footer lists the servers keys" '⏎ front · c d r m x i' "$(capture)"
+expect "the footer lists the servers keys" '⏎ front · c d r m x i I' "$(capture)"
 OUT send-keys -t "$SIDEBAR" g j Space   # first row, beta, peek
 for _ in $(seq 1 50); do [ "$(rt "r.get('front_host','')")" = beta ] && break; sleep 0.1; done
 expect "space brings the host to the front" '^beta$' "$(rt "r.get('front_host','')")"
@@ -411,6 +422,47 @@ OUT send-keys -t "$SIDEBAR" x y
 for _ in $(seq 1 50); do capture | grep -q 'gamma' || break; sleep 0.1; done
 expect "x y removes the host: the row is gone" '^0$' "$(capture | grep -c 'gamma' || true)"
 expect "... and so is the registry entry" '^beta$' "$("$BIN" host list --names)"
+
+# --- part 5: install flok on a host from here ----------------------------------------------
+fake_host zeta
+printf '#!/bin/sh\necho "sh: flok: command not found" >&2\nexit 127\n' > "$FAKE/hosts/zeta/bin/flok"   # tmux there, no flok
+# registered with a flok path that is not there (a moved binary): no flok, and the manager does not
+# go looking (on a developer's Mac its probe would find the Homebrew flok of this very machine)
+"$BIN" host add zeta zeta --flok /nonexistent/flok >/dev/null
+wait_for 'zeta +full +no flok' 25 || true
+expect "a host with tmux but no flok reads no flok" 'zeta +full +no flok' "$(capture)"
+expect "... and the footer says how to fix it (wrapped at 28 columns)" 'zeta: no flok there · I' "$(capture)"
+rc=0; out=$("$BIN" host install zeta 2>&1) || rc=$?
+expect "host install pushes this binary (same OS and CPU): $out" '^0$' "$rc"
+expect "... to ~/.local/bin on the host" "installed flok .* at $T/hosts/zeta/home/.local/bin/flok" "$out"
+expect "the pushed flok runs there" '^flok ' "$("$T/hosts/zeta/home/.local/bin/flok" version)"
+expect "hosts.json records the path" "\"flok\": \"$T/hosts/zeta/home/.local/bin/flok\"" "$(cat "$T/state/hosts.json")"
+expect "the sidebar was told it reconnects by itself" 'the sidebar reconnects zeta now' "$out"
+wait_hosts "beta=connected zeta=connected" 25 || true
+expect "the sidebar reconnected zeta by itself" '^beta=connected zeta=connected$' "$(snap_hosts)"
+# I on the row: an upgrade in place (same path) through a popup (3.2+) or a window, then a reconnect request
+before=$(pgrep -f "$T/hosts/zeta/home/.local/bin/flok serve" | sort | tr '\n' ' ')
+tmux -L "$TTYS" -f /dev/null new-session -d -s t -x 160 -y 45 "tmux -L e2e-outer attach-session -t flok"
+sleep 1
+servers_panel || true
+OUT send-keys -t "$SIDEBAR" G I
+if tmux_at_least 3 2; then
+  for _ in $(seq 1 150); do tmux -L "$TTYS" capture-pane -p -t t | grep -q 'press Enter to close' && break; sleep 0.1; done
+  shown=$(tmux -L "$TTYS" capture-pane -p -t t)
+  expect "I opens the install in a popup" 'installed flok .* at .*/.local/bin/flok' "$shown"
+  expect "... an upgrade in place asks the sidebar to reconnect" 'zeta reconnects now' "$shown"
+  tmux -L "$TTYS" send-keys -t t Enter
+else
+  for _ in $(seq 1 150); do OUT capture-pane -p -t flok-install-zeta 2>/dev/null | grep -q 'press Enter to close' && break; sleep 0.1; done
+  shown=$(OUT capture-pane -p -t flok-install-zeta 2>/dev/null)
+  expect "I opens the install in a window on a tmux without popups" 'installed flok .* at .*/.local/bin/flok' "$shown"
+  OUT send-keys -t flok-install-zeta Enter
+fi
+tmux -L "$TTYS" kill-server 2>/dev/null || true
+sleep 1
+wait_hosts "beta=connected zeta=connected" 25 || true
+after=$(pgrep -f "$T/hosts/zeta/home/.local/bin/flok serve" | sort | tr '\n' ' ')
+expect "the reconnect started a new serve there" '^changed$' "$([ -n "$after" ] && [ "$before" != "$after" ] && echo changed || echo "same: $before / $after")"
 
 # down leaves the remote servers alone
 "$BIN" down
