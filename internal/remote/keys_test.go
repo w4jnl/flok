@@ -27,17 +27,37 @@ func TestKeyBindings(t *testing.T) {
 	if got := strings.Join(BindRelayArgs("/x/flok"), " "); !strings.Contains(got, "prefix N run-shell -b /x/flok relay host next") || !strings.Contains(got, "prefix F9 run-shell -b /x/flok relay host front 9") {
 		t.Fatalf("server keys relay %q", got)
 	}
-	saved := ourBindings("bind-key    -T prefix       o                 select-pane -t :.+\n" +
+	kinds := map[string]string{}
+	var saved []string
+	for _, b := range parsePrefixBindings("bind-key    -T prefix       o                 select-pane -t :.+\n" +
 		"bind-key -r -T prefix       b                 run-shell \"tmux display 'hi there'\"\n" +
 		"bind-key    -T prefix       c                 new-window\n" +
 		"bind-key    -T prefix       g                 set-option -g @flok-request focus\n" +
 		"bind-key    -T prefix       u                 run-shell -b \"/x/flok relay keep-awake\"\n" +
-		"bind-key    -T copy-mode-vi b                 send -X cursor-left\n")
-	if len(saved) != 2 || !strings.HasPrefix(saved[0], "bind-key    -T prefix       o") || !strings.Contains(saved[1], "hi there") {
+		"bind-key    -T prefix       a                 run-shell -b \"flok next\"\n" +
+		"bind-key    -T copy-mode-vi b                 send -X cursor-left\n") {
+		switch {
+		case b.ours:
+			kinds[b.key] = "ours"
+		case b.flok:
+			kinds[b.key] = "flok"
+		default:
+			kinds[b.key] = "host"
+			saved = append(saved, b.line)
+		}
+	}
+	if !reflect.DeepEqual(kinds, map[string]string{"o": "host", "b": "host", "c": "host", "g": "ours", "u": "ours", "a": "flok"}) {
+		t.Fatalf("kinds %v", kinds)
+	}
+	if len(saved) != 3 || !strings.HasPrefix(saved[0], "bind-key    -T prefix       o") || !strings.Contains(saved[1], "hi there") {
 		t.Fatalf("saved %q", saved)
 	}
 	if w := SplitTmuxWords(saved[1]); !reflect.DeepEqual(w, []string{"bind-key", "-r", "-T", "prefix", "b", "run-shell", "tmux display 'hi there'"}) {
 		t.Fatalf("words %q", w)
+	}
+	if got := strings.Join(bindArgs([]string{saved[0], saved[1], `bind-key -T prefix x run-shell a \; display b`, "not a binding"}), " "); got !=
+		`bind-key -T prefix o select-pane -t :.+ ; bind-key -r -T prefix b run-shell tmux display 'hi there' ; bind-key -T prefix x run-shell a \; display b` {
+		t.Fatalf("bindArgs %q", got)
 	}
 	if w := SplitTmuxWords(`a "b \"c\" d" 'e f' g\ h`); !reflect.DeepEqual(w, []string{"a", `b "c" d`, "e f", "g h"}) {
 		t.Fatalf("words %q", w)
@@ -132,19 +152,57 @@ func TestLocalKeys(t *testing.T) {
 func TestInstallRebindRestore(t *testing.T) {
 	c := &keysClient{}
 	k := InstallKeys(c, BindOptionArgs())
-	if len(c.calls) != 2 || c.calls[0][0] != "list-keys" || c.calls[1][0] != "bind-key" {
-		t.Fatalf("install: %v", c.calls)
+	read, write := strings.Join(c.calls[0], " "), strings.Join(c.calls[1], " ")
+	if len(c.calls) != 2 || !strings.HasPrefix(read, "list-keys -T prefix ; show-options -gqv @flok-orig-b ;") || !strings.Contains(read, "; show-options -gqv @flok-orig-F9") {
+		t.Fatalf("install reads the table and the records in one call: %v", c.calls)
+	}
+	if !strings.HasPrefix(write, "set-option -g @flok-orig-b b ; set-option -g @flok-orig-B B ;") ||
+		!strings.Contains(write, "; set-option -g @flok-orig-o o bind-key    -T prefix       o                 select-pane -t :.+ ;") ||
+		!strings.HasSuffix(write, " ; "+strings.Join(BindOptionArgs(), " ")) {
+		t.Fatalf("install records the originals and binds in one call: %s", write)
+	}
+	if !reflect.DeepEqual(k.saved, []string{"bind-key    -T prefix       o                 select-pane -t :.+"}) {
+		t.Fatalf("saved %q", k.saved)
 	}
 	k.Rebind()
-	if len(c.calls) != 3 || strings.Join(c.calls[2], " ") != strings.Join(BindOptionArgs(), " ") {
-		t.Fatalf("rebind: %v", c.calls[2:])
+	if len(c.calls) != 4 || c.calls[2][0] != "list-keys" || strings.Join(c.calls[3], " ") != write {
+		t.Fatalf("rebind reads and installs again: %v", c.calls[2:])
 	}
 	k.Restore()
-	if len(c.calls) != 5 || c.calls[3][0] != "unbind-key" || strings.Join(c.calls[4], " ") != "bind-key -T prefix o select-pane -t :.+" {
-		t.Fatalf("restore must put the host's o back with a full bind-key command: %v", c.calls[3:])
+	restore := strings.Join(c.calls[4], " ")
+	if len(c.calls) != 5 || !strings.HasPrefix(restore, "unbind-key -T prefix b ; unbind-key -T prefix B ;") ||
+		!strings.Contains(restore, "unbind-key -T prefix F9 ; bind-key -T prefix o select-pane -t :.+ ; set-option -gqu @flok-orig-b ;") ||
+		!strings.HasSuffix(restore, "set-option -gqu @flok-orig-F9") {
+		t.Fatalf("restore unbinds, puts the host's o back and drops the records in one call: %s", restore)
 	}
 	k.Rebind()
 	if len(c.calls) != 5 {
 		t.Fatal("a rebind after restore is ignored")
+	}
+}
+
+// A session that ended without restoring (a killed serve, a mode flip that raced it) leaves
+// flok's bindings and its records behind: the next install keeps the recorded originals
+// instead of adopting the leftovers, and even a key the interrupted restore had already
+// unbound gets its original back.
+func TestInstallRecoversRecordedOriginals(t *testing.T) {
+	c := &keysClient{keys: "bind-key    -T prefix       o                 run-shell -b \"/x/flok relay jump\"\n" +
+		"bind-key    -T prefix       c                 new-window\n" +
+		"bind-key    -T prefix       g                 set-option -g @flok-request focus\n" +
+		"o bind-key -T prefix o select-pane -t :.+\n" +
+		"b\n" +
+		"g bind-key -T prefix g new-window\n" +
+		"a bind-key -T prefix a display hi\n"}
+	k := InstallKeys(c, BindOptionArgs())
+	if !reflect.DeepEqual(k.saved, []string{"bind-key -T prefix g new-window", "bind-key -T prefix o select-pane -t :.+", "bind-key -T prefix a display hi"}) { // binding order
+		t.Fatalf("saved %q", k.saved)
+	}
+	write := strings.Join(c.calls[1], " ")
+	if !strings.Contains(write, "set-option -g @flok-orig-o o bind-key -T prefix o select-pane -t :.+ ;") || !strings.Contains(write, "set-option -g @flok-orig-b b ;") {
+		t.Fatalf("records rewritten: %s", write)
+	}
+	k.Restore()
+	if restore := strings.Join(c.calls[2], " "); !strings.Contains(restore, "; bind-key -T prefix g new-window ; bind-key -T prefix o select-pane -t :.+ ; bind-key -T prefix a display hi ; set-option -gqu") {
+		t.Fatalf("restore: %s", restore)
 	}
 }

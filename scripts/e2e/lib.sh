@@ -143,7 +143,11 @@ registry_poll_ms = 1000
 enabled = true
 command = "echo {file} >> $d/played"
 CFG
+  # a previous server (with the parked pane attached) takes a moment to go: wait for its pid,
+  # or the new-session below connects to the dying one and fails with "server exited unexpectedly"
+  pid=$(tmux -L "e2e-$h" display -p '#{pid}' 2>/dev/null || true)
   tmux -L "e2e-$h" kill-server 2>/dev/null || true
+  if [ -n "$pid" ]; then for _ in $(seq 1 50); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done; fi
   tmux -L "e2e-$h" -f /dev/null new-session -d -s Remote -x 200 -y 50 -c "$R"
   tmux -L "e2e-$h" new-window -t Remote -n agent -c "$R"
   pane=$(tmux -L "e2e-$h" display -p -t Remote:agent '#{pane_id}')

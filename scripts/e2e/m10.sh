@@ -318,6 +318,8 @@ OUT send-keys -t "$SIDEBAR" c
 wait_for 'gamma +plain +[0-9]' 15 || true
 expect "c connects it again" 'gamma +plain +[0-9]' "$(capture)"
 expect "flok's o replaces gamma's own while connected" 'prefix +o +set-option -g @flok-request jump' "$(tmux -L e2e-gamma list-keys -T prefix)"
+expect "... and gamma's own is recorded in its server" '^o bind-key +-T prefix +o +select-pane -t :.\+$' "$(tmux -L e2e-gamma show-options -gqv @flok-orig-o)"
+expect "... a key gamma had unbound is recorded as such" '^N$' "$(tmux -L e2e-gamma show-options -gqv @flok-orig-N)"
 OUT send-keys -t "$SIDEBAR" m
 wait_for 'gamma +full' 15 || true
 expect "m flips the mode" 'gamma +full' "$(capture)"
@@ -352,7 +354,7 @@ sleep 1
 rc=0; out=$("$BIN" host menu 2>&1) || rc=$?
 expect "host menu opens (tmux ${TMUX_VER}): $out" '^0$' "$rc"
 if tmux_at_least 3 0; then
-  for _ in $(seq 1 30); do tmux -L "$TTYS" capture-pane -p -t t | grep -q 'servers' && break; sleep 0.1; done
+  for _ in $(seq 1 50); do tmux -L "$TTYS" capture-pane -p -t t | grep -q 'beta · full · ' && break; sleep 0.1; done   # the menu, not the sidebar's header
   menu=$(tmux -L "$TTYS" capture-pane -p -t t)
   expect "the menu lists local and the hosts with their state" 'local' "$menu"
   expect "... beta with its mode and agents" 'beta · full · [0-9]' "$menu"

@@ -102,27 +102,67 @@ func UnbindArgs(keys []string) []string {
 	return args
 }
 
-// SavedBindings returns a server's own bindings of the given keys (as list-keys prints them),
-// to be put back when flok lets go of them.
-func SavedBindings(c tmux.Client, keys []string) []string {
-	var lines []string
-	for _, b := range prefixBindings(c) {
-		if b.flok {
-			continue
-		}
-		for _, k := range keys {
-			if b.key == k {
-				lines = append(lines, b.line)
-			}
+// recordOption names the tmux user option in which flok notes what a server had on one of
+// flok's keys before flok took it: the key alone (nothing was bound) or the key followed by
+// the bind-key line list-keys printed. The note lives in the server next to the binding, so
+// whatever ends a session (a killed serve, a mode flip, a crash between unbind and rebind) the
+// next flok on that server still knows what to give back, and never mistakes a leftover of its
+// own for the host's binding.
+func recordOption(key string) string { return "@flok-orig-" + key }
+
+// serverKeys is what one round trip tells about flok's keys on a server: the current binding
+// of each key and the record an earlier flok session left there, if any.
+type serverKeys struct {
+	current map[string]prefixBinding
+	record  map[string]string // key -> "" (was unbound) or the bind-key line; present = flok holds the key
+}
+
+// readServerKeys lists the prefix table and flok's records in one tmux invocation.
+func readServerKeys(c tmux.Client, keys []string) serverKeys {
+	args := []string{"list-keys", "-T", "prefix"}
+	for _, k := range keys {
+		args = append(args, ";", "show-options", "-gqv", recordOption(k))
+	}
+	sk := serverKeys{current: map[string]prefixBinding{}, record: map[string]string{}}
+	out, err := c.Run(args...)
+	if err != nil {
+		return sk
+	}
+	var bindLines []string
+	for _, line := range strings.Split(tmux.Decode(out, tmux.Escapes(c)), "\n") {
+		t := strings.TrimSpace(line)
+		switch {
+		case t == "":
+		case strings.HasPrefix(t, "bind-key"):
+			bindLines = append(bindLines, line)
+		default: // a record: "<key>" or "<key> bind-key …"
+			key, rest, _ := strings.Cut(t, " ")
+			sk.record[key] = strings.TrimSpace(rest)
 		}
 	}
-	return lines
+	for _, b := range parsePrefixBindings(strings.Join(bindLines, "\n")) {
+		sk.current[b.key] = b
+	}
+	return sk
+}
+
+// original is what the server should get back on key: the record when flok already holds the
+// key, else what is bound now, unless that is a binding of flok's own remote kind.
+func (sk serverKeys) original(key string) string {
+	if rec, held := sk.record[key]; held {
+		return rec
+	}
+	if b, ok := sk.current[key]; ok && !b.ours {
+		return b.line
+	}
+	return ""
 }
 
 // prefixBinding is one line of `list-keys -T prefix`.
 type prefixBinding struct {
 	key, cmd, line string
-	flok           bool // one of flok's own (this or an earlier session)
+	ours           bool // flok's remote binding (relay or request option), this or an earlier session
+	flok           bool // ours, or any other command running flok (the local snippet)
 }
 
 func prefixBindings(c tmux.Client) []prefixBinding {
@@ -140,8 +180,8 @@ func parsePrefixBindings(out string) []prefixBinding {
 		for i := 0; i+2 < len(w); i++ {
 			if w[i] == "-T" && w[i+1] == "prefix" {
 				cmd := strings.Join(w[i+3:], " ")
-				flok := strings.Contains(line, RequestOption) || strings.Contains(line, " relay ") || flokCommand(cmd)
-				list = append(list, prefixBinding{key: w[i+2], cmd: cmd, line: strings.TrimSpace(line), flok: flok})
+				ours := strings.Contains(line, "set-option -g "+RequestOption) || strings.Contains(cmd, "flok relay ") || strings.Contains(cmd, "flok' relay ")
+				list = append(list, prefixBinding{key: w[i+2], cmd: cmd, line: strings.TrimSpace(line), ours: ours, flok: ours || flokCommand(cmd)})
 				break
 			}
 		}
@@ -163,20 +203,26 @@ func flokCommand(cmd string) bool {
 	return false
 }
 
-// ourBindings keeps the compatibility of the older helper: the lines of the remote key set.
-func ourBindings(out string) []string {
-	var lines []string
-	for _, b := range parsePrefixBindings(out) {
-		if b.flok {
+// bindArgs turns saved bind-key lines back into one batch of commands (a `;` word inside a
+// line is escaped so tmux keeps it in that binding).
+func bindArgs(lines []string) []string {
+	var args []string
+	for _, line := range lines {
+		w := SplitTmuxWords(line)
+		if len(w) < 2 || w[0] != "bind-key" {
 			continue
 		}
-		for _, k := range KeyCommands {
-			if b.key == k.Key {
-				lines = append(lines, b.line)
+		if len(args) > 0 {
+			args = append(args, ";")
+		}
+		for _, word := range w {
+			if strings.HasSuffix(word, ";") {
+				word = word[:len(word)-1] + "\\;"
 			}
+			args = append(args, word)
 		}
 	}
-	return lines
+	return args
 }
 
 // LocalKeysFile records what the sidebar bound in the local inner server, so `flok down` (or
@@ -271,10 +317,8 @@ func RestoreLocalKeys(c tmux.Client, dir string) error {
 			return err
 		}
 	}
-	for _, line := range st.Saved {
-		if w := SplitTmuxWords(line); len(w) > 1 && w[0] == "bind-key" {
-			_, _ = c.Run(w...)
-		}
+	if args := bindArgs(st.Saved); len(args) > 0 {
+		_, _ = c.Run(args...)
 	}
 	return os.Remove(filepath.Join(dir, LocalKeysFile))
 }
@@ -301,9 +345,11 @@ func LocalKeyStatus(c tmux.Client) map[string]string {
 	return status
 }
 
-// Keys are flok's bindings installed on one tmux server, with the host's own bindings of
-// those keys saved once, at install time, so a restore puts them back whatever happened in
-// between (a Rebind after the server restarted must not adopt flok's own bindings as saved).
+// Keys are flok's bindings installed on one tmux server. The host's own bindings of those
+// keys are recorded in the server (recordOption) in the same invocation that binds flok's, and
+// an install reads the records first: a key an earlier session still holds keeps its recorded
+// original instead of adopting flok's leftover, so the restore puts the host's bindings back
+// whatever happened in between.
 type Keys struct {
 	mu     sync.Mutex
 	c      tmux.Client
@@ -312,33 +358,53 @@ type Keys struct {
 	closed bool
 }
 
-// InstallKeys saves the host's bindings of flok's keys and binds flok's.
+// InstallKeys records the host's bindings of flok's keys and binds flok's.
 func InstallKeys(c tmux.Client, args []string) *Keys {
-	k := &Keys{c: c, args: args, saved: SavedBindings(c, keyNames(KeyCommands))}
-	_, _ = c.Run(args...)
+	k := &Keys{c: c, args: args}
+	k.install()
 	return k
 }
 
-// Rebind binds flok's keys again (the server was restarted and lost them).
+func (k *Keys) install() {
+	keys := keyNames(KeyCommands)
+	sk := readServerKeys(k.c, keys)
+	k.saved = nil
+	var args []string
+	for _, key := range keys {
+		val := key
+		if orig := sk.original(key); orig != "" {
+			k.saved = append(k.saved, orig)
+			val += " " + orig
+		}
+		args = append(args, "set-option", "-g", recordOption(key), val, ";")
+	}
+	_, _ = k.c.Run(append(args, k.args...)...)
+}
+
+// Rebind installs flok's keys again on a restarted server (fresh bindings, fresh records).
 func (k *Keys) Rebind() {
 	k.mu.Lock()
 	defer k.mu.Unlock()
 	if !k.closed {
-		_, _ = k.c.Run(k.args...)
+		k.install()
 	}
 }
 
-// Restore removes flok's keys and puts the host's own back; later Rebinds are ignored.
+// Restore removes flok's keys, puts the host's own back and drops the records, in one tmux
+// invocation; later Rebinds are ignored.
 func (k *Keys) Restore() {
 	k.mu.Lock()
 	defer k.mu.Unlock()
 	k.closed = true
-	_, _ = k.c.Run(UnbindArgs(keyNames(KeyCommands))...)
-	for _, line := range k.saved {
-		if w := SplitTmuxWords(line); len(w) > 1 && w[0] == "bind-key" {
-			_, _ = k.c.Run(w...)
-		}
+	keys := keyNames(KeyCommands)
+	args := UnbindArgs(keys)
+	if b := bindArgs(k.saved); len(b) > 0 {
+		args = append(append(args, ";"), b...)
 	}
+	for _, key := range keys {
+		args = append(args, ";", "set-option", "-gqu", recordOption(key))
+	}
+	_, _ = k.c.Run(args...)
 }
 
 // SplitTmuxWords splits a tmux command line the way tmux's own parser does for the simple

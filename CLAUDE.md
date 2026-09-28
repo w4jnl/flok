@@ -93,7 +93,10 @@ One binary, several roles selected by subcommand (`internal/cli/root.go`):
   `front`/runtime.json (`resyncFront`). flok's keys inside a remote session: `remote.InstallKeys`
   binds `prefix b B g o a A u` in the host's running tmux (serve does it in full mode with
   `run-shell "<flok> relay <cmd>"`, the plain-mode conn with `set-option -g @flok-request <cmd>`)
-  and restores the host's own bindings on disconnect; `flok relay` files a request the serve
+  and restores the host's own bindings on disconnect, one tmux invocation each way; the originals
+  are recorded in that server as `@flok-orig-<key>` user options in the same invocation that
+  binds, and an install reads them first, so a session that died between unbind and rebind (a
+  killed serve, a mode flip racing it) never costs the host a binding; `flok relay` files a request the serve
   forwards as a `request` frame, `#{@flok-request}` rides in the clients snapshot format and
   `poller.Deps.OnRequest` clears it; the sidebar runs `flok <cmd>` against its own outer
   (`runKeyCommand`). Servers-panel keys: `hostKey` in `ui/hosts.go` (c d r m x i, Space peeks).

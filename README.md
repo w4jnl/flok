@@ -434,7 +434,9 @@ one the work pane shows.
 flok's keys work inside a remote session too, without touching the host's tmux config: while a
 host is connected, flok binds `prefix b B g o a A u` in that tmux server (`bind-key` lives in the
 running server, not in a file) and puts the host's own bindings of those keys back when it
-disconnects. On a full-mode host the binding runs `flok relay <cmd>` and `flok serve` forwards it
+disconnects. What a key had before is noted in that server too (`@flok-orig-<key>` user
+options), so a session that ends abruptly loses nothing: the next one restores from the note.
+On a full-mode host the binding runs `flok relay <cmd>` and `flok serve` forwards it
 at once; on a plain host it sets a tmux user option that the next poll picks up (within a
 second). Either way the local sidebar runs the same `flok toggle|hide|focus|jump|next|prev|
 keep-awake` the local binding would. `[hosts] keys = false` turns it off. `prefix ?` stays the
