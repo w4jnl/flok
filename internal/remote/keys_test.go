@@ -64,23 +64,49 @@ func TestKeyBindings(t *testing.T) {
 	}
 }
 
-// keysClient answers list-keys with a canned table and records every call.
+// keysClient answers the reads the installers make (list-keys, the prefix options, flok's
+// records) from canned state and records every call.
 type keysClient struct {
-	calls [][]string
-	keys  string
+	calls   [][]string
+	keys    string            // the prefix table; "" = a stock o and c
+	prefix  string            // "" = C-b
+	prefix2 string            // "" = None
+	records map[string]string // record name -> the note an earlier session left (without the option name)
 }
 
 func (k *keysClient) Label() string { return "fake" }
 func (k *keysClient) Run(args ...string) (string, error) {
 	k.calls = append(k.calls, args)
-	if len(args) > 0 && args[0] == "list-keys" {
-		if k.keys != "" {
-			return k.keys, nil
+	joined := strings.Join(args, " ")
+	var out strings.Builder
+	if strings.HasPrefix(joined, "show-options -gv prefix ;") {
+		p, p2 := k.prefix, k.prefix2
+		if p == "" {
+			p = "C-b"
 		}
-		return "bind-key    -T prefix       o                 select-pane -t :.+\nbind-key    -T prefix       c                 new-window\n", nil
+		if p2 == "" {
+			p2 = "None"
+		}
+		out.WriteString(p + "\n" + p2 + "\n")
 	}
-	return "", nil
+	if strings.Contains(joined, "list-keys") {
+		if k.keys != "" {
+			out.WriteString(k.keys)
+		} else {
+			out.WriteString("bind-key    -T prefix       o                 select-pane -t :.+\nbind-key    -T prefix       c                 new-window\n")
+		}
+	}
+	for i := 0; i+2 < len(args); i++ {
+		if args[i] == "show-options" && args[i+1] == "-gqv" {
+			if v, ok := k.records[strings.TrimPrefix(args[i+2], "@flok-orig-")]; ok {
+				out.WriteString(v + "\n")
+			}
+		}
+	}
+	return out.String(), nil
 }
+
+func joined(c *keysClient, i int) string { return strings.Join(c.calls[i], " ") }
 
 func TestLocalKeys(t *testing.T) {
 	dir := t.TempDir()
@@ -149,30 +175,34 @@ func TestLocalKeys(t *testing.T) {
 	}
 }
 
+const allKeys = "b B g o a A u N P O S F1 F2 F3 F4 F5 F6 F7 F8 F9"
+
 func TestInstallRebindRestore(t *testing.T) {
 	c := &keysClient{}
-	k := InstallKeys(c, BindOptionArgs())
-	read, write := strings.Join(c.calls[0], " "), strings.Join(c.calls[1], " ")
-	if len(c.calls) != 2 || !strings.HasPrefix(read, "list-keys -T prefix ; show-options -gqv @flok-orig-b ;") || !strings.Contains(read, "; show-options -gqv @flok-orig-F9") {
-		t.Fatalf("install reads the table and the records in one call: %v", c.calls)
+	k := InstallKeys(c, BindOptionArgs(), "")
+	read, write := joined(c, 0), joined(c, 1)
+	if len(c.calls) != 2 || !strings.HasPrefix(read, "show-options -gv prefix ; show-options -gv prefix2 ; list-keys -T prefix ; show-options -gqv @flok-orig-keys ; show-options -gqv @flok-orig-prefix ; show-options -gqv @flok-orig-prefix2 ; show-options -gqv @flok-orig-b ;") ||
+		!strings.HasSuffix(read, "; show-options -gqv @flok-orig-F9") {
+		t.Fatalf("install reads the prefix options, the table and the records in one call: %v", c.calls)
 	}
 	if !strings.HasPrefix(write, "set-option -g @flok-orig-b b ; set-option -g @flok-orig-B B ;") ||
 		!strings.Contains(write, "; set-option -g @flok-orig-o o bind-key    -T prefix       o                 select-pane -t :.+ ;") ||
-		!strings.HasSuffix(write, " ; "+strings.Join(BindOptionArgs(), " ")) {
-		t.Fatalf("install records the originals and binds in one call: %s", write)
+		!strings.HasSuffix(write, " ; set-option -g @flok-orig-keys keys "+allKeys+" ; "+strings.Join(BindOptionArgs(), " ")) ||
+		strings.Contains(write, "set-option -g prefix") {
+		t.Fatalf("install records the originals and binds in one call, no prefix asked: %s", write)
 	}
 	if !reflect.DeepEqual(k.saved, []string{"bind-key    -T prefix       o                 select-pane -t :.+"}) {
 		t.Fatalf("saved %q", k.saved)
 	}
 	k.Rebind()
-	if len(c.calls) != 4 || c.calls[2][0] != "list-keys" || strings.Join(c.calls[3], " ") != write {
+	if len(c.calls) != 4 || c.calls[2][0] != "show-options" || joined(c, 3) != write {
 		t.Fatalf("rebind reads and installs again: %v", c.calls[2:])
 	}
 	k.Restore()
-	restore := strings.Join(c.calls[4], " ")
+	restore := joined(c, 4)
 	if len(c.calls) != 5 || !strings.HasPrefix(restore, "unbind-key -T prefix b ; unbind-key -T prefix B ;") ||
 		!strings.Contains(restore, "unbind-key -T prefix F9 ; bind-key -T prefix o select-pane -t :.+ ; set-option -gqu @flok-orig-b ;") ||
-		!strings.HasSuffix(restore, "set-option -gqu @flok-orig-F9") {
+		!strings.HasSuffix(restore, "set-option -gqu @flok-orig-F9 ; set-option -gqu @flok-orig-keys") {
 		t.Fatalf("restore unbinds, puts the host's o back and drops the records in one call: %s", restore)
 	}
 	k.Rebind()
@@ -188,21 +218,92 @@ func TestInstallRebindRestore(t *testing.T) {
 func TestInstallRecoversRecordedOriginals(t *testing.T) {
 	c := &keysClient{keys: "bind-key    -T prefix       o                 run-shell -b \"/x/flok relay jump\"\n" +
 		"bind-key    -T prefix       c                 new-window\n" +
-		"bind-key    -T prefix       g                 set-option -g @flok-request focus\n" +
-		"o bind-key -T prefix o select-pane -t :.+\n" +
-		"b\n" +
-		"g bind-key -T prefix g new-window\n" +
-		"a bind-key -T prefix a display hi\n"}
-	k := InstallKeys(c, BindOptionArgs())
+		"bind-key    -T prefix       g                 set-option -g @flok-request focus\n",
+		records: map[string]string{"keys": "keys " + allKeys, "o": "o bind-key -T prefix o select-pane -t :.+", "b": "b", "g": "g bind-key -T prefix g new-window", "a": "a bind-key -T prefix a display hi"}}
+	k := InstallKeys(c, BindOptionArgs(), "")
 	if !reflect.DeepEqual(k.saved, []string{"bind-key -T prefix g new-window", "bind-key -T prefix o select-pane -t :.+", "bind-key -T prefix a display hi"}) { // binding order
 		t.Fatalf("saved %q", k.saved)
 	}
-	write := strings.Join(c.calls[1], " ")
-	if !strings.Contains(write, "set-option -g @flok-orig-o o bind-key -T prefix o select-pane -t :.+ ;") || !strings.Contains(write, "set-option -g @flok-orig-b b ;") {
+	if write := joined(c, 1); !strings.Contains(write, "set-option -g @flok-orig-o o bind-key -T prefix o select-pane -t :.+ ;") || !strings.Contains(write, "set-option -g @flok-orig-b b ;") {
 		t.Fatalf("records rewritten: %s", write)
 	}
 	k.Restore()
-	if restore := strings.Join(c.calls[2], " "); !strings.Contains(restore, "; bind-key -T prefix g new-window ; bind-key -T prefix o select-pane -t :.+ ; bind-key -T prefix a display hi ; set-option -gqu") {
+	if restore := joined(c, 2); !strings.Contains(restore, "; bind-key -T prefix g new-window ; bind-key -T prefix o select-pane -t :.+ ; bind-key -T prefix a display hi ; set-option -gqu") {
 		t.Fatalf("restore: %s", restore)
+	}
+}
+
+func TestPrefixMirror(t *testing.T) {
+	c := &keysClient{keys: "bind-key    -T prefix       o                 select-pane -t :.+\nbind-key    -T prefix       C-b               send-prefix\n"}
+	k := InstallKeys(c, BindOptionArgs(), "C-a")
+	write := joined(c, 1)
+	for _, want := range []string{
+		"set-option -g @flok-orig-C-a C-a ; set-option -g @flok-orig-C-b C-b bind-key    -T prefix       C-b               send-prefix ; " +
+			"set-option -g @flok-orig-prefix prefix C-b ; set-option -g prefix C-a ; set-option -g @flok-orig-prefix2 prefix2 None ; set-option -g prefix2 C-b ; " +
+			"set-option -g @flok-orig-keys keys " + allKeys + " C-a C-b ; bind-key -T prefix b set-option -g @flok-request toggle",
+		"; bind-key -T prefix C-a send-prefix ; bind-key -T prefix C-b send-prefix -2",
+	} {
+		if !strings.Contains(write, want) {
+			t.Fatalf("install with a prefix to mirror:\nwant %s\nin   %s", want, write)
+		}
+	}
+	if !strings.HasSuffix(write, "send-prefix -2") || !reflect.DeepEqual(k.bound[len(k.bound)-2:], []string{"C-a", "C-b"}) {
+		t.Fatalf("chords last: %s / %v", write, k.bound)
+	}
+	k.Restore()
+	restore := joined(c, 2)
+	if !strings.Contains(restore, "unbind-key -T prefix F9 ; unbind-key -T prefix C-a ; unbind-key -T prefix C-b ; bind-key -T prefix o select-pane -t :.+ ; bind-key -T prefix C-b send-prefix ; set-option -g prefix C-b ; set-option -g prefix2 None ; set-option -gqu @flok-orig-b ;") ||
+		!strings.HasSuffix(restore, "set-option -gqu @flok-orig-C-b ; set-option -gqu @flok-orig-prefix ; set-option -gqu @flok-orig-prefix2 ; set-option -gqu @flok-orig-keys") {
+		t.Fatalf("restore gives the prefix and the chords back: %s", restore)
+	}
+
+	// the host already uses the same prefix: nothing to mirror
+	same := &keysClient{prefix: "C-a"}
+	InstallKeys(same, BindOptionArgs(), "C-a")
+	if w := joined(same, 1); strings.Contains(w, "set-option -g prefix") || strings.Contains(w, "send-prefix") || !strings.HasSuffix(w, " "+allKeys+" ; "+strings.Join(BindOptionArgs(), " ")) {
+		t.Fatalf("same prefix: %s", w)
+	}
+	// the host has a prefix2 of its own: it is left alone, only the local chord is added
+	two := &keysClient{prefix2: "C-Space"}
+	InstallKeys(two, BindOptionArgs(), "C-a")
+	if w := joined(two, 1); !strings.Contains(w, "set-option -g prefix C-a ;") || strings.Contains(w, "prefix2") || strings.Contains(w, "send-prefix -2") || !strings.HasSuffix(w, "bind-key -T prefix C-a send-prefix") {
+		t.Fatalf("own prefix2: %s", w)
+	}
+	// full mode learns the prefix after the hello: a second install adds it; repeating it is free
+	late := &keysClient{}
+	kl := InstallKeys(late, BindOptionArgs(), "")
+	kl.SetPrefix("C-a")
+	if len(late.calls) != 4 || !strings.Contains(joined(late, 3), "set-option -g prefix C-a ;") {
+		t.Fatalf("late prefix: %v", late.calls)
+	}
+	kl.SetPrefix("C-a")
+	if len(late.calls) != 4 {
+		t.Fatal("unchanged prefix is a no-op")
+	}
+	kl.Restore()
+	if r := joined(late, 4); !strings.Contains(r, "set-option -g prefix C-b ; set-option -g prefix2 None ;") {
+		t.Fatalf("late prefix restored: %s", r)
+	}
+
+	// a dead session left the prefix mirrored: the records name the host's own, the current
+	// value (flok's) is not taken for it, and the restore gives the host its own back
+	dead := &keysClient{prefix: "C-a", prefix2: "C-b",
+		keys: "bind-key    -T prefix       o                 set-option -g @flok-request jump\nbind-key    -T prefix       C-a               send-prefix\nbind-key    -T prefix       C-b               send-prefix -2\n",
+		records: map[string]string{"keys": "keys " + allKeys + " C-a C-b", "prefix": "prefix C-b", "prefix2": "prefix2 None",
+			"o": "o bind-key -T prefix o select-pane -t :.+", "C-a": "C-a", "C-b": "C-b bind-key -T prefix C-b send-prefix"}}
+	kd := InstallKeys(dead, BindOptionArgs(), "C-a")
+	if kd.orig != (prefixState{mirrored: true, prefix: "C-b", setPrefix2: true, prefix2: "None"}) || !reflect.DeepEqual(kd.saved, []string{"bind-key -T prefix o select-pane -t :.+", "bind-key -T prefix C-b send-prefix"}) {
+		t.Fatalf("recovered: %+v %q", kd.orig, kd.saved)
+	}
+	kd.Restore()
+	if r := joined(dead, len(dead.calls)-1); !strings.Contains(r, "bind-key -T prefix C-b send-prefix ; set-option -g prefix C-b ; set-option -g prefix2 None ;") {
+		t.Fatalf("recovered restore: %s", r)
+	}
+	// the local prefix changed since that session: its old chord goes back with this install
+	moved := &keysClient{prefix: "C-a", prefix2: "C-b", keys: dead.keys, records: dead.records}
+	InstallKeys(moved, BindOptionArgs(), "C-Space")
+	if w := joined(moved, len(moved.calls)-1); !strings.Contains(w, "set-option -g prefix C-Space ;") || !strings.Contains(w, "; bind-key -T prefix C-Space send-prefix ;") ||
+		!strings.Contains(w, "; unbind-key -T prefix C-a ; set-option -gqu @flok-orig-C-a") {
+		t.Fatalf("moved prefix: %s", w)
 	}
 }

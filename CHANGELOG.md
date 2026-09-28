@@ -6,6 +6,12 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+- Remote hosts take the local tmux prefix while connected (`[hosts] prefix`, on by default): the
+  host's own prefix moves to `prefix2`, so the chords you type at home work inside its sessions
+  and its native ones still do; both go back on disconnect. A host whose flok predates the key
+  relay or the prefix mirroring is called out by `flok doctor`, `flok host status`, the host
+  info screen and the sidebar footer instead of failing silently (the serve's hello now lists
+  its features).
 - Remote hosts: one local flok now shows and drives tmux servers on other machines over ssh.
   `flok host add <name> <user@host> [--mode full|plain]` registers a host (`hosts.json` in the
   state dir; `set` changes a host in place, `remove`, `connect`, `disconnect`, `list`,

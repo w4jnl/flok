@@ -54,7 +54,7 @@ func Serve(ctx context.Context, d ServeDeps) error {
 	}
 	var keys *Keys
 	if d.Keys && d.Inner != nil && d.Flok != "" {
-		keys = InstallKeys(d.Inner, BindRelayArgs(d.Flok))
+		keys = InstallKeys(d.Inner, BindRelayArgs(d.Flok), "")
 		defer keys.Restore()
 	}
 	p := d.NewPoller(func(pane, kind string) {
@@ -177,6 +177,10 @@ func Serve(ctx context.Context, d ServeDeps) error {
 			case proto.TypeVisible:
 				if d.Store != nil {
 					_ = d.Store.SetTerminalFocus(f.On)
+				}
+			case proto.TypePrefix: // the local prefix: this tmux takes it while served
+				if keys != nil {
+					keys.SetPrefix(f.Key)
 				}
 			case proto.TypeNotify:
 				text := f.Text

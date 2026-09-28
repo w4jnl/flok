@@ -55,6 +55,7 @@ finish() { echo "== $pass passed, $fail failed =="; test "$fail" -eq 0; }
 # Two inner sessions; Alpha has a window "agent" running the fake claude with an idle title.
 IN -f /dev/null new-session -d -s Alpha -x 200 -y 50 -c "$R"
 IN new-session -d -s Beta -c "$T"
+[ -z "${E2E_INNER_PREFIX:-}" ] || IN set-option -g prefix "$E2E_INNER_PREFIX"   # m10: the hosts take it while connected
 IN new-window -t Alpha -n agent -c "$R"
 AGENT=$(IN display -p -t Alpha:agent '#{pane_id}')
 IN select-pane -t "$AGENT" -T "✳ fake-agent"

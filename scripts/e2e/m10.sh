@@ -2,6 +2,7 @@
 # M10: remote hosts, part 1 — the host registry, `flok serve --stdio` over a pipe, and `flok host
 # status`, through a fake ssh that runs the "remote" command locally against the isolated servers
 # e2e-beta (mode full) and e2e-gamma (mode plain). The sidebar's own use of hosts comes with part 2.
+E2E_INNER_PREFIX=C-a   # the local prefix; the fake hosts run stock tmux (C-b) and take it while connected
 source "$(dirname "$0")/lib.sh"
 fake_ssh_setup
 fake_host beta
@@ -106,6 +107,17 @@ tmux -L e2e-delta kill-server
 out=$(cli host status 2>&1 || true)
 expect "status tells a stopped tmux from an unreachable host" '^delta +plain +no tmux server +tmux [0-9][^ ]* +- +no server running on .*; the sidebar.s work pane starts one' "$out"
 cli host remove delta >/dev/null
+# a host whose flok has serve but predates the key relay (its hello lists no features): doctor says so
+fake_host epsilon
+cat > "$FAKE/hosts/epsilon/bin/flok" <<'OLD'
+#!/usr/bin/env bash
+case "$*" in "serve --hello") echo '{"type":"hello","hello":{"proto":1,"version":"0.4.6","hostname":"epsilon","pid":1,"tmux_version":"3.4","state_dir":"/tmp"}}' ;; version) echo "flok 0.4.6" ;; *) exit 2 ;; esac
+OLD
+chmod +x "$FAKE/hosts/epsilon/bin/flok"
+cli host add epsilon epsilon >/dev/null
+doc=$(cli doctor 2>&1 || true)
+expect "doctor warns when the host's flok predates the key relay" '^warn +host epsilon \(full\): tmux [0-9][^,]*, flok 0.4.6 \(protocol 1\) predates the key relay: flok.s keys do nothing inside its sessions \(upgrade flok on the host\)' "$doc"
+cli host remove epsilon >/dev/null
 touch "$T/down-gamma" "$T/auth-beta"
 rc=0; out=$(cli host status 2>&1) || rc=$?
 echo "--- host status, both failing ---"; printf '%s\n' "$out" | sed 's/^/      | /'
@@ -290,6 +302,14 @@ wait_for '^servers' 3 || true
 # flok's keys inside the hosts' tmux: bound at connect; full mode relays, plain mode sets the option
 expect "beta's tmux got flok's keys (relay)" 'prefix +b +run-shell -b .*relay toggle' "$(tmux -L e2e-beta list-keys -T prefix)"
 expect "gamma's tmux got flok's keys (option)" 'prefix +b +set-option -g @flok-request toggle' "$(tmux -L e2e-gamma list-keys -T prefix)"
+# the local prefix (C-a here) follows: the host's tmux takes it, keeps its own C-b as prefix2, both chords send the key
+expect "beta's tmux took the local prefix (serve, from the prefix frame)" '^C-a$' "$(tmux -L e2e-beta show-options -gv prefix)"
+expect "... and keeps its own as prefix2" '^C-b$' "$(tmux -L e2e-beta show-options -gv prefix2)"
+expect "... with the send-prefix chords" 'prefix +C-a +send-prefix' "$(tmux -L e2e-beta list-keys -T prefix)"
+expect "gamma's tmux took the local prefix too (plain, over ssh)" '^C-a$' "$(tmux -L e2e-gamma show-options -gv prefix)"
+expect "... its own answers send-prefix -2" 'prefix +C-b +send-prefix -2' "$(tmux -L e2e-gamma list-keys -T prefix)"
+expect "... and the host's own prefix is recorded in its server" '^prefix C-b$' "$(tmux -L e2e-gamma show-options -gqv @flok-orig-prefix)"
+expect "the info screen names the mirrored prefix" 'C-a there too' "$(OUT send-keys -t "$SIDEBAR" i; sleep 0.5; capture; OUT send-keys -t "$SIDEBAR" Escape)"
 FRONT=$(rt "r['right_pane']")
 tmux -L e2e-gamma set-option -g @flok-request hide   # what prefix B does inside gamma's session
 for _ in $(seq 1 40); do [ "$(OUT display -p -t "$FRONT" '#{window_zoomed_flag}')" = 1 ] && break; sleep 0.1; done
@@ -313,6 +333,10 @@ OUT send-keys -t "$SIDEBAR" g j j d
 wait_for 'gamma +plain +off' 5 || true
 expect "d disconnects the host" 'gamma +plain +off' "$(capture)"
 expect "flok's keys leave gamma's tmux on disconnect" '^0$' "$(tmux -L e2e-gamma list-keys -T prefix | grep -c '@flok-request' || true)"
+expect "gamma's prefix is its own again" '^C-b$' "$(tmux -L e2e-gamma show-options -gv prefix)"
+expect "... prefix2 unset again" '^None$' "$(tmux -L e2e-gamma show-options -gv prefix2)"
+expect "... the send-prefix chord gone" '^0$' "$(tmux -L e2e-gamma list-keys -T prefix | grep -c 'prefix +C-a ' || true)"
+expect "... and the records with it" '^$' "$(tmux -L e2e-gamma show-options -gqv @flok-orig-keys)"
 tmux -L e2e-gamma bind-key -T prefix o select-pane -t :.+
 OUT send-keys -t "$SIDEBAR" c
 wait_for 'gamma +plain +[0-9]' 15 || true

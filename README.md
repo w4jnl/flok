@@ -436,6 +436,11 @@ host is connected, flok binds `prefix b B g o a A u` in that tmux server (`bind-
 running server, not in a file) and puts the host's own bindings of those keys back when it
 disconnects. What a key had before is noted in that server too (`@flok-orig-<key>` user
 options), so a session that ends abruptly loses nothing: the next one restores from the note.
+A connected host also takes your local prefix: its own moves to `prefix2`, so both `C-a b` and
+its native chord work there, and `<prefix> <prefix>` still sends the key through; everything
+goes back on disconnect (`[hosts] prefix = false` leaves hosts' prefixes alone). A host whose
+flok predates the key relay is called out by `flok doctor`, `flok host status`, the host info
+screen (`i` in the servers panel) and the sidebar footer instead of failing silently.
 On a full-mode host the binding runs `flok relay <cmd>` and `flok serve` forwards it
 at once; on a plain host it sets a tmux user option that the next poll picks up (within a
 second). Either way the local sidebar runs the same `flok toggle|hide|focus|jump|next|prev|

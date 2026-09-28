@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/pprof"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -58,7 +59,8 @@ func sidebarDeps(cfg config.Config) ui.Deps {
 		if os.Getenv("FLOK_DEBUG") != "" {
 			debugf = func(format string, args ...any) { appendLog("remote.log", format, args...) }
 		}
-		return remote.New(remote.Deps{Cfg: cfg, StateDir: config.StateDir(), Sink: sink, Rules: rules, Adapters: adapters, Debugf: debugf})
+		return remote.New(remote.Deps{Cfg: cfg, StateDir: config.StateDir(), Sink: sink, Rules: rules, Adapters: adapters, Debugf: debugf,
+			LocalPrefix: localPrefix(cfg, d.Inner)})
 	}
 	return d
 }
@@ -109,4 +111,17 @@ func runSidebar(cfg config.Config) int {
 		return 1
 	}
 	return 0
+}
+
+// localPrefix is the inner server's prefix key for the hosts to take while connected, "" when
+// [hosts] prefix is off or the server does not answer.
+func localPrefix(cfg config.Config, inner tmux.Client) string {
+	if !cfg.Hosts.Prefix || inner == nil {
+		return ""
+	}
+	out, err := inner.Run("show-options", "-gv", "prefix")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(out)
 }

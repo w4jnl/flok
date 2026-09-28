@@ -113,6 +113,8 @@ const Template = `# flok configuration - https://github.com/w4jnl/flok
 # keys = true                 # while a host is connected, bind flok's keys in its tmux (prefix b B g o
                               # a A u, as the local snippet does) so they work inside its sessions;
                               # the host's own bindings of those keys come back on disconnect
+# prefix = true               # a connected host's tmux also takes the local prefix (its own moves to
+                              # prefix2, so both work there) and gets its own back on disconnect
 
 [theme]                       # Dracula; state tokens may name a colour or a hex value
 # mode = "auto"               # auto: follow the terminal background, asked at flok up | dark | light

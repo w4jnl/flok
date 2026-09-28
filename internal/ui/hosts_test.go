@@ -38,7 +38,7 @@ func multiHostModel(t *testing.T) Model {
 		t.Fatal("no outer, no manager: nothing to run")
 	}
 	m.onRemote(remote.Msg{Host: "beta", State: remote.Connecting})
-	m.onRemote(remote.Msg{Host: "beta", State: remote.Connected, Hello: &proto.Hello{Proto: 1, TmuxVersion: "3.4"}})
+	m.onRemote(remote.Msg{Host: "beta", State: remote.Connected, Hello: &proto.Hello{Proto: 1, Version: "0.5.0", TmuxVersion: "3.4", Features: proto.ServeFeatures}})
 	m.onRemote(remote.Msg{Host: "beta", State: remote.Connected, Snap: &proto.Snapshot{
 		Spaces: []proto.Space{{SessionID: "$1", SessionName: "web", Current: true, AgentCount: 2, Rollup: agent.Blocked}},
 		Agents: []agent.Agent{
@@ -272,6 +272,25 @@ func TestPanelCycleAndKeys(t *testing.T) {
 	}
 	if foot := render(m, 28, 40); !strings.HasPrefix(foot[len(foot)-1], "⏎ front · c d r m x i") {
 		t.Fatalf("servers footer hint: %q", foot[len(foot)-1])
+	}
+	// a host whose flok predates the key relay is called out in the footer and the info overlay
+	m.onRemote(remote.Msg{Host: "beta", State: remote.Connected, Hello: &proto.Hello{Proto: 1, Version: "0.4.6", TmuxVersion: "3.4"}})
+	m.refederate()
+	if view := strings.Join(render(m, 60, 30), "\n"); !strings.Contains(view, "beta: flok 0.4.6 there has no key relay, upgrade it") {
+		t.Fatalf("old flok warning:\n%s", view)
+	}
+	if press('i') != nil || m.help == nil {
+		t.Fatal("i opens the info overlay")
+	}
+	if view := strings.Join(render(m, 60, 30), "\n"); !strings.Contains(view, "none: flok 0.4.6 there pred") { // the overlay is as wide as the sidebar
+		t.Fatalf("info overlay, old flok:\n%s", view)
+	}
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = next.(Model)
+	m.onRemote(remote.Msg{Host: "beta", State: remote.Connected, Hello: &proto.Hello{Proto: 1, Version: "0.5.0", TmuxVersion: "3.4", Features: proto.ServeFeatures}})
+	m.refederate()
+	if foot := render(m, 28, 40); !strings.HasPrefix(foot[len(foot)-1], "⏎ front · c d r m x i") {
+		t.Fatalf("footer hint back with a current flok: %q", foot[len(foot)-1])
 	}
 	m.panel = panelAgents
 	if foot := render(m, 28, 40); !strings.HasPrefix(foot[len(foot)-1], "j/k ⏎ ⇥ 1-9") {
