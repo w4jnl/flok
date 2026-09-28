@@ -51,7 +51,7 @@ func runKeys(cfg config.Config, args []string) int {
 	}
 	secs := keys.Organize(bindings, prefix, binPath(), cfg.Keys.Labels, cfg.Keys.ShowMouse)
 	set, _ := hosts.Load(config.StateDir())
-	secs = append(secs, ui.SidebarKeySections(len(set.Hosts) > 0)...)
+	secs = ui.WithSidebarSections(secs, len(set.Hosts) > 0) // flok's bindings, the sidebar's keys, then tmux
 	if print {
 		fmt.Print(ui.Dump(secs, filter))
 		return 0

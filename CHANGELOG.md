@@ -9,6 +9,9 @@ updates this file first. Dates are the tag dates.
 - Sidebar footer: a warning or error wraps over up to three lines above the key hints, with a
   blank line between the two, instead of replacing the hints cut off ("+N" counts further
   warnings); key hints that do not fit the width wrap onto a second line instead of overrunning.
+  The keys help (`?` in the sidebar, `prefix ?`) lists flok's bindings, then the sidebar's own
+  keys (and the servers panel's), then the tmux tables; the sidebar sections used to sit at the
+  very end.
   The old-flok warning reads `<host>: upgrade flok there, no key relay (<version>)`.
 
 ## 0.5.0 (2026-09-28)

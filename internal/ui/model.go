@@ -797,8 +797,7 @@ func (m *Model) openHelpInline() {
 		m.errText = err.Error()
 		return
 	}
-	secs := keys.Organize(bindings, prefix, "", m.d.Cfg.Keys.Labels, m.d.Cfg.Keys.ShowMouse)
-	secs = append(secs, SidebarKeySections(m.multiHost())...)
+	secs := WithSidebarSections(keys.Organize(bindings, prefix, "", m.d.Cfg.Keys.Labels, m.d.Cfg.Keys.ShowMouse), m.multiHost())
 	h := NewHelp(m.theme, secs, false)
 	h.width, h.height = m.width, m.height
 	m.help = &h
