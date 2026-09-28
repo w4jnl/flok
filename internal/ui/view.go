@@ -431,12 +431,12 @@ func genericTitle(title string) bool {
 }
 
 // footerMsgRows is how many lines a footer message (an error, a warning) may take.
-const footerMsgRows = 2
+const footerMsgRows = 3
 
 // footerLines is the bottom of the panel: a message when there is one (an error, else the
-// first warning), wrapped over up to footerMsgRows lines instead of cut off, and under it the
-// status line, always: the keys that work here, or why they do not. A very short panel keeps
-// one line and shows the message alone.
+// first warning), wrapped over up to footerMsgRows lines instead of cut off, a blank line, and
+// the status line, always: the keys that work here, or why they do not. A short panel drops
+// the blank line, a very short one keeps a single line and shows the message alone.
 func (m Model) footerLines(w int) []string {
 	t := m.theme
 	plain, dim := lipgloss.NewStyle(), lipgloss.NewStyle().Foreground(t.Comment)
@@ -473,6 +473,9 @@ func (m Model) footerLines(w int) []string {
 	var lines []string
 	for _, l := range wrapWords(msg, w, footerMsgRows) {
 		lines = append(lines, pad(style.Render(l), w, plain))
+	}
+	if m.height >= 16 { // air between the message and the keys
+		lines = append(lines, strings.Repeat(" ", w))
 	}
 	return append(lines, status)
 }

@@ -6,10 +6,10 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
-- Sidebar footer: a warning or error wraps over up to two lines above the key hints instead of
-  replacing them cut off ("+N" counts further warnings); hints that do not fit the width drop
-  their right-hand part instead of overrunning. The old-flok warning reads
-  `<host>: upgrade flok there, no key relay (<version>)`.
+- Sidebar footer: a warning or error wraps over up to three lines above the key hints, with a
+  blank line between the two, instead of replacing the hints cut off ("+N" counts further
+  warnings); hints that do not fit the width drop their right-hand part instead of overrunning.
+  The old-flok warning reads `<host>: upgrade flok there, no key relay (<version>)`.
 
 ## 0.5.0 (2026-09-28)
 

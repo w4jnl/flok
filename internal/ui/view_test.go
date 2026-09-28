@@ -98,32 +98,42 @@ func TestFooterWrapsMessagesAboveTheStatusLine(t *testing.T) {
 	if len(lines) != 24 {
 		t.Fatalf("%d lines, want the panel height", len(lines))
 	}
-	if got := []string{strings.TrimRight(lines[21], " "), strings.TrimRight(lines[22], " "), strings.TrimRight(lines[23], " ")}; !reflect.DeepEqual(got,
-		[]string{"macmini: upgrade flok there,", "no key relay (HEAD-e70d458)", "click or prefix g to focus"}) {
-		t.Fatalf("a long warning wraps, the status line stays: %q", got)
+	if got := []string{strings.TrimRight(lines[20], " "), strings.TrimRight(lines[21], " "), strings.TrimRight(lines[22], " "), strings.TrimRight(lines[23], " ")}; !reflect.DeepEqual(got,
+		[]string{"macmini: upgrade flok there,", "no key relay (HEAD-e70d458)", "", "click or prefix g to focus"}) {
+		t.Fatalf("a long warning wraps, a blank line, then the status line: %q", got)
 	}
 	for _, l := range lines {
 		if ansi.StringWidth(l) > 28 {
 			t.Fatalf("overrun: %q", l)
 		}
 	}
-	// longer than two lines: the second ends with an ellipsis; a second warning is counted
-	m.snap.Warnings = []string{"beta: the quick brown fox jumps over the lazy dog again and again and again", "gamma: down"}
+	// three lines fit whole; longer than that ends with an ellipsis; a second warning is counted
+	m.snap.Warnings = []string{"beta: the quick brown fox jumps over the lazy dog again and again and again"}
 	lines = render(m, 28, 24)
-	if !strings.HasPrefix(lines[21], "beta: the quick brown fox") || !strings.HasSuffix(strings.TrimRight(lines[22], " "), "…") || !strings.HasPrefix(lines[23], "click or prefix g") {
-		t.Fatalf("capped at two lines, the cut marked, the status line kept: %q", lines[21:24])
+	if !strings.HasPrefix(lines[19], "beta: the quick brown fox") || !strings.HasPrefix(lines[20], "jumps over the lazy dog") || strings.TrimRight(lines[21], " ") != "again and again and again" ||
+		strings.TrimRight(lines[22], " ") != "" || !strings.HasPrefix(lines[23], "click or prefix g") {
+		t.Fatalf("three lines, a blank, the status line: %q", lines[19:24])
 	}
-	if lines = render(m, 60, 24); !strings.HasSuffix(strings.TrimRight(lines[22], " "), "(+1)") {
-		t.Fatalf("further warnings are counted: %q", lines[22])
+	m.snap.Warnings = append(m.snap.Warnings, "gamma: down")
+	if lines = render(m, 60, 24); !strings.HasSuffix(strings.TrimRight(lines[21], " "), "(+1)") || strings.TrimRight(lines[22], " ") != "" {
+		t.Fatalf("further warnings are counted: %q", lines[21:24])
 	}
-	// no message: one line, the status alone; a short panel keeps one line with the message
+	m.snap.Warnings = []string{"beta: " + strings.Repeat("word ", 30)}
+	if lines = render(m, 28, 24); !strings.HasSuffix(strings.TrimRight(lines[21], " "), "…") || !strings.HasPrefix(lines[23], "click or prefix g") {
+		t.Fatalf("capped at three lines, the cut marked: %q", lines[19:24])
+	}
+	// no message: one line, the status alone; a short panel keeps the lines together, a very
+	// short one shows the message alone
 	m.snap.Warnings = nil
 	if lines = render(m, 28, 24); strings.TrimRight(lines[22], " ") != "" || !strings.HasPrefix(lines[23], "click or prefix g") {
 		t.Fatalf("no message: %q", lines[22:])
 	}
 	m.snap.Warnings = []string{"beta: Connection refused"}
+	if lines = render(m, 28, 14); len(lines) != 14 || !strings.HasPrefix(lines[12], "beta: Connection refused") || !strings.HasPrefix(lines[13], "click or prefix g") {
+		t.Fatalf("short panel, no blank line: %q", lines[12:])
+	}
 	if lines = render(m, 28, 8); len(lines) != 8 || !strings.HasPrefix(lines[7], "beta: Connection refused") {
-		t.Fatalf("short panel: %q", lines[len(lines)-1])
+		t.Fatalf("very short panel: %q", lines[len(lines)-1])
 	}
 	// the hints never overrun either: the right side goes first
 	if got := joinLR("⏎ front · c d r m x i", "? help", 24); got != "⏎ front · c d r m x i   " {
