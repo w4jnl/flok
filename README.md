@@ -379,10 +379,17 @@ One flok can show and drive tmux servers on other machines, over plain `ssh` wit
 
 ```sh
 flok host add beta jaro@beta              # full: flok on the host streams its agents
-flok host add gpu-1 gpu-1 --mode plain    # plain: tmux only, titles and screen rules
+flok host add gpu-1 --mode plain          # plain: tmux only, titles and screen rules
 flok host status                          # connect to each once and report
 flok doctor                               # probes every host: tmux, flok, hooks, terminfo
 ```
+
+The first argument of `flok host add` is flok's **name** for the host, the second the ssh
+**target**, passed to `ssh` exactly as typed. With the target alone the name is taken from it:
+an ssh alias as it is spelled (`flok host add dockerAMS` names it `dockerAMS`), the first label of
+a DNS name (`jaro@beta.example.org` → `beta`), an IPv4 address with dashes. Names are letters,
+digits, `_` and `-` (at most 32); they keep their case but match in any case, so `flok host
+connect dockerams` finds `dockerAMS`, and two names that differ only in case cannot both exist.
 
 Hosts live in `hosts.json` in the state dir, not in `config.toml`: `flok host add|set|remove|
 connect|disconnect` (or `c` on a row of the servers panel) changes the set while flok runs, and
@@ -559,7 +566,7 @@ flok explain [pane ...]     which screen-detection rules match agent panes
 flok install [--claude] [--copilot] [--tmux]
 flok doctor                 checks tmux, hooks, sounds, the outer session and every remote host
 flok completion bash|zsh
-flok host add <name> <user@host> [--mode full|plain] [--socket name] [--session name]
+flok host add [<name>] <user@host|ssh alias> [--mode full|plain] [--socket name] [--session name]
               [--flok /path/to/flok] [--term name] [--disabled]     register a remote host
 flok host set <name> [--mode full|plain] [--target t] [--socket s] [--session s] [--flok p] [--term t]
 flok host remove | connect | disconnect <name>
@@ -655,7 +662,7 @@ presence = false            # true: while keep-awake is on, also keep you "activ
                             # 60 s without input; needs Accessibility for your terminal app)
 
 [hosts]                     # remote tmux servers shown next to the local one; the list itself is
-                            # dynamic: flok host add <name> <user@host> (flok host --help)
+                            # dynamic: flok host add [<name>] <user@host> (flok host --help)
 ssh = "ssh"                 # ssh binary; aliases, jump hosts and keys come from ~/.ssh/config
 ssh_options = []            # extra ssh arguments, e.g. ["-o", "IdentitiesOnly=yes"]; yours come first
 connect_timeout_s = 10

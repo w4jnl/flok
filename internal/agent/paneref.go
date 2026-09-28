@@ -13,9 +13,11 @@ const LocalHost = "local"
 
 var (
 	paneIDRe = regexp.MustCompile(`^%\d+$`)
-	// HostNameRe is what a remote host may be called: short, lower-case, safe in file names,
-	// ssh command lines and tmux window names, never mistakable for an option.
-	HostNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,31}$`)
+	// HostNameRe is what a remote host may be called: short, safe in file names, ssh command
+	// lines and tmux window names, never mistakable for an option. Case is kept as typed (an ssh
+	// alias like dockerAMS), but names are unique regardless of case (hosts.Set.Add), because
+	// the per-host dirs live on a case-insensitive filesystem on macOS.
+	HostNameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$`)
 )
 
 // PaneRef names a pane on a host. Host "" is the local server.
@@ -32,7 +34,8 @@ func (r PaneRef) String() string {
 	return r.Host + ":" + r.ID
 }
 
-// ParsePaneRef accepts "%12", "local:%12" and "beta:%12".
+// ParsePaneRef accepts "%12", "local:%12" and "beta:%12". The host keeps the spelling given;
+// callers that compare it with registered hosts resolve it first (hosts.Set.Get ignores case).
 func ParsePaneRef(s string) (PaneRef, error) {
 	host, id := "", s
 	if i := strings.LastIndex(s, ":"); i >= 0 {
@@ -40,7 +43,7 @@ func ParsePaneRef(s string) (PaneRef, error) {
 		if !HostNameRe.MatchString(host) {
 			return PaneRef{}, errors.New("host name must match " + HostNameRe.String() + ", got " + strconvQuote(host))
 		}
-		if host == LocalHost {
+		if strings.EqualFold(host, LocalHost) {
 			host = ""
 		}
 	}

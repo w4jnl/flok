@@ -10,6 +10,7 @@ import (
 	"github.com/w4jnl/flok/internal/agent"
 	"github.com/w4jnl/flok/internal/config"
 	"github.com/w4jnl/flok/internal/focus"
+	"github.com/w4jnl/flok/internal/hosts"
 	"github.com/w4jnl/flok/internal/launcher"
 	"github.com/w4jnl/flok/internal/nav"
 	"github.com/w4jnl/flok/internal/snapshot"
@@ -35,6 +36,13 @@ func runGoto(cfg config.Config, args []string) int {
 				return report(fmt.Errorf("goto: unexpected argument %q (want a pane id like %%12 or beta:%%12)", a))
 			}
 			pane, host = ref.ID, ref.Host
+		}
+	}
+	if host != "" { // the sidebar matches the registered spelling: dockerams:%3 → dockerAMS
+		if set, err := hosts.Load(config.StateDir()); err == nil {
+			if h, ok := set.Get(host); ok {
+				host = h.Name
+			}
 		}
 	}
 	rt, err := launcher.ReadRuntime()

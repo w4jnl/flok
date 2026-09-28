@@ -7,11 +7,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"syscall"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/w4jnl/flok/internal/agent"
 	"github.com/w4jnl/flok/internal/state"
@@ -64,16 +68,73 @@ var (
 	termRe    = socketRe
 )
 
-// ValidateName checks a host name: short, lower-case, safe in file names, ssh command lines and
-// tmux window names, and not the local server's label.
+// ValidateName checks a host name: short, safe in file names, ssh command lines and tmux window
+// names, and not the local server's label. The name is flok's label for the host; ssh gets the
+// target, so an ssh alias works as a name in its own spelling.
 func ValidateName(name string) error {
-	if name == agent.LocalHost {
+	if strings.EqualFold(name, agent.LocalHost) {
 		return fmt.Errorf("%q names the local server", name)
 	}
 	if !agent.HostNameRe.MatchString(name) {
-		return fmt.Errorf("host name %q: use 1-32 of a-z 0-9 _ -, starting with a letter or digit", name)
+		msg := fmt.Sprintf("host name %q: use 1-32 letters, digits, _ and -, starting with a letter or digit", name)
+		if alt := SuggestName(name); alt != "" {
+			msg += fmt.Sprintf(" (e.g. %s)", alt)
+		}
+		return errors.New(msg)
 	}
 	return nil
+}
+
+// SuggestName turns s into a valid host name: every run of other characters becomes "-",
+// leading and trailing separators go, and the result is cut to 32. "" when nothing valid is left.
+func SuggestName(s string) string {
+	var b strings.Builder
+	dash := false
+	for _, r := range s {
+		if r < utf8.RuneSelf && (r == '_' || r == '-' || unicode.IsLetter(r) || unicode.IsDigit(r)) {
+			b.WriteRune(r)
+			dash = false
+			continue
+		}
+		if !dash {
+			b.WriteByte('-')
+			dash = true
+		}
+	}
+	name := strings.TrimLeft(b.String(), "-_")
+	if len(name) > 32 {
+		name = name[:32]
+	}
+	name = strings.TrimRight(name, "-")
+	if name == "" || !agent.HostNameRe.MatchString(name) || strings.EqualFold(name, agent.LocalHost) {
+		return ""
+	}
+	return name
+}
+
+// NameFromTarget derives a host name from an ssh target for `flok host add <target>`: the user
+// and a port go, a DNS name gives its first label (jaro@beta.example.org → beta), an IPv4
+// address its dashed form, and an alias stays as typed (dockerAMS). IPv6 needs an explicit name.
+func NameFromTarget(target string) (string, error) {
+	host := target
+	if i := strings.LastIndex(host, "@"); i >= 0 {
+		host = host[i+1:]
+	}
+	if strings.Count(host, ":") == 1 {
+		host = host[:strings.Index(host, ":")]
+	}
+	ip := net.ParseIP(host)
+	if (ip != nil && ip.To4() == nil) || strings.Contains(host, ":") { // IPv6
+		return "", fmt.Errorf("cannot name a host after %q; give it a name: flok host add <name> %s", target, target)
+	}
+	if ip == nil {
+		host, _, _ = strings.Cut(host, ".")
+	}
+	name := SuggestName(host)
+	if name == "" {
+		return "", fmt.Errorf("cannot name a host after %q; give it a name: flok host add <name> %s", target, target)
+	}
+	return name, nil
 }
 
 // Validate checks every field that ends up in a command line. Fixed charsets and no leading
@@ -105,10 +166,10 @@ func Validate(h Host) error {
 	return nil
 }
 
-// Get returns the host called name.
+// Get returns the host called name, in any case; the result carries the registered spelling.
 func (s Set) Get(name string) (Host, bool) {
 	for _, h := range s.Hosts {
-		if h.Name == name {
+		if strings.EqualFold(h.Name, name) {
 			return h, true
 		}
 	}
@@ -135,27 +196,29 @@ func (s Set) Names() []string {
 	return out
 }
 
-// Add appends a validated host; a name in use is an error.
+// Add appends a validated host; a name in use, in any case, is an error (the per-host dirs
+// live on a case-insensitive filesystem on macOS).
 func (s *Set) Add(h Host) error {
 	if err := Validate(h); err != nil {
 		return err
 	}
-	if _, ok := s.Get(h.Name); ok {
-		return fmt.Errorf("host %q exists; flok host set %s … changes it", h.Name, h.Name)
+	if old, ok := s.Get(h.Name); ok {
+		return fmt.Errorf("host %q exists; flok host set %s … changes it", old.Name, old.Name)
 	}
 	s.Hosts = append(s.Hosts, h)
 	return nil
 }
 
-// Set replaces the host called name with fn's edit of it, validated; a missing host is an error.
+// Set replaces the host called name (in any case) with fn's edit of it, validated; a missing
+// host is an error. The name itself does not change.
 func (s *Set) Set(name string, fn func(*Host)) error {
 	for i := range s.Hosts {
-		if s.Hosts[i].Name != name {
+		if !strings.EqualFold(s.Hosts[i].Name, name) {
 			continue
 		}
 		h := s.Hosts[i]
 		fn(&h)
-		h.Name = name
+		h.Name = s.Hosts[i].Name
 		if err := Validate(h); err != nil {
 			return err
 		}
@@ -170,10 +233,10 @@ func AttachChanged(a, b Host) bool {
 	return a.Target != b.Target || a.Socket != b.Socket || a.Session != b.Session || a.Term != b.Term
 }
 
-// Remove drops the host called name and says whether it was there.
+// Remove drops the host called name (in any case) and says whether it was there.
 func (s *Set) Remove(name string) bool {
 	for i, h := range s.Hosts {
-		if h.Name == name {
+		if strings.EqualFold(h.Name, name) {
 			s.Hosts = append(s.Hosts[:i], s.Hosts[i+1:]...)
 			return true
 		}
@@ -181,10 +244,10 @@ func (s *Set) Remove(name string) bool {
 	return false
 }
 
-// SetEnabled flips a host's enabled flag and says whether the host exists.
+// SetEnabled flips a host's enabled flag (name in any case) and says whether the host exists.
 func (s *Set) SetEnabled(name string, on bool) bool {
 	for i := range s.Hosts {
-		if s.Hosts[i].Name == name {
+		if strings.EqualFold(s.Hosts[i].Name, name) {
 			s.Hosts[i].Enabled = on
 			return true
 		}

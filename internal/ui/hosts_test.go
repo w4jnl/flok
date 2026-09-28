@@ -17,6 +17,7 @@ import (
 	"github.com/w4jnl/flok/internal/merge"
 	"github.com/w4jnl/flok/internal/remote"
 	"github.com/w4jnl/flok/internal/remote/proto"
+	"github.com/w4jnl/flok/internal/state"
 )
 
 // multiHostModel: local with one idle agent, beta (full, connected: one blocked, one working,
@@ -400,5 +401,18 @@ func TestCursorBarWhenFocused(t *testing.T) {
 	m.panel = panelSpaces
 	if lines := render(m, 28, 40); !strings.HasPrefix(lines[7], "›○ Alpha") {
 		t.Fatalf("session cursor: %q", lines[7])
+	}
+}
+
+// Mailbox requests may spell a host in any case (flok goto DOCKERams:%3 from a script); the
+// sidebar resolves it to the registered name before its exact comparisons.
+func TestRequestsMatchHostsInAnyCase(t *testing.T) {
+	m := multiHostModel(t)
+	m.front = "beta" // no outer here: only the front host's goto builds a command
+	if cmd := m.runRequest(state.Request{Cmd: "goto", Host: "BETA", Pane: "%1"}); cmd == nil || m.errText != "" {
+		t.Fatalf("goto BETA:%%1 must reach beta's agent: cmd=%v err=%q", cmd != nil, m.errText)
+	}
+	if cmd := m.runRequest(state.Request{Cmd: "goto", Host: "nope", Pane: "%1"}); cmd != nil || m.errText == "" {
+		t.Fatalf("an unknown host still fails: cmd=%v err=%q", cmd != nil, m.errText)
 	}
 }

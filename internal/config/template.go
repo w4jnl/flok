@@ -94,7 +94,7 @@ const Template = `# flok configuration - https://github.com/w4jnl/flok
                               # event after 60 s without input; needs Accessibility for your terminal
 
 [hosts]                       # remote tmux servers shown next to the local one; the list itself is
-                              # dynamic: flok host add <name> <user@host> (flok host --help)
+                              # dynamic: flok host add [<name>] <user@host> (flok host --help)
 # ssh = "ssh"                 # ssh binary; aliases, jump hosts and keys come from ~/.ssh/config
 # ssh_options = []            # extra ssh arguments, e.g. ["-o", "IdentitiesOnly=yes"]
 # connect_timeout_s = 10

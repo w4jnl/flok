@@ -170,7 +170,11 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
   `Build` is not idempotent (per-pane counters advance per call), so multi-host views are joined
   above it by `merge.Federate`, which stamps `Host` on agents, spaces and focus (`""` = local, so
   single-host keys, files and JSON stay byte-identical) and re-sorts; `agent.PaneRef` (`%12`,
-  `beta:%12`) is the cross-host pane key.
+  `beta:%12`) is the cross-host pane key. Host names keep their case (an ssh alias such as
+  `dockerAMS`) but are unique and looked up regardless of case (`hosts.Set.Get`, the per-host
+  dirs share a case-insensitive filesystem on macOS); the merge, snapshot and request mailbox
+  compare hosts exactly, so anything taking a typed name resolves it to the registered spelling
+  first (`flok host …`, `flok goto`, `runRequest`).
 - `internal/rules` is a port of herdr's manifest engine. Manifests under `manifests/*.toml` are
   embedded and **copied verbatim from herdr under Apache-2.0** (see `NOTICE`); edit only the
   attribution header, otherwise drop a newer herdr file in. Load order is bundled → herdr cache
