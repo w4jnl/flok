@@ -26,11 +26,14 @@ import (
 
 const hostUsage = `usage: flok host <command>
 
-  add <name> <target> [--mode full|plain] [--socket name] [--session name]
+  add [<name>] <target> [--mode full|plain] [--socket name] [--session name]
                       [--flok /path/to/flok] [--term name] [--disabled]
               register a remote tmux server; <target> is what ssh accepts (alias, host,
-              user@host). full runs flok serve on the host (hook states, needs flok there),
-              plain drives its tmux over ssh (titles and screen rules only)
+              user@host) and goes to ssh as typed. <name> is flok's label for it (letters,
+              digits, _ -; any case, matched in any case), by default taken from the target
+              (dockerAMS → dockerAMS, jaro@beta.example.org → beta). full runs flok serve on
+              the host (hook states, needs flok there), plain drives its tmux over ssh (titles
+              and screen rules only)
                       --term sets TERM for the attach when the host lacks the tmux-256color
                       terminfo (flok doctor tells; screen-256color usually works)
   set <name> [--mode full|plain] [--target t] [--socket s] [--session s] [--flok p] [--term t]
@@ -157,11 +160,19 @@ func (c hostCmd) add(args []string) int {
 			pos = append(pos, a)
 		}
 	}
-	if len(pos) != 2 {
-		fmt.Fprintf(c.errw, "flok host add: need <name> and <target>\n\n%s\n", hostUsage)
+	switch len(pos) {
+	case 1:
+		name, err := hosts.NameFromTarget(pos[0])
+		if err != nil {
+			return c.fail(err)
+		}
+		h.Name, h.Target = name, pos[0]
+	case 2:
+		h.Name, h.Target = pos[0], pos[1]
+	default:
+		fmt.Fprintf(c.errw, "flok host add: need [<name>] <target>\n\n%s\n", hostUsage)
 		return 2
 	}
-	h.Name, h.Target = pos[0], pos[1]
 	if _, err := hosts.Update(c.dir, func(s *hosts.Set) error { return s.Add(h) }); err != nil {
 		return c.fail(err)
 	}
@@ -183,9 +194,12 @@ func (c hostCmd) remove(args []string) int {
 		return c.fail(err)
 	}
 	if _, err := hosts.Update(c.dir, func(s *hosts.Set) error {
-		if !s.Remove(name) {
+		h, ok := s.Get(name)
+		if !ok {
 			return fmt.Errorf("no host %q (flok host list)", name)
 		}
+		name = h.Name // the registered spelling names its dir
+		s.Remove(name)
 		return nil
 	}); err != nil {
 		return c.fail(err)
@@ -209,9 +223,12 @@ func (c hostCmd) setEnabled(args []string, on bool) int {
 		return c.fail(err)
 	}
 	if _, err := hosts.Update(c.dir, func(s *hosts.Set) error {
-		if !s.SetEnabled(name, on) {
+		h, ok := s.Get(name)
+		if !ok {
 			return fmt.Errorf("no host %q (flok host list)", name)
 		}
+		name = h.Name
+		s.SetEnabled(name, on)
 		return nil
 	}); err != nil {
 		return c.fail(err)
@@ -245,7 +262,7 @@ func (c hostCmd) list(args []string) int {
 		return 2
 	}
 	if len(set.Hosts) == 0 {
-		fmt.Fprintln(c.out, "no remote hosts; add one with: flok host add <name> <user@host>")
+		fmt.Fprintln(c.out, "no remote hosts; add one with: flok host add <ssh alias|user@host> (or: flok host add <name> <target>)")
 		return 0
 	}
 	tw := tabwriter.NewWriter(c.out, 0, 8, 2, ' ', 0)
@@ -410,9 +427,10 @@ func (c hostCmd) servers() ([]string, error) {
 	return order, nil
 }
 
-// resolveServer turns "local", a host name or a 1-based position into a host ("" = local).
+// resolveServer turns "local", a host name (in any case) or a 1-based position into a host as
+// registered ("" = local).
 func (c hostCmd) resolveServer(arg string) (string, error) {
-	if arg == agent.LocalHost {
+	if strings.EqualFold(arg, agent.LocalHost) {
 		return "", nil
 	}
 	if n, err := strconv.Atoi(arg); err == nil {
@@ -432,10 +450,11 @@ func (c hostCmd) resolveServer(arg string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if _, ok := set.Get(arg); !ok {
+	h, ok := set.Get(arg)
+	if !ok {
 		return "", fmt.Errorf("no host %q (flok host list)", arg)
 	}
-	return arg, nil
+	return h.Name, nil
 }
 
 // requestFront asks the running sidebar to bring host to the front.

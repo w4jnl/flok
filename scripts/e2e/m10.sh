@@ -258,7 +258,9 @@ expect "... with beta's pane really in window 0" "$BETA_PANE" "$(OUT list-panes 
 for _ in $(seq 1 30); do tmux -L e2e-beta display -p '#{window_name}' | grep -q agent && break; sleep 0.1; done
 expect "... and selects the agent window on beta" '^agent$' "$(tmux -L e2e-beta display -p '#{window_name}')"
 expect "... and marks the pane seen on beta" 'seen_at' "$(cat "$T"/hosts/beta/state/seen/*.json 2>/dev/null)"
-expect "goto rejects a bad host ref" 'unexpected argument' "$("$BIN" goto 'Beta:%1' 2>&1 || true)"
+expect "goto rejects a bad host ref" 'unexpected argument' "$("$BIN" goto '-x:%1' 2>&1 || true)"
+rc=0; out=$("$BIN" goto "BETA:$BETA_AGENT" --no-focus 2>&1) || rc=$?   # names match in any case, the request carries the registered spelling
+expect "goto accepts a host ref spelled in another case" '^0 $' "$rc $out"
 "$BIN" host front local >/dev/null
 for _ in $(seq 1 50); do [ "$(rt "r.get('front_host','')")" = "" ] && break; sleep 0.1; done
 tmux -L e2e-beta select-window -t Remote:0

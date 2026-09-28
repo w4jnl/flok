@@ -36,7 +36,8 @@ func TestHostCommandLifecycle(t *testing.T) {
 	run(1, "add", "local", "x")                   // reserved name
 	run(2, "add", "delta", "-oProxyCommand=evil") // an option-like target never reaches the registry
 	run(1, "add", "delta", "beta;rm")             // the validator refuses the rest
-	run(2, "add", "delta")                        // missing target
+	run(2, "add")                                 // missing target
+	run(2, "add", "delta", "d", "extra")          // one positional too many
 	run(2, "add", "delta", "d", "--mode")         // flag without value
 	run(2, "add", "delta", "d", "--port", "22")   // unknown flag
 	run(2, "bogus")                               // unknown subcommand
@@ -117,5 +118,67 @@ func TestHostCommandLifecycle(t *testing.T) {
 	}
 	if strings.Join(hostsSeen, " ") != "front:beta front:beta front:beta front:beta" {
 		t.Fatalf("rotation requests %v", hostsSeen)
+	}
+}
+
+// An ssh alias is usable as the name in its own spelling; every command finds the host in any
+// case and answers with the registered spelling, and the target reaches ssh as typed.
+func TestHostNamesAnyCase(t *testing.T) {
+	dir := t.TempDir()
+	var out, errw bytes.Buffer
+	c := hostCmd{dir: dir, now: time.Now, out: &out, errw: &errw}
+	run := func(want int, args ...string) string {
+		t.Helper()
+		out.Reset()
+		errw.Reset()
+		if rc := c.run(args); rc != want {
+			t.Fatalf("flok host %v: rc %d want %d\nstdout: %s\nstderr: %s", args, rc, want, out.String(), errw.String())
+		}
+		return out.String() + errw.String()
+	}
+	if s := run(0, "add", "dockerAMS", "--mode", "plain"); !strings.HasPrefix(s, "added dockerAMS (dockerAMS, plain)") {
+		t.Fatalf("one-argument add names the host after the target: %q", s)
+	}
+	if s := run(1, "add", "dockerams", "other"); !strings.Contains(s, `"dockerAMS" exists`) {
+		t.Fatalf("case-only duplicate: %q", s)
+	}
+	if s := run(0, "add", "jaro@beta.example.org"); !strings.HasPrefix(s, "added beta (jaro@beta.example.org, full)") {
+		t.Fatalf("derived from a DNS name: %q", s)
+	}
+	if s := run(1, "add", "docker.ams", "x"); !strings.Contains(s, "e.g. docker-ams") {
+		t.Fatalf("invalid name suggestion: %q", s)
+	}
+	if s := run(1, "add", "user@2001:db8::1"); !strings.Contains(s, "give it a name") {
+		t.Fatalf("IPv6 target without a name: %q", s)
+	}
+	run(1, "add", "Local", "x")
+	if s := run(0, "disconnect", "DOCKERams"); !strings.HasPrefix(s, "dockerAMS disabled") {
+		t.Fatalf("disconnect: %q", s)
+	}
+	if s := run(0, "connect", "dockerams"); !strings.HasPrefix(s, "dockerAMS enabled") {
+		t.Fatalf("connect: %q", s)
+	}
+	if s := run(0, "set", "DockerAms", "--session", "work"); s != "dockerAMS: dockerAMS, plain\n" {
+		t.Fatalf("set: %q", s)
+	}
+	if s := run(0, "list", "--names"); s != "dockerAMS\nbeta\n" {
+		t.Fatalf("names: %q", s)
+	}
+	set, _ := hosts.Load(dir)
+	if h := set.Hosts[0]; h.Name != "dockerAMS" || h.Target != "dockerAMS" || !h.Enabled || h.Session != "work" {
+		t.Fatalf("registered: %+v", h)
+	}
+	for arg, want := range map[string]string{"DOCKERAMS": "dockerAMS", "Beta": "beta", "LOCAL": "", "2": "dockerAMS"} {
+		if got, err := c.resolveServer(arg); err != nil || got != want {
+			t.Errorf("resolveServer(%q) = %q, %v; want %q", arg, got, err, want)
+		}
+	}
+	cache := hosts.Dir(dir, "dockerAMS")
+	_ = os.MkdirAll(filepath.Join(cache, "agents"), 0o755)
+	if s := run(0, "remove", "dockerams"); s != "removed dockerAMS\n" {
+		t.Fatalf("remove: %q", s)
+	}
+	if _, err := os.Stat(cache); !os.IsNotExist(err) {
+		t.Fatal("remove prunes the registered spelling's cache dir, whatever the case typed")
 	}
 }

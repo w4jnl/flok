@@ -34,6 +34,9 @@ func (m Model) drainRequests() tea.Cmd {
 // runRequest performs one request: goto moves to an agent pane on any host (bringing the host
 // to the front first), front brings a host's work pane next to the sidebar.
 func (m *Model) runRequest(r state.Request) tea.Cmd {
+	if h, ok := m.hostSet.Get(r.Host); ok && r.Host != "" {
+		r.Host = h.Name // requests may spell a host in any case
+	}
 	switch r.Cmd {
 	case "goto":
 		for _, a := range m.fed.Agents {

@@ -13,9 +13,11 @@ updates this file first. Dates are the tag dates.
   info screen and the sidebar footer instead of failing silently (the serve's hello now lists
   its features).
 - Remote hosts: one local flok now shows and drives tmux servers on other machines over ssh.
-  `flok host add <name> <user@host> [--mode full|plain]` registers a host (`hosts.json` in the
-  state dir; `set` changes a host in place, `remove`, `connect`, `disconnect`, `list`,
-  `status`); `[hosts]` in config.toml
+  `flok host add [<name>] <user@host|ssh alias> [--mode full|plain]` registers a host
+  (`hosts.json` in the state dir; `set` changes a host in place, `remove`, `connect`,
+  `disconnect`, `list`, `status`). The target goes to ssh as typed; the name defaults to the
+  target's alias or first DNS label, keeps its case (`dockerAMS`) and matches in any case;
+  `[hosts]` in config.toml
   holds the ssh defaults. Mode `full` runs `flok serve --stdio` on the host (its hooks, Claude
   registry and screen rules, streamed back; hooks there stay silent while served and the sounds
   play here), mode `plain` drives the host's tmux over ssh with titles and screen rules only.

@@ -17,7 +17,8 @@ func TestValidate(t *testing.T) {
 	}
 	for name, bad := range map[string]Host{
 		"local name":     {Name: "local", Target: "beta", Mode: ModeFull},
-		"upper name":     {Name: "Beta", Target: "beta", Mode: ModeFull},
+		"Local name":     {Name: "Local", Target: "beta", Mode: ModeFull},
+		"dotted name":    {Name: "docker.ams", Target: "beta", Mode: ModeFull},
 		"leading dash":   {Name: "-x", Target: "beta", Mode: ModeFull},
 		"long name":      {Name: strings.Repeat("a", 33), Target: "beta", Mode: ModeFull},
 		"target option":  {Name: "beta", Target: "-oProxyCommand=x", Mode: ModeFull},
@@ -32,6 +33,12 @@ func TestValidate(t *testing.T) {
 		if err := Validate(bad); err == nil {
 			t.Errorf("%s: %+v must be rejected", name, bad)
 		}
+	}
+	if err := Validate(Host{Name: "dockerAMS", Target: "dockerAMS", Mode: ModeFull}); err != nil {
+		t.Errorf("a mixed-case name (an ssh alias) is valid: %v", err)
+	}
+	if err := ValidateName("docker.ams"); err == nil || !strings.Contains(err.Error(), "(e.g. docker-ams)") {
+		t.Errorf("an invalid name suggests a valid one: %v", err)
 	}
 	for _, target := range []string{"beta", "10.0.0.2", "user@host", "user@2001:db8::1", "jump-host_1"} {
 		if err := Validate(Host{Name: "b", Target: target, Mode: ModePlain, Socket: "default", Flok: "/opt/homebrew/bin/flok", Session: "work-1", Term: "screen-256color"}); err != nil {
@@ -119,5 +126,56 @@ func TestUpdateSerializes(t *testing.T) {
 	data, _ := os.ReadFile(filepath.Join(dir, File))
 	if json.Unmarshal(data, &check) != nil {
 		t.Fatal("the file must always be complete JSON")
+	}
+}
+
+func TestNamesMatchInAnyCase(t *testing.T) {
+	var s Set
+	if err := s.Add(Host{Name: "dockerAMS", Target: "dockerAMS", Mode: ModeFull, Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	// one host per name regardless of case: the per-host dirs share a case-insensitive filesystem on macOS
+	if err := s.Add(Host{Name: "dockerams", Target: "x", Mode: ModeFull}); err == nil || !strings.Contains(err.Error(), `"dockerAMS" exists`) {
+		t.Fatalf("a case-only duplicate must be refused with the registered spelling: %v", err)
+	}
+	if h, ok := s.Get("DOCKERams"); !ok || h.Name != "dockerAMS" {
+		t.Fatalf("Get ignores case and returns the registered spelling: %+v %v", h, ok)
+	}
+	if !s.SetEnabled("dockerams", false) || s.Hosts[0].Enabled {
+		t.Fatalf("SetEnabled ignores case: %+v", s.Hosts[0])
+	}
+	if err := s.Set("DockerAms", func(h *Host) { h.Session, h.Name = "work", "renamed" }); err != nil {
+		t.Fatal(err)
+	}
+	if h := s.Hosts[0]; h.Name != "dockerAMS" || h.Session != "work" || h.Target != "dockerAMS" {
+		t.Fatalf("Set keeps the name as registered and the target as typed: %+v", h)
+	}
+	if !s.Remove("DOCKERAMS") || len(s.Hosts) != 0 {
+		t.Fatalf("Remove ignores case: %+v", s.Hosts)
+	}
+}
+
+func TestNameFromTarget(t *testing.T) {
+	for target, want := range map[string]string{
+		"dockerAMS":             "dockerAMS", // an ssh alias as typed
+		"jaro@beta.example.org": "beta",
+		"beta:2222":             "beta",
+		"user@gpu-1.lab:22":     "gpu-1",
+		"10.0.0.5":              "10-0-0-5",
+		"root@10.0.0.5:2222":    "10-0-0-5",
+		"jump-host_1":           "jump-host_1",
+		"-x.example.org":        "x",
+		strings.Repeat("a", 40): strings.Repeat("a", 32),
+	} {
+		if got, err := NameFromTarget(target); err != nil || got != want {
+			t.Errorf("%q: got %q, %v; want %q", target, got, err, want)
+		} else if err := ValidateName(got); err != nil {
+			t.Errorf("%q: derived %q is invalid: %v", target, got, err)
+		}
+	}
+	for _, target := range []string{"user@2001:db8::1", "::1", "local", "user@LOCAL.example.org", "@", "..."} {
+		if got, err := NameFromTarget(target); err == nil {
+			t.Errorf("%q: want an error asking for a name, got %q", target, got)
+		}
 	}
 }
