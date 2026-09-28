@@ -17,7 +17,7 @@ type layout struct {
 	hostsTop, hostsRows   int // servers panel (multi-host only)
 	spacesTop, spacesRows int
 	agentsTop, agentsRows int // agentsRows counts agents, each perAgent lines tall
-	footerY               int
+	footerY, footerRows   int // the footer starts at footerY and is footerRows tall (message lines + status line)
 	perAgent              int
 }
 
@@ -62,7 +62,8 @@ func (m Model) layout() layout {
 	if nH > 0 {
 		extra = 1 + hostsRows + 1
 	}
-	avail := h - 4 - brand - extra // two headers, one blank line, footer, brand line
+	fr := len(m.footerLines(m.width))
+	avail := h - 3 - fr - brand - extra // two headers, one blank line, the footer, brand line
 	if avail < 1+per {
 		avail = 1 + per
 	}
@@ -92,7 +93,7 @@ func (m Model) layout() layout {
 		a = 1
 	}
 	return layout{brandRows: brand, hostsTop: 1 + brand, hostsRows: hostsRows, spacesTop: 1 + brand + extra, spacesRows: s,
-		agentsTop: 1 + brand + extra + s + 2, agentsRows: a, footerY: h - 1, perAgent: per}
+		agentsTop: 1 + brand + extra + s + 2, agentsRows: a, footerY: h - fr, footerRows: fr, perAgent: per}
 }
 
 // agentRows is the configured number of lines per agent row, clamped to 1..2.
@@ -158,17 +159,52 @@ func pad(s string, w int, base lipgloss.Style) string {
 	return ansi.Truncate(s, w, "")
 }
 
+// joinLR puts left and right at the two ends of a w-wide line. When both do not fit, the
+// right side (the lesser hint) goes and the left is cut, never overrun.
 func joinLR(left, right string, w int) string {
 	lw, rw := ansi.StringWidth(left), ansi.StringWidth(right)
 	if lw+rw+1 > w {
-		left = ansi.Truncate(left, w-rw-1, "…")
-		lw = ansi.StringWidth(left)
+		return pad(ansi.Truncate(left, w, "…"), w, lipgloss.NewStyle())
 	}
-	gap := w - lw - rw
-	if gap < 1 {
-		gap = 1
+	return left + strings.Repeat(" ", w-lw-rw) + right
+}
+
+// wrapWords breaks plain text into lines of at most w cells at spaces (a longer word is cut),
+// at most maxLines of them: what does not fit ends the last line with an ellipsis.
+func wrapWords(s string, w, maxLines int) []string {
+	if w < 1 {
+		w = 1
 	}
-	return left + strings.Repeat(" ", gap) + right
+	var lines []string
+	cur := ""
+	for _, word := range strings.Fields(s) {
+		for ansi.StringWidth(word) > w { // a word wider than the line: hard cut
+			if cur != "" {
+				lines = append(lines, cur)
+				cur = ""
+			}
+			head := ansi.Truncate(word, w, "")
+			lines = append(lines, head)
+			word = strings.TrimPrefix(word, head)
+		}
+		switch {
+		case cur == "":
+			cur = word
+		case ansi.StringWidth(cur)+1+ansi.StringWidth(word) <= w:
+			cur += " " + word
+		default:
+			lines = append(lines, cur)
+			cur = word
+		}
+	}
+	if cur != "" {
+		lines = append(lines, cur)
+	}
+	if maxLines > 0 && len(lines) > maxLines {
+		rest := strings.Join(lines[maxLines-1:], " ")
+		lines = append(lines[:maxLines-1], ansi.Truncate(rest, w, "…"))
+	}
+	return lines
 }
 
 func (m Model) viewFull() string {
@@ -218,13 +254,14 @@ func (m Model) viewFull() string {
 			}
 		}
 	}
-	for len(lines) < m.height-1 {
+	foot := m.footerLines(w)
+	for len(lines) < m.height-len(foot) {
 		lines = append(lines, blank)
 	}
-	if len(lines) > m.height-1 {
-		lines = lines[:m.height-1]
+	if len(lines) > m.height-len(foot) {
+		lines = lines[:m.height-len(foot)]
 	}
-	lines = append(lines, m.footer(w))
+	lines = append(lines, foot...)
 	return strings.Join(lines, "\n")
 }
 
@@ -393,28 +430,51 @@ func genericTitle(title string) bool {
 	return false
 }
 
-func (m Model) footer(w int) string {
+// footerMsgRows is how many lines a footer message (an error, a warning) may take.
+const footerMsgRows = 2
+
+// footerLines is the bottom of the panel: a message when there is one (an error, else the
+// first warning), wrapped over up to footerMsgRows lines instead of cut off, and under it the
+// status line, always: the keys that work here, or why they do not. A very short panel keeps
+// one line and shows the message alone.
+func (m Model) footerLines(w int) []string {
 	t := m.theme
-	dim := lipgloss.NewStyle().Foreground(t.Comment)
-	if m.confirmRemove != "" {
-		return pad(lipgloss.NewStyle().Foreground(t.Pink).Render("remove "+m.confirmRemove+"? y/n"), w, lipgloss.NewStyle())
+	plain, dim := lipgloss.NewStyle(), lipgloss.NewStyle().Foreground(t.Comment)
+	msg, colour := "", t.Orange
+	switch {
+	case m.errText != "":
+		msg, colour = m.errText, t.Red
+	case len(m.snap.Warnings) > 0:
+		msg = m.snap.Warnings[0]
+		if n := len(m.snap.Warnings) - 1; n > 0 {
+			msg += fmt.Sprintf(" (+%d)", n)
+		}
 	}
-	if m.errText != "" {
-		return pad(lipgloss.NewStyle().Foreground(t.Red).Render(ansi.Truncate(m.errText, w, "…")), w, lipgloss.NewStyle())
+	var status string
+	switch {
+	case m.confirmRemove != "":
+		status = pad(lipgloss.NewStyle().Foreground(t.Pink).Render("remove "+m.confirmRemove+"? y/n"), w, plain)
+	case !m.focused: // keys go to the work pane until the sidebar is clicked or `prefix g` is pressed
+		status = pad(dim.Render(ansi.Truncate("click or prefix g to focus", w, "…")), w, plain)
+	case m.prefixPending:
+		status = pad(lipgloss.NewStyle().Foreground(t.Pink).Render(m.prefixTmux+" …"), w, plain)
+	case m.panel == panelHosts && m.multiHost():
+		status = joinLR(dim.Render("⏎ front · c d r m x i"), dim.Render("? help"), w)
+	default:
+		status = joinLR(dim.Render("j/k ⏎ ⇥ 1-9"), dim.Render("esc · ? help"), w)
 	}
-	if len(m.snap.Warnings) > 0 {
-		return pad(lipgloss.NewStyle().Foreground(t.Orange).Render(ansi.Truncate(m.snap.Warnings[0], w, "…")), w, lipgloss.NewStyle())
+	if msg == "" {
+		return []string{status}
 	}
-	if !m.focused { // keys go to the work pane until the sidebar is clicked or `prefix g` is pressed
-		return pad(dim.Render("click or prefix g to focus"), w, lipgloss.NewStyle())
+	style := lipgloss.NewStyle().Foreground(colour)
+	if m.height < 10 { // no room for two footers: the message matters more
+		return []string{pad(style.Render(ansi.Truncate(msg, w, "…")), w, plain)}
 	}
-	if m.prefixPending {
-		return pad(lipgloss.NewStyle().Foreground(t.Pink).Render(m.prefixTmux+" …"), w, lipgloss.NewStyle())
+	var lines []string
+	for _, l := range wrapWords(msg, w, footerMsgRows) {
+		lines = append(lines, pad(style.Render(l), w, plain))
 	}
-	if m.panel == panelHosts && m.multiHost() {
-		return joinLR(dim.Render("⏎ front · c d r m x i"), dim.Render("? help"), w)
-	}
-	return joinLR(dim.Render("j/k ⏎ ⇥ 1-9"), dim.Render("esc · ? help"), w)
+	return append(lines, status)
 }
 
 func (m Model) viewRail() string {

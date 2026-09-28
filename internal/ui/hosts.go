@@ -255,7 +255,7 @@ func (m *Model) refederate() {
 			}
 			// a host whose flok cannot relay keys says so too: nothing else would
 			if v, ok := m.remotes[h.Name]; ok && h.Enabled && m.d.Cfg.Hosts.Keys && v.state == remote.Connected && v.hello != nil && !v.hello.Has(proto.FeatureKeys) {
-				m.snap.Warnings = append(m.snap.Warnings, h.Name+": flok"+versionWord(v.hello.Version)+" there has no key relay, upgrade it")
+				m.snap.Warnings = append(m.snap.Warnings, h.Name+": upgrade flok there, no key relay ("+strings.TrimSpace(versionWord(v.hello.Version))+")")
 			}
 		}
 	}

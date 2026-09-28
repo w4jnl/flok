@@ -109,8 +109,9 @@ func TestServersPanelAndFederatedAgents(t *testing.T) {
 	if len(m.snap.Agents) != 1 || !strings.HasPrefix(lines[3], " ✗ beta") || !strings.Contains(lines[3], "retry in") || !m.retryCountdown() {
 		t.Fatalf("unreachable: agents=%d row=%q", len(m.snap.Agents), lines[3])
 	}
-	if !reflect.DeepEqual(m.snap.Warnings, []string{"beta: Connection refused"}) || !strings.HasPrefix(lines[len(lines)-1], "beta: Connection refused") {
-		t.Fatalf("the footer names the reason: warnings=%v footer=%q", m.snap.Warnings, lines[len(lines)-1])
+	if !reflect.DeepEqual(m.snap.Warnings, []string{"beta: Connection refused"}) || !strings.HasPrefix(lines[len(lines)-2], "beta: Connection refused") ||
+		!strings.HasPrefix(lines[len(lines)-1], "click or prefix g to focus") {
+		t.Fatalf("the footer names the reason above the status line: warnings=%v footer=%q", m.snap.Warnings, lines[len(lines)-2:])
 	}
 	m.onRemote(remote.Msg{Host: "beta", State: remote.NoServer, Detail: "no server running on /tmp/tmux-0/default"})
 	if lines = render(m, 28, 40); strings.TrimRight(lines[3], " ") != " ○ beta full  no tmux server" {
@@ -277,7 +278,7 @@ func TestPanelCycleAndKeys(t *testing.T) {
 	// a host whose flok predates the key relay is called out in the footer and the info overlay
 	m.onRemote(remote.Msg{Host: "beta", State: remote.Connected, Hello: &proto.Hello{Proto: 1, Version: "0.4.6", TmuxVersion: "3.4"}})
 	m.refederate()
-	if view := strings.Join(render(m, 60, 30), "\n"); !strings.Contains(view, "beta: flok 0.4.6 there has no key relay, upgrade it") {
+	if view := strings.Join(render(m, 60, 30), "\n"); !strings.Contains(view, "beta: upgrade flok there, no key relay (0.4.6)") {
 		t.Fatalf("old flok warning:\n%s", view)
 	}
 	if press('i') != nil || m.help == nil {

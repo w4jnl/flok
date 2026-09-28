@@ -6,6 +6,11 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+- Sidebar footer: a warning or error wraps over up to two lines above the key hints instead of
+  replacing them cut off ("+N" counts further warnings); hints that do not fit the width drop
+  their right-hand part instead of overrunning. The old-flok warning reads
+  `<host>: upgrade flok there, no key relay (<version>)`.
+
 ## 0.5.0 (2026-09-28)
 
 flok goes multi-host: one local flok shows and drives tmux servers on other machines over
