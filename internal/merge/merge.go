@@ -90,6 +90,7 @@ type track struct {
 	hookSince   time.Time   // StateSince of the hook record the counters above refer to
 	lastRaw     agent.State // last raw (pre-done) state, kept across skip_state_update holds
 	lastReason  string      // the reason that went with lastRaw ("prompt"), kept the same way
+	cwd         string      // the directory the pane's agent was first seen in: its row name, for as long as the pane lives
 }
 
 // Tracker keeps per-pane history between builds.
@@ -373,9 +374,13 @@ func (t *Tracker) Build(in Inputs) Snapshot {
 		}
 		a.PaneID, a.SessionID, a.SessionName = p.ID, p.SessionID, p.SessionName
 		a.WindowID, a.WindowIndex, a.PaneIndex, a.Kind = p.WindowID, p.WindowIndex, p.PaneIndex, kind
-		if a.Cwd == "" {
-			a.Cwd = p.Path
+		switch { // the row name follows the session's start directory, never a `cd` inside it
+		case a.Cwd != "":
+			tr.cwd = a.Cwd // a hook record: pinned per session by the state machine
+		case tr.cwd == "":
+			tr.cwd = p.Path // no hooks: the pane's path when first seen
 		}
+		a.Cwd = tr.cwd
 		title := ""
 		if ad != nil {
 			title = ad.TitleName(p.Title)

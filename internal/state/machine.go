@@ -19,10 +19,14 @@ func Apply(a *agent.Agent, ev agent.Event, focused func() bool, now time.Time) E
 	if a.Kind == "" {
 		a.Kind = ev.Agent
 	}
+	prevSession := a.AgentSessionID
 	if ev.AgentSessionID != "" {
 		a.AgentSessionID = ev.AgentSessionID
 	}
-	if ev.Cwd != "" {
+	// The row is named after the directory the session started in. Claude Code's Bash tool keeps
+	// a `cd` between calls and reports it as cwd on every later hook; that must not rename the
+	// row, so cwd is taken at the session's start (or its first event) and again for a new one.
+	if ev.Cwd != "" && (a.Cwd == "" || ev.Kind == agent.EvSessionStart || (ev.AgentSessionID != "" && ev.AgentSessionID != prevSession)) {
 		a.Cwd = ev.Cwd
 	}
 	a.LastEvent, a.LastEventAt, a.HasHooks, a.Source = ev.Name, now, true, "hook"

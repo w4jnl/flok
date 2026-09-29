@@ -156,3 +156,24 @@ func TestWaitingForBackgroundTasks(t *testing.T) {
 		t.Fatalf("final stop: %+v %+v", a, fx)
 	}
 }
+
+// The row is named after the directory the session started in: a cd Claude keeps between Bash
+// calls (reported as cwd on later hooks) must not rename it; a new session names it anew.
+func TestCwdPinnedToTheSessionStart(t *testing.T) {
+	now := time.Now()
+	a := &agent.Agent{}
+	Apply(a, agent.Event{Kind: agent.EvSessionStart, Agent: "claude", Name: "SessionStart", AgentSessionID: "s1", Cwd: "/w/gamma-exposure-app"}, nil, now)
+	Apply(a, agent.Event{Kind: agent.EvPrompt, Agent: "claude", Name: "UserPromptSubmit", AgentSessionID: "s1", Cwd: "/w/gamma-exposure-app"}, nil, now)
+	Apply(a, agent.Event{Kind: agent.EvToolStart, Agent: "claude", Name: "PreToolUse", AgentSessionID: "s1", Cwd: "/w/gamma-exposure-app/engine", Tool: "Bash"}, nil, now)
+	if a.Cwd != "/w/gamma-exposure-app" {
+		t.Fatalf("a cd inside the session renamed the row: %q", a.Cwd)
+	}
+	Apply(a, agent.Event{Kind: agent.EvToolEnd, Agent: "claude", Name: "PostToolUse", AgentSessionID: "s2", Cwd: "/w/other"}, nil, now)
+	if a.Cwd != "/w/other" {
+		t.Fatalf("a new session takes its own directory: %q", a.Cwd)
+	}
+	Apply(a, agent.Event{Kind: agent.EvSessionStart, Agent: "claude", Name: "SessionStart", AgentSessionID: "s2", Cwd: "/w/third"}, nil, now)
+	if a.Cwd != "/w/third" {
+		t.Fatalf("a session start always names the row: %q", a.Cwd)
+	}
+}

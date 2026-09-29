@@ -555,10 +555,13 @@ Inside the sidebar (`prefix g`, a click, or `flok focus`):
 | `Enter` | open the selected row and hand the keyboard to the work pane (a servers row brings that host's work pane to the front) |
 | `1`-`9` | open agent N; `!` `@` `#` … open session N |
 | `g` / `G` | first / last row |
+| `n` | name the agent row under the cursor (Enter saves; an empty name restores the directory name) |
 | `?` | keybinds help |
 | `Esc` / `q` | keyboard back to the work pane |
 
-A click opens the row but keeps the keyboard in the sidebar. The footer says where the keyboard
+An agent row is named after the directory its session started in (a `cd` Claude keeps between
+Bash calls does not rename it); `n` gives it a name of your own, which sticks to that pane across
+the agent's sessions (`names.json` in the state dir). A click opens the row but keeps the keyboard in the sidebar. The footer says where the keyboard
 is; in rail mode the `›` cursor is pink while the sidebar has it. Any `prefix <key>` chord typed
 while the sidebar has focus is replayed into the work pane, so all your bindings keep working;
 only `prefix b` keeps the cursor in the sidebar so you can collapse it and continue.
@@ -714,6 +717,7 @@ brand = "#12999D"
 | `~/.config/flok/agents/*.toml` | your overrides of the detection manifests |
 | `~/.local/state/flok/agents/` | one JSON record per agent pane, written by the hook |
 | `~/.local/state/flok/seen/` | when you last looked at each agent pane |
+| `~/.local/state/flok/names.json` | row names chosen with `n`, by pane (`%12`, `beta:%12`) |
 | `~/.local/state/flok/events.log` | every hook event with the resulting state (JSON lines) |
 | `~/.local/state/flok/runtime.json` | the running outer session: panes, sockets, client tty, terminal app |
 | `~/.local/state/flok/snapshot.json` | the sidebar's merged view, read by flok-bar |

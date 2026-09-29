@@ -6,6 +6,11 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+- An agent row keeps the name of the directory its session started in: Claude Code's Bash tool
+  keeps a `cd` between calls and reported the sub-directory on every later hook, so a row could
+  read `engine` for a while instead of its project. `n` on an agent row names it yourself
+  (Enter saves, an empty name restores the directory name); the name sticks to that pane and
+  is kept in `names.json` in the state dir.
 - Remote hosts: changing a host's mode, target or flok path, `r`, and `flok down` no longer wait
   for the old connection to tear down (a dead link could hold the sidebar for the ssh timeout);
   the replacement connects in the background and a replaced connection's last messages can no

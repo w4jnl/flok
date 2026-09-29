@@ -280,6 +280,7 @@ func SidebarKeySections(multiHost bool) []keys.Section {
 		row("Enter", "open the row and hand the keyboard to the work pane"),
 		row("1-9 · ! @ # …", "agent N · session N"),
 		row("g / G", "first / last row"),
+		row("n", "name the agent row (Enter saves; an empty name restores its directory)"),
 		row("r", "refresh"),
 		row("Esc / q", "keyboard back to the work pane"),
 	}}}

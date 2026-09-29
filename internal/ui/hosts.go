@@ -241,6 +241,7 @@ func (m *Model) refederate() {
 		}
 	}
 	m.fed = merge.Federate(m.local, remotes, m.front)
+	m.applyNames()
 	m.snap = m.fed
 	if m.multiHost() {
 		var sp []agent.Space
