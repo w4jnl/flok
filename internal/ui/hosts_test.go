@@ -476,3 +476,40 @@ func TestInstallKeyAndNoFlokNotice(t *testing.T) {
 		t.Fatal("the servers help lists I")
 	}
 }
+
+// Messages carry the generation of the connection that sent them: an older connection's last
+// words are dropped, and a host whose connection is rebuilt reads connecting until the new
+// one speaks.
+func TestRemoteGenerationsAndRebuiltConnections(t *testing.T) {
+	m := multiHostModel(t)
+	m.onRemote(remote.Msg{Host: "beta", State: remote.Connecting, Gen: 2})
+	m.onRemote(remote.Msg{Host: "beta", State: remote.Connected, Gen: 1, Hello: &proto.Hello{Proto: 1}})
+	if v := m.remotes["beta"]; v.state != remote.Connecting || v.gen != 2 {
+		t.Fatalf("an older generation must not win: %+v", v)
+	}
+	m.onRemote(remote.Msg{Host: "beta", State: remote.Connected, Gen: 2, Hello: &proto.Hello{Proto: 1, Features: proto.ServeFeatures}})
+	m.onRemote(remote.Msg{Host: "beta", State: remote.Connected, Gen: 2, Snap: &proto.Snapshot{}})
+	if v := m.remotes["beta"]; v.state != remote.Connected || !v.hasSnap {
+		t.Fatalf("the current generation applies: %+v", v)
+	}
+	// a mode change rebuilds the connection: the row reads connecting right away
+	set := m.hostSet
+	set.Hosts = append([]hosts.Host(nil), m.hostSet.Hosts...)
+	set.Hosts[0].Mode = hosts.ModePlain
+	m.applyHosts(set)
+	if v := m.remotes["beta"]; v.state != remote.Connecting || v.hasSnap || v.gen != 2 {
+		t.Fatalf("a rebuilt connection starts as connecting: %+v", v)
+	}
+	if lines := render(m, 40, 30); !strings.Contains(strings.Join(lines, "\n"), "beta plain") || !strings.Contains(strings.Join(lines, "\n"), "connecting") {
+		t.Fatalf("row after the flip:\n%s", strings.Join(lines[:6], "\n"))
+	}
+	m.onRemote(remote.Msg{Host: "beta", State: remote.Connected, Gen: 3, Hello: &proto.Hello{Proto: 1, Version: "plain"}})
+	// a change that keeps the connection (the attach session) leaves the view alone
+	set2 := set
+	set2.Hosts = append([]hosts.Host(nil), set.Hosts...)
+	set2.Hosts[0].Session = "work"
+	m.applyHosts(set2)
+	if v := m.remotes["beta"]; v.state != remote.Connected || v.gen != 3 {
+		t.Fatalf("an attach change keeps the view: %+v", v)
+	}
+}

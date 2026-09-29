@@ -19,6 +19,7 @@ session = "flok"
 width = 28
 poll_ms = 250
 registry_poll_ms = 1000
+screen_poll_ms = 500
 [sounds]
 enabled = false
 ${E2E_EXTRA_CONFIG:-}
@@ -51,6 +52,39 @@ capture() { OUT capture-pane -p -t "$SIDEBAR"; }
 wait_for() { # pattern, seconds
   local i; for i in $(seq 1 $(( ${2:-3} * 10 ))); do capture | grep -qE "$1" && return 0; sleep 0.1; done; return 1; }
 finish() { echo "== $pass passed, $fail failed =="; test "$fail" -eq 0; }
+# expect_soon [-t SECS] NAME PATTERN CMD [ARGS…]: run CMD every 0.1 s until its output matches
+# PATTERN (grep -E), then PASS; FAIL with the last output after SECS (default 5). The shape for
+# every transition: a render that is late never fails it, a state that never arrives does.
+expect_soon() { local secs=5; if [ "$1" = -t ]; then secs=$2; shift 2; fi
+  local name=$1 pat=$2 i; shift 2
+  for i in $(seq 1 $(( secs * 10 ))); do
+    "$@" > "$T/expect.txt" 2>/dev/null || true
+    if grep -qE "$pat" "$T/expect.txt"; then ok "$name"; return 0; fi
+    sleep 0.1
+  done
+  bad "$name (pattern: $pat, after ${secs}s)"; sed '/^ *$/d; s/^/      | /' "$T/expect.txt"; return 0; }
+# a wait after an action must only be satisfiable after the transition: wait_gone leaves the old
+# state first, wait_json watches a value only the new state writes
+wait_gone() { local i; for i in $(seq 1 $(( ${2:-3} * 10 ))); do capture | grep -qE "$1" || return 0; sleep 0.1; done; return 1; }
+wait_file() { local i; for i in $(seq 1 $(( ${3:-5} * 10 ))); do grep -qE "$2" "$1" 2>/dev/null && return 0; sleep 0.1; done; return 1; }
+json() { python3 -c "import json,sys;s=json.load(open(sys.argv[1]));print($2)" "$1" 2>/dev/null || true; }   # '' on any error, never aborts
+wait_json() { local i; for i in $(seq 1 $(( ${3:-5} * 10 ))); do
+  python3 -c "import json,sys;s=json.load(open(sys.argv[1]));sys.exit(0 if ($2) else 1)" "$1" 2>/dev/null && return 0; sleep 0.1; done; return 1; }
+# kill_server SOCKET [SECS]: guarded kill-server that waits for the old pid, so a new-session
+# on the socket never meets the dying server ("server exited unexpectedly")
+kill_server() { local pid; pid=$(tmux -L "$1" display -p '#{pid}' 2>/dev/null || true); tmux -L "$1" kill-server 2>/dev/null || true
+  [ -z "$pid" ] || for _ in $(seq 1 $(( ${2:-5} * 10 ))); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done; return 0; }
+server_state() { if tmux -L "$1" list-sessions >/dev/null 2>&1; then echo alive; else echo gone; fi; }
+serve_pid() { json "$T/hosts/$1/state/served" "s['pid']"; }                      # '' when no serve holds the host
+kill_serve() { local p; p=$(serve_pid "$1"); [ -z "$p" ] || kill "$p" 2>/dev/null || true; }   # this run's serve only, never pkill -f
+paint() { if [ "$2" = - ]; then cat > "$1.tmp"; else cp "$2" "$1.tmp"; fi; mv -f "$1.tmp" "$1"; }   # atomic screen fixture
+sound_guard_passed() { local d=${1:-$T/state}/sounds i; for i in $(seq 1 40); do   # the 2 s per-pane repeat guard (notify.Allowed)
+  python3 -c "import glob,os,sys,time;sys.exit(0 if all(time.time()-os.path.getmtime(f)>2.2 for f in glob.glob(sys.argv[1]+'/*.stamp')) else 1)" "$d" && return 0; sleep 0.1; done; return 1; }
+RT=$T/state/runtime.json
+SNAP=$T/state/snapshot.json
+rt() { python3 -c "import json,sys;r=json.load(open('$RT'));print(eval(sys.argv[1]))" "$1" 2>/dev/null || true; }
+snap_hosts() { python3 -c "import json;print(' '.join(h['name']+'='+h['state'] for h in json.load(open('$SNAP')).get('hosts',[])))" 2>/dev/null || true; }
+wait_hosts() { local i; for i in $(seq 1 $(( ${2:-10} * 10 ))); do [ "$(snap_hosts)" = "$1" ] && return 0; sleep 0.1; done; return 1; }
 
 # Two inner sessions; Alpha has a window "agent" running the fake claude with an idle title.
 IN -f /dev/null new-session -d -s Alpha -x 200 -y 50 -c "$R"
@@ -144,11 +178,7 @@ registry_poll_ms = 1000
 enabled = true
 command = "echo {file} >> $d/played"
 CFG
-  # a previous server (with the parked pane attached) takes a moment to go: wait for its pid,
-  # or the new-session below connects to the dying one and fails with "server exited unexpectedly"
-  pid=$(tmux -L "e2e-$h" display -p '#{pid}' 2>/dev/null || true)
-  tmux -L "e2e-$h" kill-server 2>/dev/null || true
-  if [ -n "$pid" ]; then for _ in $(seq 1 50); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done; fi
+  kill_server "e2e-$h"   # a previous server (with the parked pane attached) takes a moment to go
   tmux -L "e2e-$h" -f /dev/null new-session -d -s Remote -x 200 -y 50 -c "$R"
   tmux -L "e2e-$h" new-window -t Remote -n agent -c "$R"
   pane=$(tmux -L "e2e-$h" display -p -t Remote:agent '#{pane_id}')

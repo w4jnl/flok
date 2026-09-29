@@ -1,11 +1,14 @@
 package remote
 
 import (
+	"context"
 	"errors"
 	"path/filepath"
 	"reflect"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/w4jnl/flok/internal/config"
 	"github.com/w4jnl/flok/internal/hosts"
@@ -85,5 +88,27 @@ func TestClassify(t *testing.T) {
 	}
 	if Backoff(0, 30) != 1e9 || Backoff(3, 30) != 8e9 || Backoff(9, 30) != 30e9 || Backoff(20, 0) != 30e9 {
 		t.Fatalf("backoff %v %v %v %v", Backoff(0, 30), Backoff(3, 30), Backoff(9, 30), Backoff(20, 0))
+	}
+}
+
+// Kill returns only when the process is gone (its locks with it): a process that ignores the
+// EOF and TERM is killed after the grace and reaped before Kill returns.
+func TestKillWaitsForExit(t *testing.T) {
+	p, err := Exec(context.Background(), []string{"sh", "-c", `trap "" TERM; sleep 30`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid := p.(*execProc).cmd.Process.Pid
+	t0 := time.Now()
+	p.Kill()
+	d := time.Since(t0)
+	if err := syscall.Kill(pid, 0); err == nil {
+		t.Fatalf("pid %d still alive %v after Kill", pid, d)
+	}
+	if d < killGrace || d > killGrace+killWait+time.Second {
+		t.Fatalf("Kill took %v (grace %v, wait %v)", d, killGrace, killWait)
+	}
+	if exit, _ := p.Wait(); exit != -1 {
+		t.Fatalf("exit %d, want -1 for a killed process", exit)
 	}
 }

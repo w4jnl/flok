@@ -42,6 +42,7 @@ type hostView struct {
 	hello   *proto.Hello
 	snap    merge.Snapshot // its last merged view while connected
 	hasSnap bool
+	gen     uint64 // generation of the connection the view came from (remote.Msg.Gen)
 }
 
 type (
@@ -135,6 +136,11 @@ func (m *Model) applyHosts(set hosts.Set) tea.Cmd {
 	m.hostsApplied = true
 	prev := m.hostSet
 	m.hostSet, m.hostList = set, set.Hosts
+	for _, h := range set.Hosts { // a host that reconnects reads connecting until the new connection speaks
+		if old, ok := prev.Get(h.Name); ok && h.Enabled && hosts.ConnChanged(old, h) {
+			m.remotes[h.Name] = hostView{state: remote.Connecting, gen: m.remotes[h.Name].gen}
+		}
+	}
 	if m.remote != nil {
 		m.remote.Apply(set)
 	}
@@ -279,6 +285,10 @@ func (m *Model) refederate() {
 // connection state.
 func (m *Model) onRemote(msg remote.Msg) {
 	v := m.remotes[msg.Host]
+	if msg.Gen < v.gen { // a replaced connection's last words
+		return
+	}
+	v.gen = msg.Gen
 	changed := false
 	if msg.Event != nil {
 		m.p.PlaySound(agent.PaneRef{Host: msg.Host, ID: msg.Event.Pane}.String(), msg.Event.Kind)

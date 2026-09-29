@@ -228,6 +228,12 @@ func (s *Set) Set(name string, fn func(*Host)) error {
 	return fmt.Errorf("no host %q (flok host list)", name)
 }
 
+// ConnChanged says whether the connection to the host must be rebuilt for the change from a to
+// b (target, mode, socket or the flok binary); the manager and the sidebar use the same rule.
+func ConnChanged(a, b Host) bool {
+	return a.Target != b.Target || a.Mode != b.Mode || a.Socket != b.Socket || a.Flok != b.Flok
+}
+
 // AttachChanged says whether the work pane's ssh must be rebuilt for the change from a to b.
 func AttachChanged(a, b Host) bool {
 	return a.Target != b.Target || a.Socket != b.Socket || a.Session != b.Session || a.Term != b.Term

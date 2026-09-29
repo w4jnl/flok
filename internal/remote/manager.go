@@ -33,6 +33,10 @@ type Msg struct {
 	Snap    *proto.Snapshot // a new merged view of the host
 	Event   *proto.Event    // a sound to play here
 	Request string          // a flok key pressed inside the host's tmux: toggle, hide, jump, …
+	// Gen is the generation of the connection that sent the message: it grows at every
+	// (re)start of a host, and a consumer drops a message older than the last one it applied,
+	// so a replaced connection's last words never overwrite its successor's.
+	Gen uint64
 }
 
 // Status is a host's current connection, for `flok host status` and the servers panel.
@@ -69,6 +73,9 @@ type Deps struct {
 	// LocalPrefix is the inner server's prefix, which a host's tmux takes while connected
 	// ([hosts] prefix); "" leaves the hosts' own.
 	LocalPrefix string
+	// StopTimeout bounds how long a replacement waits for the connection it replaces to tear
+	// down, and how long Close waits for all of them; 0 = 5 s.
+	StopTimeout time.Duration
 	Now         func() time.Time
 	Sleep       func(ctx context.Context, d time.Duration) bool // false when ctx ended; nil = timer
 	Debugf      func(string, ...any)
@@ -79,7 +86,15 @@ type Manager struct {
 	d      Deps
 	mu     sync.Mutex
 	conns  map[string]*conn
+	gen    uint64 // of the last connection started
 	closed bool
+}
+
+func (m *Manager) stopTimeout() time.Duration {
+	if m.d.StopTimeout > 0 {
+		return m.d.StopTimeout
+	}
+	return 5 * time.Second
 }
 
 func New(d Deps) *Manager {
@@ -117,7 +132,9 @@ func (m *Manager) debugf(format string, args ...any) {
 }
 
 // Apply makes the running connections match the registry: enabled hosts connect, removed or
-// disabled ones stop, a host whose target/mode/socket/flok changed reconnects.
+// disabled ones stop, a host whose target/mode/socket/flok changed reconnects. It never waits:
+// a stopped connection tears down in the background (a dead link can hold that for the ssh
+// timeout), and its replacement waits for it, bounded, before it dials.
 func (m *Manager) Apply(set hosts.Set) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -129,30 +146,34 @@ func (m *Manager) Apply(set hosts.Set) {
 		want[h.Name] = h
 	}
 	var stop []*conn
+	replaced := map[string]*conn{}
 	for name, c := range m.conns {
-		if h, ok := want[name]; !ok || !sameHost(h, c.configured) {
+		if h, ok := want[name]; !ok || hosts.ConnChanged(h, c.configured) {
 			stop = append(stop, c)
+			replaced[name] = c
 			delete(m.conns, name)
 		}
 	}
 	for name, h := range want {
 		if _, ok := m.conns[name]; !ok {
-			m.conns[name] = m.start(h)
+			m.conns[name] = m.start(h, replaced[name])
 		}
 	}
 	for _, c := range stop {
-		c.stop()
+		c.cancel()
 	}
 }
 
-func sameHost(a, b hosts.Host) bool {
-	return a.Target == b.Target && a.Mode == b.Mode && a.Socket == b.Socket && a.Flok == b.Flok
-}
-
-func (m *Manager) start(h hosts.Host) *conn {
+// start begins a host's connection loop; prev is the connection it replaces, if any, which it
+// lets finish before its first attempt.
+func (m *Manager) start(h hosts.Host, prev *conn) *conn {
+	m.gen++
 	ctx, cancel := context.WithCancel(context.Background())
-	c := &conn{m: m, host: h, configured: h, cancel: cancel, done: make(chan struct{}),
+	c := &conn{m: m, host: h, configured: h, cancel: cancel, done: make(chan struct{}), gen: m.gen,
 		status: Status{Host: h.Name, Mode: h.Mode, State: Connecting, Since: m.d.Now()}}
+	if prev != nil {
+		c.prev = prev.done
+	}
 	go c.run(ctx)
 	return c
 }
@@ -190,22 +211,17 @@ func (m *Manager) SetVisible(host string, on bool) {
 }
 
 // Reconnect drops a host's connection and starts over at once (a key after the user fixed
-// something; the states with a slow retry would otherwise wait up to a minute).
+// something; the states with a slow retry would otherwise wait up to a minute). The host
+// always has a connection: the new one is in place before the old one is cancelled.
 func (m *Manager) Reconnect(host string) {
 	m.mu.Lock()
+	defer m.mu.Unlock()
 	c := m.conns[host]
 	if c == nil || m.closed {
-		m.mu.Unlock()
 		return
 	}
-	delete(m.conns, host)
-	m.mu.Unlock()
-	c.stop()
-	m.mu.Lock()
-	if _, running := m.conns[host]; !running && !m.closed {
-		m.conns[host] = m.start(c.configured)
-	}
-	m.mu.Unlock()
+	m.conns[host] = m.start(c.configured, c)
+	c.cancel()
 }
 
 // Notify shows a short message on the host's status line (the client the local side drives):
@@ -260,6 +276,7 @@ func (m *Manager) Status() map[string]Status {
 }
 
 // Close stops every connection (serve sessions end on EOF) and refuses further Apply calls.
+// It waits for the teardowns with one bound in total, so a dead link cannot hold the exit.
 func (m *Manager) Close() {
 	m.mu.Lock()
 	m.closed = true
@@ -267,7 +284,16 @@ func (m *Manager) Close() {
 	m.conns = map[string]*conn{}
 	m.mu.Unlock()
 	for _, c := range conns {
-		c.stop()
+		c.cancel()
+	}
+	t0 := time.Now()
+	deadline := t0.Add(m.stopTimeout()) // one bound for all of them
+	for _, c := range conns {
+		select {
+		case <-c.done:
+		case <-time.After(time.Until(deadline)):
+			m.debugf("%s: close: teardown still running after %s, not waiting", c.host.Name, time.Since(t0).Round(time.Millisecond))
+		}
 	}
 }
 
@@ -288,6 +314,8 @@ type conn struct {
 	configured hosts.Host // as Apply saw it
 	cancel     context.CancelFunc
 	done       chan struct{}
+	gen        uint64          // stamped on every message (Msg.Gen)
+	prev       <-chan struct{} // done of the connection this one replaces, if any
 	probed     bool
 	oldVersion string // version of a remote flok that has no serve, once asked
 
@@ -301,9 +329,14 @@ type conn struct {
 	poller  *poller.Poller
 }
 
-func (c *conn) stop() {
-	c.cancel()
-	<-c.done
+// emit tags a message with this connection's generation and drops it once the connection is
+// cancelled: a replaced connection's last words must not overwrite its successor's.
+func (c *conn) emit(ctx context.Context, msg Msg) {
+	if ctx.Err() != nil {
+		return
+	}
+	msg.Gen = c.gen
+	c.m.emit(ctx, msg)
 }
 
 func (c *conn) set(ctx context.Context, st State, detail string, retryAt time.Time, hello *proto.Hello) {
@@ -317,11 +350,23 @@ func (c *conn) set(ctx context.Context, st State, detail string, retryAt time.Ti
 	}
 	c.mu.Unlock()
 	c.m.debugf("%s: %s %s", c.host.Name, st, detail)
-	c.m.emit(ctx, Msg{Host: c.host.Name, State: st, Detail: detail, RetryAt: retryAt, Hello: hello})
+	c.emit(ctx, Msg{Host: c.host.Name, State: st, Detail: detail, RetryAt: retryAt, Hello: hello})
 }
 
 func (c *conn) run(ctx context.Context) {
 	defer close(c.done)
+	if c.prev != nil { // the connection this one replaces: say connecting, then let its teardown
+		// finish first (its keys leave the host's tmux before ours arrive, its serve frees
+		// serve.lock), within a bound
+		c.set(ctx, Connecting, "", time.Time{}, nil)
+		t0 := time.Now()
+		select {
+		case <-c.prev:
+			c.m.debugf("%s: previous connection ended in %s", c.host.Name, time.Since(t0).Round(time.Millisecond))
+		case <-time.After(c.m.stopTimeout()):
+			c.m.debugf("%s: previous connection still tearing down after %s, starting anyway", c.host.Name, c.m.stopTimeout())
+		}
+	}
 	attempt := 0
 	for {
 		c.set(ctx, Connecting, "", time.Time{}, nil)
@@ -462,7 +507,13 @@ func (c *conn) attemptFull(ctx context.Context) (State, string) {
 	if err != nil {
 		return Unreachable, Detail(err.Error())
 	}
-	defer proc.Kill()
+	defer func() { // stdin closes, the serve leaves on EOF; a link that does not answer is killed
+		t0 := time.Now()
+		proc.Kill()
+		if d := time.Since(t0); d >= killGrace {
+			c.m.debugf("%s: ssh needed SIGKILL after %s", c.host.Name, d.Round(time.Millisecond))
+		}
+	}()
 	frames := make(chan proto.Frame, 32)
 	readDone := make(chan struct{})
 	var readErr error
@@ -602,15 +653,15 @@ func (c *conn) attemptFull(ctx context.Context) (State, string) {
 						noServer = false
 						c.set(actx, Connected, "", time.Time{}, nil)
 					}
-					c.m.emit(actx, Msg{Host: c.host.Name, State: Connected, Snap: f.Snap})
+					c.emit(actx, Msg{Host: c.host.Name, State: Connected, Snap: f.Snap})
 				}
 			case proto.TypeEvent:
 				if f.Event != nil {
-					c.m.emit(actx, Msg{Host: c.host.Name, State: Connected, Event: f.Event})
+					c.emit(actx, Msg{Host: c.host.Name, State: Connected, Event: f.Event})
 				}
 			case proto.TypeRequest:
 				if IsKeyCommand(f.Cmd) {
-					c.m.emit(actx, Msg{Host: c.host.Name, State: Connected, Request: f.Cmd})
+					c.emit(actx, Msg{Host: c.host.Name, State: Connected, Request: f.Cmd})
 				}
 			case proto.TypeError:
 				switch st, detail := classifyRemoteError(f.Error); st {
@@ -702,11 +753,11 @@ func (c *conn) attemptPlain(ctx context.Context) (State, string) {
 	store := state.New(hosts.Dir(c.m.d.StateDir, c.host.Name))
 	p := poller.New(poller.Deps{Cfg: c.m.d.Cfg, Tmux: cc, Store: store, Rules: c.m.d.Rules, Adapters: c.m.d.Adapters,
 		Sound: func(pane, kind string) {
-			c.m.emit(actx, Msg{Host: c.host.Name, State: Connected, Event: &proto.Event{Pane: pane, Kind: kind}})
+			c.emit(actx, Msg{Host: c.host.Name, State: Connected, Event: &proto.Event{Pane: pane, Kind: kind}})
 		},
 		OnRequest: func(cmd string) {
 			if IsKeyCommand(cmd) {
-				c.m.emit(actx, Msg{Host: c.host.Name, State: Connected, Request: cmd})
+				c.emit(actx, Msg{Host: c.host.Name, State: Connected, Request: cmd})
 			}
 		},
 		OnServerRestart: func() { // bindings live in the server: the new one needs them too
@@ -735,7 +786,7 @@ func (c *conn) attemptPlain(ctx context.Context) (State, string) {
 		c.mu.Lock()
 		c.status.Agents = len(ps.Agents)
 		c.mu.Unlock()
-		c.m.emit(actx, Msg{Host: c.host.Name, State: Connected, Snap: &ps})
+		c.emit(actx, Msg{Host: c.host.Name, State: Connected, Snap: &ps})
 	}, cmds)
 	if ctx.Err() != nil {
 		return Unreachable, "closed"

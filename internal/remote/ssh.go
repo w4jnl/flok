@@ -329,6 +329,7 @@ func (p *execProc) Kill() {
 	if p.cmd.Process == nil {
 		return
 	}
+	go p.Wait() // reap even when nobody else waits (Wait is once-guarded): a clean exit ends the grace early
 	select {
 	case <-p.done:
 		return
@@ -336,10 +337,18 @@ func (p *execProc) Kill() {
 	}
 	_ = syscall.Kill(-p.cmd.Process.Pid, syscall.SIGKILL)
 	_ = p.cmd.Process.Kill()
+	select { // gone before Kill returns, its locks (a serve's serve.lock) with it
+	case <-p.done:
+	case <-time.After(killWait):
+	}
 }
 
-// killGrace is how long a dialed process gets to exit on EOF before it is killed.
-const killGrace = 700 * time.Millisecond
+// killGrace is how long a dialed process gets to exit on EOF before it is killed; killWait how
+// long Kill waits for the kernel to reap it afterwards.
+const (
+	killGrace = 700 * time.Millisecond
+	killWait  = time.Second
+)
 
 // tailBuffer keeps the last few KB written to it: enough stderr to classify, never unbounded.
 type tailBuffer struct {

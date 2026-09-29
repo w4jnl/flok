@@ -21,8 +21,8 @@ expect "Stop (unfocused agent) rang the terminal bell through the outer server" 
 expect "doctor reports the bell mode" 'bell: always' "$("$BIN" doctor 2>&1 || true)"
 
 # Looking at the agent pane: silent by default, rings like an unfocused one with when_focused.
-IN switch-client -c "$(IN list-clients -F '#{client_tty}' | head -1)" -t Alpha:agent
-sleep 2.1   # past the per-pane repeat guard of the first bell
+IN switch-client -c "$(IN list-clients -F '#{client_tty}' | sed -n 1p)" -t Alpha:agent
+sound_guard_passed || true   # past the per-pane repeat guard of the first bell
 rm -f "$T/bell"
 hook claude '{"hook_event_name":"UserPromptSubmit","session_id":"b"}'
 hook claude '{"hook_event_name":"Stop","session_id":"b"}'
@@ -38,6 +38,5 @@ hook claude '{"hook_event_name":"UserPromptSubmit","session_id":"b"}'
 hook claude '{"hook_event_name":"Stop","session_id":"b"}'
 for _ in $(seq 1 30); do [ -f "$T/bell" ] && break; sleep 0.1; done
 expect "Stop (focused agent, when_focused) rang the bell" '^yes$' "$([ -f "$T/bell" ] && echo yes || echo no)"
-wait_for "○ $PROJ *$" 3 || true
-expect "... and the watched pane still shows idle, nothing unseen" "○ $PROJ *$" "$(capture)"
+expect_soon -t 3 "... and the watched pane still shows idle, nothing unseen" "○ $PROJ *$" capture   # the row was idle before too: poll past the working render
 finish
