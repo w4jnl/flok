@@ -39,8 +39,7 @@ python3 - "$T/config.toml" <<'PY'
 import sys; p=sys.argv[1]; s=open(p).read()
 s=s.replace('socket = "e2e-inner"', 'socket = "e2e-inner"\nreattach_on_detach = true', 1); open(p,'w').write(s)
 PY
-"$BIN" up --detach; sleep 1.5
-SIDEBAR=$(python3 -c "import json;print(json.load(open('$T/state/runtime.json'))['sidebar_pane'])")
+"$BIN" up --detach; ready_up
 IN detach-client -t "$(IN list-clients -F '#{client_tty}' | head -1)"; sleep 1.2
 if OUT has-session -t flok 2>/dev/null; then ok "outer kept with reattach_on_detach=true"; else bad "outer closed despite reattach_on_detach=true"; fi
 expect "client re-attached after detach" '^1$' "$(IN list-clients | wc -l | tr -d ' ')"

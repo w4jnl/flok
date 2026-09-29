@@ -9,6 +9,11 @@ on:
 permissions:
   contents: read
 
+# one run per branch: a new push to a pull request cancels the run it supersedes
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     name: test (${{ matrix.os }})
@@ -39,6 +44,7 @@ jobs:
       matrix:
         os: [macos-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -51,17 +57,12 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update -q && sudo apt-get install -y -q tmux
       - run: tmux -V
-      - name: run suites
+      - name: run suites (every one, in order, each under a watchdog; the table lands in the step summary)
         env:
           FLOK_DEBUG: "1"
-        run: |
-          set -e
-          for s in scripts/e2e/m*.sh; do
-            echo "== $s"
-            "$s"
-          done
-      - name: keep the logs of a failed run
-        if: failure()
+        run: scripts/e2e/run-all.sh
+      - name: keep the logs of the suites that did not pass
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: e2e-logs-${{ matrix.os }}
@@ -83,6 +84,7 @@ jobs:
     env:
       LANG: en_US.UTF-8
       LC_ALL: en_US.UTF-8
+    timeout-minutes: 25
     steps:
       - name: packages
         run: dnf -y install tmux python3 git tar gzip procps-ng ncurses-term glibc-langpack-en && tmux -V
@@ -91,18 +93,14 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go test ./...
-      - name: run suites
+      - name: run suites (every one, in order, each under a watchdog; the table lands in the step summary)
         env:
           FLOK_DEBUG: "1"
         run: |
-          set -e
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          for s in scripts/e2e/m*.sh; do
-            echo "== $s"
-            "$s"
-          done
-      - name: keep the logs of a failed run
-        if: failure()
+          scripts/e2e/run-all.sh
+      - name: keep the logs of the suites that did not pass
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: e2e-logs-${{ matrix.name }}
