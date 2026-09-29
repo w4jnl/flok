@@ -340,11 +340,12 @@ servers_panel || true
 OUT send-keys -t "$SIDEBAR" g j j d
 wait_for 'gamma +plain +off' 5 || true
 expect "d disconnects the host" 'gamma +plain +off' "$(capture)"
-expect "flok's keys leave gamma's tmux on disconnect" '^0$' "$(tmux -L e2e-gamma list-keys -T prefix | grep -c '@flok-request' || true)"
-expect "gamma's prefix is its own again" '^C-b$' "$(tmux -L e2e-gamma show-options -gv prefix)"
-expect "... prefix2 unset again" '^None$' "$(tmux -L e2e-gamma show-options -gv prefix2)"
-expect "... the send-prefix chord gone" '^0$' "$(tmux -L e2e-gamma list-keys -T prefix | grep -c 'prefix +C-a ' || true)"
-expect "... and the records with it" '^$' "$(tmux -L e2e-gamma show-options -gqv @flok-orig-keys)"
+# the row reads off at once; the connection restores gamma's keys as it tears down, so poll
+expect_soon "flok's keys leave gamma's tmux on disconnect" '^0$' sh -c "tmux -L e2e-gamma list-keys -T prefix | grep -c @flok-request || true"
+expect_soon "gamma's prefix is its own again" '^C-b$' tmux -L e2e-gamma show-options -gv prefix
+expect_soon "... prefix2 unset again" '^None$' tmux -L e2e-gamma show-options -gv prefix2
+expect_soon "... the send-prefix chord gone" '^0$' sh -c "tmux -L e2e-gamma list-keys -T prefix | grep -cE 'prefix +C-a ' || true"
+expect_soon "... and the records with it" '^0$' sh -c "tmux -L e2e-gamma show-options -gqv @flok-orig-keys | grep -c . || true"
 tmux -L e2e-gamma bind-key -T prefix o select-pane -t :.+
 OUT send-keys -t "$SIDEBAR" c
 wait_for 'gamma +plain +[0-9]' 15 || true
@@ -412,7 +413,7 @@ for _ in $(seq 1 50); do OUT list-windows -t flok -F '#{window_name}' | grep -q 
 expect "disconnect kills gamma's parked window" '^0$' "$(OUT list-windows -t flok -F '#{window_name}' | grep -c flok-host-gamma || true)"
 wait_for 'gamma +plain +off' 5 || true
 expect "gamma's row reads off" 'gamma +plain +off' "$(capture)"
-expect "gamma's own binding of o is back after the disconnect" 'prefix +o +select-pane -t :.\+' "$(tmux -L e2e-gamma list-keys -T prefix)"
+expect_soon "gamma's own binding of o is back after the disconnect" 'prefix +o +select-pane -t :.\+' tmux -L e2e-gamma list-keys -T prefix
 servers_panel || true
 OUT send-keys -t "$SIDEBAR" g j j x
 wait_for 'remove gamma\? y/n' 3 || true
