@@ -181,7 +181,11 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
   `claude.go` and `copilot.go` are the two implementations.
 - `internal/state/machine.go` is the pure hook state machine: `Apply(agent, event, focused, now)`
   returns `Effects{Sound, Delete}`. It never touches files; `store.go` does (atomic temp+rename,
-  flock per pane). `done` is only produced when the pane is not focused; `focused` is a lazy
+  flock per pane). `Agent.Cwd`, and with it the row name, is the directory the session started
+  in (taken at SessionStart, the first event, or a new session id), never a later hook's cwd
+  (Claude's Bash tool keeps a `cd`); the merge pins a hook-less pane's first path the same way
+  (`track.cwd`). Names the user chose with `n` live in `names.json` (`Store.LoadNames`/`SetName`,
+  keyed by pane ref) and are laid over the federated agents in `ui.applyNames`. `done` is only produced when the pane is not focused; `focused` is a lazy
   callback because it costs a tmux call.
 - `internal/merge/merge.go` is the authority merge. For panes with `HasHooks` the hook record
   wins, with narrow escape hatches keyed on title/screen history kept in the per-pane `track`

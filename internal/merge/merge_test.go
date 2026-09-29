@@ -344,3 +344,21 @@ func TestWaitingIsNotAnInterruptedTurn(t *testing.T) {
 		t.Fatalf("stale waiting should be overruled: %+v", a)
 	}
 }
+
+// A hook-less pane keeps the name of the directory it was first seen in while a command runs
+// somewhere else (tmux reports the foreground process's cwd).
+func TestHooklessNameStaysWhileThePathMoves(t *testing.T) {
+	tr := NewTracker()
+	ads := agent.Enabled([]string{"claude"})
+	now := time.Now()
+	s := tr.Build(Inputs{Tmux: snap("✳ ready", "$2"), ClientTTY: "/dev/ttys9", Adapters: ads, Now: now})
+	if a := s.Agents[0]; a.Name != "x" || a.Cwd != "/p/x" {
+		t.Fatalf("first seen: %+v", a)
+	}
+	moved := snap("✳ ready", "$2")
+	moved.Panes[0].Path = "/p/x/engine"
+	s = tr.Build(Inputs{Tmux: moved, ClientTTY: "/dev/ttys9", Adapters: ads, Now: now})
+	if a := s.Agents[0]; a.Name != "x" || a.Cwd != "/p/x" {
+		t.Fatalf("a cd must not rename the row: %+v", a)
+	}
+}

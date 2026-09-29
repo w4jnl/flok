@@ -67,9 +67,13 @@ type Model struct {
 	hostSet       hosts.Set           // the registry as last applied
 	hostList      []hosts.Host
 	hostsApplied  bool
-	restartPanes  []string // hosts whose parked pane must be rebuilt (attach target changed)
-	front         string   // host whose work pane is next to the sidebar; "" = local
-	confirmRemove string   // host `x` asked to remove; the next key answers (y removes)
+	restartPanes  []string          // hosts whose parked pane must be rebuilt (attach target changed)
+	front         string            // host whose work pane is next to the sidebar; "" = local
+	confirmRemove string            // host `x` asked to remove; the next key answers (y removes)
+	names         map[string]string // row names chosen with n, by pane ref (state.NamesFile)
+	renaming      bool              // the "name:" prompt is open for renameKey
+	renameKey     string
+	renameText    string
 	clientTTY     string
 	width         int
 	height        int
@@ -133,7 +137,10 @@ func New(d Deps) Model {
 	}
 	dark := d.Cfg.Theme.IsDark(themeRec)
 	m := Model{d: d, dark: dark, themeRec: themeRec, theme: NewTheme(d.Cfg.Theme.Resolve(dark)), clientTTY: d.ClientTTY, vc: &viewCache{},
-		remotes: map[string]hostView{}}
+		remotes: map[string]hostView{}, names: map[string]string{}}
+	if d.Store != nil {
+		m.names = d.Store.LoadNames()
+	}
 	if d.Outer != nil { // a remote host may be in front (flok reload keeps the layout)
 		if rt, err := launcher.ReadRuntime(); err == nil && rt.FrontHost != "" && rt.RightPane == d.RightPane {
 			m.front = rt.FrontHost
@@ -649,6 +656,27 @@ func (m Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if m.renaming { // "name: …" for the agent row under the cursor
+		switch k {
+		case "enter":
+			m.renaming = false
+			return m, m.setName(m.renameKey, strings.TrimSpace(m.renameText))
+		case "esc", "ctrl+c":
+			m.renaming = false
+		case "backspace":
+			if r := []rune(m.renameText); len(r) > 0 {
+				m.renameText = string(r[:len(r)-1])
+			}
+		case "ctrl+u":
+			m.renameText = ""
+		default:
+			if len(msg.Runes) > 0 && !strings.HasPrefix(k, "ctrl+") && !strings.HasPrefix(k, "alt+") {
+				m.renameText += string(msg.Runes)
+			}
+		}
+		m.vc.valid = false
+		return m, nil
+	}
 	if m.prefixKey != "" && k == m.prefixKey {
 		m.prefixPending = true
 		return m, nil
@@ -686,6 +714,15 @@ func (m Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m.hostKey(k, host)
 			}
 		}
+	case "n": // name the agent row under the cursor (an empty name restores its directory)
+		if m.panel == panelAgents {
+			if i := m.cursor[panelAgents]; i < len(m.snap.Agents) {
+				m.renaming, m.renameKey = true, nameKey(m.snap.Agents[i])
+				m.renameText = m.names[m.renameKey]
+				m.vc.valid = false
+			}
+		}
+		return m, nil
 	case "r":
 		if m.panel == panelHosts { // reconnect the selected host now
 			if host, ok := m.hostAt(m.cursor[panelHosts]); ok && host != "" {
@@ -854,4 +891,43 @@ func elapsed(since time.Time, now time.Time) string {
 		return fmt.Sprintf("%d:%02d:%02d", h, mnt, s)
 	}
 	return fmt.Sprintf("%d:%02d", mnt, s)
+}
+
+// nameKey is the pane ref a chosen row name is stored under.
+func nameKey(a agent.Agent) string { return agent.PaneRef{Host: a.Host, ID: a.PaneID}.String() }
+
+// setName keeps a chosen row name (or drops it) and writes it to the state dir.
+func (m *Model) setName(key, name string) tea.Cmd {
+	if name == "" {
+		delete(m.names, key)
+	} else {
+		m.names[key] = name
+	}
+	m.refederate()
+	m.publish()
+	store := m.d.Store
+	if store == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		if err := store.SetName(key, name); err != nil {
+			return hostToggleMsg{err}
+		}
+		return nil
+	}
+}
+
+// applyNames puts the chosen names on the federated agents (a copy: the slices may be the
+// poller's own).
+func (m *Model) applyNames() {
+	if len(m.names) == 0 {
+		return
+	}
+	agents := append([]agent.Agent(nil), m.fed.Agents...)
+	for i := range agents {
+		if n, ok := m.names[nameKey(agents[i])]; ok && n != "" {
+			agents[i].Name = n
+		}
+	}
+	m.fed.Agents = agents
 }

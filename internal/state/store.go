@@ -255,3 +255,33 @@ func (s *Store) AppendEvent(v any) {
 	}
 	_, _ = f.Write(append(data, '\n'))
 }
+
+// NamesFile holds the row names chosen in the sidebar (n on an agent row), keyed by pane ref
+// ("%12", "beta:%12"): a name sticks to that pane across the agent's sessions in it.
+const NamesFile = "names.json"
+
+// LoadNames returns the chosen names; none when the file is absent or unreadable.
+func (s *Store) LoadNames() map[string]string {
+	out := map[string]string{}
+	if data, err := os.ReadFile(filepath.Join(s.Dir, NamesFile)); err == nil {
+		_ = json.Unmarshal(data, &out)
+	}
+	return out
+}
+
+// SetName records a name for a pane ref; "" forgets it (the row shows its directory again).
+func (s *Store) SetName(key, name string) error {
+	names := s.LoadNames()
+	if name == "" {
+		delete(names, key)
+	} else {
+		names[key] = name
+	}
+	if len(names) == 0 {
+		if err := os.Remove(filepath.Join(s.Dir, NamesFile)); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return nil
+	}
+	return writeJSON(filepath.Join(s.Dir, NamesFile), names)
+}

@@ -513,3 +513,87 @@ func TestRemoteGenerationsAndRebuiltConnections(t *testing.T) {
 		t.Fatalf("an attach change keeps the view: %+v", v)
 	}
 }
+
+// n names the agent row under the cursor; the name sticks to the pane, is written to the state
+// dir and an empty name restores the directory name.
+func TestRenameAgentRow(t *testing.T) {
+	m := multiHostModel(t)
+	m.focused, m.panel = true, panelAgents
+	key := func(r rune) tea.Cmd {
+		next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = next.(Model)
+		return cmd
+	}
+	typeKey := func(t tea.KeyType) tea.Cmd {
+		next, cmd := m.Update(tea.KeyMsg{Type: t})
+		m = next.(Model)
+		return cmd
+	}
+	// the local agent (proj, %1) sits somewhere in the attention-sorted list: put the cursor on it
+	for i, a := range m.snap.Agents {
+		if a.Host == "" && a.PaneID == "%1" {
+			m.cursor[panelAgents] = i
+		}
+	}
+	key('n')
+	if !m.renaming || m.renameKey != "%1" || m.renameText != "" {
+		t.Fatalf("n opens the prompt for the row: renaming=%v key=%q text=%q", m.renaming, m.renameKey, m.renameText)
+	}
+	if lines := render(m, 40, 30); !strings.Contains(strings.Join(lines, "\n"), "name: ▏") {
+		t.Fatalf("the footer shows the prompt:\n%s", strings.Join(lines[len(lines)-3:], "\n"))
+	}
+	for _, r := range "gexx" {
+		key(r)
+	}
+	typeKey(tea.KeyBackspace)
+	if m.renameText != "gex" {
+		t.Fatalf("typed %q", m.renameText)
+	}
+	if cmd := typeKey(tea.KeyEnter); cmd == nil {
+		t.Fatal("enter persists the name")
+	} else {
+		cmd()
+	}
+	if m.renaming || m.names["%1"] != "gex" {
+		t.Fatalf("renaming=%v names=%v", m.renaming, m.names)
+	}
+	found := false
+	for _, a := range m.snap.Agents {
+		if a.PaneID == "%1" && a.Host == "" {
+			found = a.Name == "gex"
+		}
+	}
+	if !found {
+		t.Fatalf("the row shows the chosen name: %+v", m.snap.Agents)
+	}
+	if n := m.d.Store.LoadNames(); n["%1"] != "gex" {
+		t.Fatalf("names.json: %v", n)
+	}
+	// a fresh model reads it back; esc leaves a prompt without changing anything
+	m2 := New(m.d)
+	if m2.names["%1"] != "gex" {
+		t.Fatalf("a new sidebar loads the names: %v", m2.names)
+	}
+	key('n')
+	if m.renameText != "gex" {
+		t.Fatalf("the prompt starts from the current name: %q", m.renameText)
+	}
+	typeKey(tea.KeyEsc)
+	if m.renaming || m.names["%1"] != "gex" {
+		t.Fatal("esc keeps the name")
+	}
+	// an empty name restores the directory name
+	key('n')
+	typeKey(tea.KeyCtrlU)
+	if cmd := typeKey(tea.KeyEnter); cmd != nil {
+		cmd()
+	}
+	if _, ok := m.names["%1"]; ok || m.d.Store.LoadNames()["%1"] != "" {
+		t.Fatalf("an empty name forgets it: %v", m.names)
+	}
+	for _, a := range m.snap.Agents {
+		if a.PaneID == "%1" && a.Host == "" && a.Name != "proj" {
+			t.Fatalf("the directory name is back: %+v", a)
+		}
+	}
+}

@@ -458,6 +458,8 @@ func (m Model) footerLines(w int) []string {
 		}
 	}
 	switch {
+	case m.renaming:
+		one("name: "+m.renameText+"▏", pink)
 	case m.confirmRemove != "":
 		one("remove "+m.confirmRemove+"? y/n", pink)
 	case !m.focused: // keys go to the work pane until the sidebar is clicked or `prefix g` is pressed
