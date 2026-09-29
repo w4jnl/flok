@@ -1,9 +1,17 @@
 # Shared setup for the headless end-to-end scripts. Everything runs on ISOLATED tmux servers
 # (e2e-inner / e2e-outer) with a private state dir and config; the real tmux server is untouched.
-set -euo pipefail
+set -Eeuo pipefail   # -E: the ERR trap below reaches functions and command substitutions
 unset TMUX TMUX_PANE FLOK_OUTER FLOK_RIGHT_PANE   # the suites drive their own isolated servers
 R=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-[ -z "${FLOK_DEBUG:-}" ] || export FLOK_TMUX_VERBOSE=1   # a debug run also keeps the outer tmux server's own log
+# a debug run also keeps the outer tmux server's own log (tmux -vv; E2E_TMUX_VERBOSE=0 opts out)
+[ -z "${FLOK_DEBUG:-}" ] || [ "${E2E_TMUX_VERBOSE:-1}" = 0 ] || export FLOK_TMUX_VERBOSE=1
+# An abort (a command failing under set -e, not a failed check) names its line and command, and
+# the summary line says so, so a run that died is told apart from one that finished with failures.
+aborted=''
+on_err() { local rc=$?; [ "${BASH_SUBSHELL:-0}" -eq 0 ] || return 0; [ -z "$aborted" ] || return 0
+  aborted="${BASH_SOURCE[1]:-$0}:${BASH_LINENO[0]}"; printf 'ABORT %s: %s (exit %d)\n' "$aborted" "$BASH_COMMAND" "$rc"; }
+trap on_err ERR
+trap 'exit 124' TERM   # the runner's watchdog: leave through EXIT so cleanup below runs
 PROJ=$(basename "$R")   # agent rows show the cwd base name
 BIN=$R/bin/flok
 go build -o "$BIN" "$R/cmd/flok"
@@ -29,7 +37,8 @@ export PATH="$FAKE:$PATH" FLOK_E2E_REGISTRY=$T/registry.json   # the sidebar's `
 registry() { printf '%s' "$1" > "$FLOK_E2E_REGISTRY"; }     # registry '[{"pid":N,"status":"idle",...}]'
 IN() { tmux -L e2e-inner "$@"; }
 OUT() { tmux -L e2e-outer "$@"; }
-cleanup() { OUT kill-server 2>/dev/null || true; IN kill-server 2>/dev/null || true
+cleanup() { [ -n "${summary_done:-}" ] || echo "== ${pass:-0} passed, ${fail:-0} failed, aborted at ${aborted:-unknown} =="
+  OUT kill-server 2>/dev/null || true; IN kill-server 2>/dev/null || true
   for h in ${FAKE_HOSTS:-}; do tmux -L "e2e-$h" kill-server 2>/dev/null || true; done
   if [ -n "${FLOK_DEBUG:-}" ]; then # keep the sidebar/remote/serve logs of a debug run
     d=/tmp/flok-e2e-logs/$(basename "$0" .sh); rm -rf "$d"; mkdir -p "$d"
@@ -51,7 +60,7 @@ expect() { # name, pattern (grep -E), text — matched against a file: a pipe in
 capture() { OUT capture-pane -p -t "$SIDEBAR"; }
 wait_for() { # pattern, seconds
   local i; for i in $(seq 1 $(( ${2:-3} * 10 ))); do capture | grep -qE "$1" && return 0; sleep 0.1; done; return 1; }
-finish() { echo "== $pass passed, $fail failed =="; test "$fail" -eq 0; }
+finish() { summary_done=1; echo "== $pass passed, $fail failed =="; if [ "$fail" -eq 0 ]; then exit 0; else exit 1; fi; }
 # expect_soon [-t SECS] NAME PATTERN CMD [ARGS…]: run CMD every 0.1 s until its output matches
 # PATTERN (grep -E), then PASS; FAIL with the last output after SECS (default 5). The shape for
 # every transition: a render that is late never fails it, a state that never arrives does.
@@ -85,6 +94,12 @@ SNAP=$T/state/snapshot.json
 rt() { python3 -c "import json,sys;r=json.load(open('$RT'));print(eval(sys.argv[1]))" "$1" 2>/dev/null || true; }
 snap_hosts() { python3 -c "import json;print(' '.join(h['name']+'='+h['state'] for h in json.load(open('$SNAP')).get('hosts',[])))" 2>/dev/null || true; }
 wait_hosts() { local i; for i in $(seq 1 $(( ${2:-10} * 10 ))); do [ "$(snap_hosts)" = "$1" ] && return 0; sleep 0.1; done; return 1; }
+# ready_up [SECS]: after `flok up --detach`: waits for runtime.json to name both panes (not a
+# fixed sleep), sets SIDEBAR/RIGHT, waits for the first frame; a sidebar that never comes up aborts
+ready_up() { local secs=${1:-10}
+  wait_json "$RT" "s.get('sidebar_pane') and s.get('right_pane')" "$secs" || { echo "ABORT runtime.json not ready after ${secs}s"; ls -la "$T/state" 2>/dev/null || true; return 1; }
+  SIDEBAR=$(json "$RT" "s['sidebar_pane']"); RIGHT=$(json "$RT" "s['right_pane']")
+  wait_for '\[flok\]|^sessions' 5 || true; }
 
 # Two inner sessions; Alpha has a window "agent" running the fake claude with an idle title.
 IN -f /dev/null new-session -d -s Alpha -x 200 -y 50 -c "$R"
@@ -102,9 +117,7 @@ INNER_SOCK=$(IN display -p '#{socket_path}')
 REPO_BRANCH=$(git -C "$R" symbolic-ref --short -q HEAD || git -C "$R" rev-parse HEAD | cut -c1-7)
 
 "$BIN" up --detach
-sleep 1.5
-SIDEBAR=$(python3 -c "import json;print(json.load(open('$T/state/runtime.json'))['sidebar_pane'])")
-RIGHT=$(python3 -c "import json;print(json.load(open('$T/state/runtime.json'))['right_pane'])")
+ready_up
 wait_for 'fake-agent' 5 || true
 
 # tmux version of this host: suites skip what older servers cannot do (RHEL 8 ships 2.7, RHEL 9 3.2a)
@@ -117,7 +130,7 @@ tmux_at_least() { [ "$TMUX_MAJOR" -gt "$1" ] || { [ "$TMUX_MAJOR" -eq "$1" ] && 
 # it shows the errors in a view-mode overlay on the work pane, which no client would ever see here.
 in_mode=$(OUT display -p -t "$RIGHT" '#{pane_in_mode}')
 expect "outer config loaded without errors on tmux $TMUX_VER" '^0$' "$in_mode"
-[ "$in_mode" = "0" ] || OUT capture-pane -p -t "$RIGHT" | grep -v '^ *$' | head -12 | sed 's/^/      | /'
+[ "$in_mode" = "0" ] || OUT capture-pane -p -t "$RIGHT" | grep -v '^ *$' | head -12 | sed 's/^/      | /' || true
 expect "runtime.json records the tmux version" "^$TMUX_MAJOR\\.$TMUX_MINOR" "$(python3 -c "import json;print(json.load(open('$T/state/runtime.json')).get('tmux_version',''))")"
 
 # hook <agent> <json>  — replays a hook payload as if the agent in $AGENT had emitted it.

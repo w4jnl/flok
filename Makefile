@@ -5,7 +5,7 @@ LDFLAGS := -s -w -X github.com/w4jnl/flok/internal/cli.Version=$(VERSION)
 
 UNAME := $(shell uname -s)
 
-.PHONY: build build-bar bundle-bar icons install test vet run-status
+.PHONY: build build-bar bundle-bar icons install test vet e2e run-status
 
 build:
 	CGO_ENABLED=0 go build -ldflags '$(LDFLAGS)' -o bin/$(BIN) ./cmd/$(BIN)
@@ -35,6 +35,11 @@ install: build
 
 test:
 	go test ./...
+
+# End-to-end suites on isolated tmux servers, in order, each under a watchdog, with a table at
+# the end (scripts/e2e/run-all.sh); `make e2e SUITES="m4 m7"` for a subset. Never two at once.
+e2e:
+	scripts/e2e/run-all.sh $(SUITES)
 
 vet:
 	go vet ./...

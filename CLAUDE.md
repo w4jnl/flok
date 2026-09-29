@@ -20,7 +20,8 @@ make test                  # go test ./...
 make vet                   # go vet ./...
 go test ./internal/merge -run TestHookAuthorityAndSeen -v   # one test
 go test ./internal/rules -run TestClaudeFixtures -v         # screen-rule fixtures
-scripts/e2e/m1.sh          # headless end-to-end suites, m1..m10 (see below)
+make e2e                   # headless end-to-end suites m1..m10 in order (scripts/e2e/run-all.sh); SUITES="m4 m7" for a subset
+scripts/e2e/m1.sh          # one suite (see below); never run two at once, they share the isolated servers
 scripts/spike/m0-outer.sh check   # nested-outer passthrough checks on isolated servers
 ```
 
@@ -51,6 +52,17 @@ sidebar pid on macOS, the macOS-only message elsewhere), m10 remote hosts: `fake
 isolated servers `e2e-<host>` with per-host state and config (`$T/down-<host>` / `$T/auth-<host>`
 simulate failures) and `rhook` replays a hook on a host. They need a real `tmux` on PATH and `python3` (to read `runtime.json`).
 `lib.sh` exports `TMUX_VER`/`tmux_at_least MAJ MIN` for checks older servers cannot pass.
+Timing rules, learned from a month of CI: assert a transition with `expect_soon NAME PATTERN
+CMD…` (polls until it holds; `expect_soon … capture` for the sidebar), never `sleep; expect`;
+a wait placed after an action must only be satisfiable after the transition (`wait_gone` the
+old row first, `wait_json` on `last_connected`/`served`/`snapshot.json`), because
+`wait_for` matches a stale render instantly; a fixed dwell is only right for a negative check
+("nothing changed"); `paint` writes screen fixtures atomically; `kill_server`/`kill_serve`/
+`serve_pid` instead of raw `kill-server`/`pkill -f`/`pgrep -f` (system-wide); the e2e config
+samples screens every 500 ms. `set -Eeuo pipefail` with an ERR trap: a command failing outside
+a check prints `ABORT file:line: cmd` and the summary says `aborted`; `scripts/e2e/run-all.sh`
+(what CI runs) runs every suite even after a failure, kills one after `E2E_SUITE_TIMEOUT`, and
+writes the per-suite table to the step summary; the debug artifact keeps only failed suites.
 
 ## Architecture
 

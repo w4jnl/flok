@@ -766,7 +766,8 @@ brand = "#12999D"
 ```sh
 make build             # bin/flok with the version stamped from git describe
 make test              # unit tests
-scripts/e2e/m1.sh      # headless end-to-end suites on isolated tmux servers, m1..m9
+make e2e               # headless end-to-end suites on isolated tmux servers, m1..m10, in order
+scripts/e2e/m4.sh      # one suite (make e2e SUITES="m4 m7" for a few)
 make icons             # regenerate the menu bar template icons (assets/icons/gen)
 scripts/spike/m0-outer.sh check   # nested-outer passthrough checks
 scripts/spike/m0-outer.sh up      # interactive checklist against your real server
@@ -775,7 +776,11 @@ scripts/spike/m0-outer.sh up      # interactive checklist against your real serv
 The end-to-end suites start their own tmux servers (`e2e-inner`, `e2e-outer`) with a private
 state and config directory, run a fake agent binary named `claude` that paints scripted screens,
 replay hook payloads against it, and assert on `capture-pane` output of the sidebar. Your real
-tmux server is never touched.
+tmux server is never touched. `scripts/e2e/run-all.sh` runs them in order, every one even after
+a failure, each under a watchdog (`E2E_SUITE_TIMEOUT`, 300 s), and ends with a table; a suite
+that died prints `ABORT <file>:<line>: <command>` and its summary line says `aborted`.
+`FLOK_DEBUG=1` keeps the logs of the suites that did not pass under `/tmp/flok-e2e-logs`
+(`E2E_KEEP_LOGS=1` keeps them all; `E2E_TMUX_VERBOSE=0` leaves out the outer tmux's own log).
 
 ```
 cmd/flok               entry point
