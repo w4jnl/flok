@@ -3,6 +3,7 @@ package remote
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -27,6 +28,7 @@ type fakeProc struct {
 	code      int
 	stderr    string
 	killed    bool
+	holdKill  chan struct{}    // when set, Kill blocks on it first: a teardown stuck on the network
 	fromLocal chan proto.Frame // what the manager wrote, drained like a kernel pipe buffer
 }
 
@@ -59,8 +61,42 @@ func (p *fakeProc) Wait() (int, string) {
 func (p *fakeProc) Kill() {
 	p.mu.Lock()
 	p.killed = true
+	hold := p.holdKill
 	p.mu.Unlock()
+	if hold != nil {
+		<-hold
+	}
 	p.exit(-1, "")
+}
+
+func (p *fakeProc) hold() chan struct{} {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.holdKill = make(chan struct{})
+	return p.holdKill
+}
+
+// logSink collects Debugf lines.
+type logSink struct {
+	mu    sync.Mutex
+	lines []string
+}
+
+func (l *logSink) add(f string, a ...any) {
+	l.mu.Lock()
+	l.lines = append(l.lines, fmt.Sprintf(f, a...))
+	l.mu.Unlock()
+}
+
+func (l *logSink) has(sub string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for _, x := range l.lines {
+		if strings.Contains(x, sub) {
+			return true
+		}
+	}
+	return false
 }
 
 // exit ends the fake process like ssh would: stdout closes, then Wait returns.
@@ -250,14 +286,22 @@ func TestFullModeSession(t *testing.T) {
 	if f := p2.next(t); f.Type != proto.TypeVisible || !f.On {
 		t.Fatalf("reconnect replays visible: %+v", f)
 	}
-	// the registry disables the host: the session ends
+	// the registry disables the host: the status drops at once, the session ends right after
+	// (Apply no longer waits for the teardown)
 	set.Hosts[0].Enabled = false
 	m.Apply(set)
-	p2.mu.Lock()
-	killed := p2.killed
-	p2.mu.Unlock()
-	if !killed || m.Status()["beta"].Host != "" {
-		t.Fatal("disabling must kill the session and drop the status")
+	if m.Status()["beta"].Host != "" {
+		t.Fatal("disabling must drop the status")
+	}
+	killed := false
+	for i := 0; i < 100 && !killed; i++ {
+		p2.mu.Lock()
+		killed = p2.killed
+		p2.mu.Unlock()
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !killed {
+		t.Fatal("disabling must kill the session")
 	}
 }
 
@@ -439,5 +483,139 @@ func TestExecDialer(t *testing.T) {
 	var ee *tmux.ExitError
 	if errors.As(errors.New("x"), &ee) {
 		t.Fatal("sanity")
+	}
+}
+
+var helloFrame = proto.Frame{Type: proto.TypeHello, Hello: &proto.Hello{Proto: proto.Version, Version: "0.5.0", Hostname: "beta", TmuxVersion: "3.4", Features: proto.ServeFeatures}}
+
+// connectFull drives the harness's first full-mode connection to Connected and returns its proc.
+func connectFull(t *testing.T, h *harness) *fakeProc {
+	t.Helper()
+	h.state(Connecting)
+	p := h.proc()
+	p.send(t, helloFrame)
+	if msg := h.state(Connected); msg.Gen != 1 {
+		t.Fatalf("the first connection is generation 1: %+v", msg)
+	}
+	return p
+}
+
+// A mode change replaces the connection without holding Apply on the old one's teardown:
+// the replacement shows up at once, waits for the old one within the bound, then goes ahead;
+// the old connection's last words are never delivered.
+func TestApplyReplacesWithoutWaiting(t *testing.T) {
+	h := newHarness(t, hosts.ModeFull)
+	logs := &logSink{}
+	ft := &fakeTmux{}
+	m := h.manager(func(d *Deps) {
+		d.StopTimeout = 200 * time.Millisecond
+		d.Debugf = logs.add
+		d.NewClient = func([]string, hosts.Host) PlainClient { return ft }
+	})
+	p := connectFull(t, h)
+	hold := p.hold()
+	set, _ := hosts.Load(h.dir)
+	set.Hosts[0].Mode = hosts.ModePlain
+	t0 := time.Now()
+	m.Apply(set)
+	if d := time.Since(t0); d > 100*time.Millisecond {
+		t.Fatalf("Apply waited %v for the old connection", d)
+	}
+	if st := m.Status()["beta"]; st.Mode != hosts.ModePlain {
+		t.Fatalf("the replacement is in place at once: %+v", st)
+	}
+	h.msg(func(m Msg) bool { return m.State == Connecting && m.Gen == 2 }, "connecting, generation 2")
+	if msg := h.msg(func(m Msg) bool { return m.State == Connected && m.Gen == 2 }, "connected, generation 2"); msg.Hello == nil || msg.Hello.Version != "plain" {
+		t.Fatalf("plain connection: %+v", msg)
+	}
+	if !logs.has("still tearing down after 200ms, starting anyway") {
+		t.Fatalf("the bounded wait is logged: %q", logs.lines)
+	}
+	close(hold)
+	deadline := time.After(150 * time.Millisecond)
+	for {
+		select {
+		case msg := <-h.sink:
+			if msg.Gen < 2 {
+				t.Fatalf("a replaced connection spoke after its successor: %+v", msg)
+			}
+			continue
+		case <-deadline:
+		}
+		break
+	}
+}
+
+// When the old teardown ends within the bound, the replacement dials right after it (its keys
+// leave the host's tmux before ours arrive).
+func TestReplacementWaitsForTheOldTeardown(t *testing.T) {
+	h := newHarness(t, hosts.ModeFull)
+	logs := &logSink{}
+	m := h.manager(func(d *Deps) {
+		d.StopTimeout = time.Second
+		d.Debugf = logs.add
+		d.NewClient = func([]string, hosts.Host) PlainClient { return &fakeTmux{} }
+	})
+	p := connectFull(t, h)
+	hold := p.hold()
+	set, _ := hosts.Load(h.dir)
+	set.Hosts[0].Mode = hosts.ModePlain
+	m.Apply(set)
+	h.msg(func(m Msg) bool { return m.State == Connecting && m.Gen == 2 }, "connecting, generation 2")
+	select {
+	case msg := <-h.sink:
+		if msg.Gen == 2 && msg.State == Connected {
+			t.Fatal("the replacement connected while the old teardown was still held")
+		}
+	case <-time.After(150 * time.Millisecond):
+	}
+	close(hold)
+	h.msg(func(m Msg) bool { return m.State == Connected && m.Gen == 2 }, "connected after the release")
+	if !logs.has("previous connection ended in") {
+		t.Fatalf("logs %q", logs.lines)
+	}
+}
+
+func TestReconnectIsBounded(t *testing.T) {
+	h := newHarness(t, hosts.ModeFull)
+	m := h.manager(func(d *Deps) { d.StopTimeout = 200 * time.Millisecond })
+	p := connectFull(t, h)
+	hold := p.hold()
+	defer close(hold)
+	t0 := time.Now()
+	m.Reconnect("beta")
+	if d := time.Since(t0); d > 50*time.Millisecond {
+		t.Fatalf("Reconnect waited %v", d)
+	}
+	if _, ok := m.Status()["beta"]; !ok {
+		t.Fatal("the host keeps a connection across a reconnect")
+	}
+	h.msg(func(m Msg) bool { return m.State == Connecting && m.Gen == 2 }, "connecting, generation 2")
+	if p2 := h.proc(); p2 == p {
+		t.Fatal("a new dial")
+	}
+}
+
+func TestCloseIsBounded(t *testing.T) {
+	h := newHarness(t, hosts.ModeFull)
+	m := h.manager(func(d *Deps) { d.StopTimeout = 200 * time.Millisecond })
+	p := connectFull(t, h)
+	if _, err := hosts.Update(h.dir, func(s *hosts.Set) error {
+		return s.Add(hosts.Host{Name: "gamma", Target: "gamma", Mode: hosts.ModeFull, Enabled: true})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	set, _ := hosts.Load(h.dir)
+	m.Apply(set)
+	p2 := h.proc()
+	p2.send(t, helloFrame)
+	h.msg(func(m Msg) bool { return m.Host == "gamma" && m.State == Connected }, "gamma connected")
+	hold1, hold2 := p.hold(), p2.hold()
+	defer close(hold1)
+	defer close(hold2)
+	t0 := time.Now()
+	m.Close()
+	if d := time.Since(t0); d < 150*time.Millisecond || d > 400*time.Millisecond {
+		t.Fatalf("Close took %v, want one bound of 200ms for both hosts", d)
 	}
 }

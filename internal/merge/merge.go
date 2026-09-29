@@ -89,6 +89,7 @@ type track struct {
 	regIdle     int         // consecutive registry samples saying idle
 	hookSince   time.Time   // StateSince of the hook record the counters above refer to
 	lastRaw     agent.State // last raw (pre-done) state, kept across skip_state_update holds
+	lastReason  string      // the reason that went with lastRaw ("prompt"), kept the same way
 }
 
 // Tracker keeps per-pane history between builds.
@@ -334,7 +335,7 @@ func (t *Tracker) Build(in Inputs) Snapshot {
 			switch {
 			case screened && scr.Matched && scr.Hold:
 				if tr.lastRaw != "" {
-					st = tr.lastRaw // e.g. model picker open: keep whatever we knew
+					st, reason = tr.lastRaw, tr.lastReason // e.g. model picker open: keep whatever we knew, its reason too
 				}
 			case screened && scr.Matched:
 				st = scr.State
@@ -344,7 +345,7 @@ func (t *Tracker) Build(in Inputs) Snapshot {
 			case screened && !tOK && !hasReg:
 				st = agent.Idle // known agent, nothing visible: herdr's default_known_agent_idle_fallback
 			}
-			tr.lastRaw = st
+			tr.lastRaw, tr.lastReason = st, reason
 			if tr.titleState != st {
 				if tr.titleState == agent.Working && st == agent.Idle && !focused {
 					tr.done, tr.doneAt = true, now

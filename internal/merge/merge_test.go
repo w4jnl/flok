@@ -195,11 +195,13 @@ func TestScreenRules(t *testing.T) {
 	if a := s.Agents[0]; a.State != agent.Blocked || a.Source != "screen" || a.Reason != "prompt" {
 		t.Fatalf("screen blocked: %+v", a)
 	}
-	// hold keeps the last raw state
+	// hold keeps the last raw state and its reason (the row keeps reading "prompt", not "input")
 	scr["%1"] = rules.Result{Matched: true, Hold: true, State: agent.Unknown}
-	s = tr.Build(Inputs{Tmux: snap("plain", "$2"), ClientTTY: "/dev/ttys9", Adapters: ads, Screen: scr, Now: now})
-	if a := s.Agents[0]; a.State != agent.Blocked {
-		t.Fatalf("hold: %+v", a)
+	for i := 0; i < 3; i++ {
+		s = tr.Build(Inputs{Tmux: snap("plain", "$2"), ClientTTY: "/dev/ttys9", Adapters: ads, Screen: scr, Now: now})
+		if a := s.Agents[0]; a.State != agent.Blocked || a.Reason != "prompt" {
+			t.Fatalf("hold %d: %+v", i, a)
+		}
 	}
 	// evaluated, nothing matched, no title signal: idle fallback; working -> idle transition = done
 	scr["%1"] = rules.Result{Matched: true, State: agent.Working}

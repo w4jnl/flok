@@ -6,6 +6,11 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+- Remote hosts: changing a host's mode, target or flok path, `r`, and `flok down` no longer wait
+  for the old connection to tear down (a dead link could hold the sidebar for the ssh timeout);
+  the replacement connects in the background and a replaced connection's last messages can no
+  longer overwrite the new one's row. A hook-less pane whose screen shows the model picker
+  keeps its `prompt` reason while the picker is open, instead of turning into `input`.
 - **Install flok on a host from here.** `flok host install <name>` (or `I` on the host's row in
   the servers panel, which shows the progress in a tmux popup, or `flok host add … --install`)
   puts flok on a host that has tmux but no flok, or upgrades an old one, over the same ssh:

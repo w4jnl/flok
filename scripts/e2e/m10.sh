@@ -13,7 +13,6 @@ cat > "$FAKE/hosts/delta/bin/flok" <<'OLD'
 case "${1:-}" in version) echo "flok 0.4.4" ;; *) echo "flok: unknown command \"${1:-}\"" >&2; echo "usage: flok <command>" >&2; exit 2 ;; esac
 OLD
 chmod +x "$FAKE/hosts/delta/bin/flok"
-wait_file() { local i; for i in $(seq 1 $(( ${3:-5} * 10 ))); do grep -qE "$2" "$1" 2>/dev/null && return 0; sleep 0.1; done; return 1; }
 # Part 1 is the CLI without a sidebar: it uses a state dir of its own (as on a machine that only
 # checks hosts), so the running sidebar, which connects to a host the moment it is registered,
 # does not compete for the hosts' serve locks. Part 2 registers the hosts for the sidebar.
@@ -46,7 +45,7 @@ mkfifo "$T/serve-in"
 SERVE_OUT=$T/serve-out
 ( "$FAKE/ssh" -o BatchMode=yes -T -- beta flok serve --stdio < "$T/serve-in" > "$SERVE_OUT" 2> "$T/serve-err" ) &
 SERVE_PID=$!
-exec 7> "$T/serve-in"
+exec 7<> "$T/serve-in"   # read-write: never blocks on the fifo; closing fd 7 is still the reader's EOF
 wait_file "$SERVE_OUT" '"type":"hello"' 5 || true
 expect "serve greets with protocol 1 and the host's tmux" '"type":"hello","hello":."proto":1,.*"tmux_version":"[0-9]' "$(head -1 "$SERVE_OUT")"
 wait_file "$SERVE_OUT" '"type":"snap"' 5 || true
@@ -75,7 +74,7 @@ for _ in $(seq 1 30); do kill -0 "$SERVE_PID" 2>/dev/null || break; sleep 0.1; d
 expect "serve exits on EOF" '^gone$' "$(kill -0 "$SERVE_PID" 2>/dev/null && echo alive || echo gone)"
 expect "served record removed" '^missing$' "$([ -e "$T/hosts/beta/state/served" ] && echo present || echo missing)"
 expect "serve wrote nothing to stderr" '^$' "$(cat "$T/serve-err")"
-sleep 2.2   # past the per-pane sound rate limit
+sound_guard_passed "$T/hosts/beta/state" || true   # past the per-pane sound rate limit
 rhook beta claude '{"hook_event_name":"PostToolUse","session_id":"r1","tool_name":"Bash","tool_use_id":"t1"}'
 rhook beta claude '{"hook_event_name":"PermissionRequest","session_id":"r1","tool_name":"Bash","tool_input":{"command":"pwd"},"tool_use_id":"t2"}'
 sleep 0.5
@@ -103,7 +102,7 @@ doc=$(cli doctor 2>&1 || true)
 expect "doctor says the same" '^warn +host delta \(full\): tmux [0-9][^,]*, flok 0.4.4 at .*/flok is too old, it has no `serve`' "$doc"
 # a host with tmux installed but no server, seen from the CLI alone (no work pane to start one)
 cli host set delta --mode plain >/dev/null
-tmux -L e2e-delta kill-server
+kill_server e2e-delta
 out=$(cli host status 2>&1 || true)
 expect "status tells a stopped tmux from an unreachable host" '^delta +plain +no tmux server +tmux [0-9][^ ]* +- +no server running on .*; the sidebar.s work pane starts one' "$out"
 cli host remove delta >/dev/null
@@ -151,11 +150,6 @@ expect "remove prunes its local store" '^none$' "$([ -d "$CLI_STATE/hosts/gamma"
 # manager and parks a work pane per host in the outer.
 "$BIN" host add beta beta >/dev/null
 "$BIN" host add gamma gamma --mode plain >/dev/null
-RT=$T/state/runtime.json
-SNAP=$T/state/snapshot.json
-rt() { python3 -c "import json,sys;r=json.load(open('$RT'));print(eval(sys.argv[1]))" "$1" 2>/dev/null || true; }
-snap_hosts() { python3 -c "import json;print(' '.join(h['name']+'='+h['state'] for h in json.load(open('$SNAP')).get('hosts',[])))" 2>/dev/null || true; }
-wait_hosts() { local i; for i in $(seq 1 $(( ${2:-10} * 10 ))); do [ "$(snap_hosts)" = "$1" ] && return 0; sleep 0.1; done; return 1; }
 wait_for 'servers' 5 || true
 snap=$(capture); echo "--- servers panel ---"; printf '%s\n' "$snap" | grep -v '^ *$' | sed -n '1,12p' | sed 's/^/      | /'
 expect "the sidebar grows a servers panel" '^servers' "$snap"
@@ -178,7 +172,7 @@ BETA_WIN=$(rt "r['hosts']['beta']['window']")
 expect "runtime.json records beta's pane and window" '^%[0-9]+ @[0-9]+$' "$BETA_PANE $BETA_WIN"
 # the parked pane attached to beta's tmux through the fake ssh
 for _ in $(seq 1 50); do OUT capture-pane -p -t "$BETA_PANE" | grep -q 'remote-agent\|Remote' && break; sleep 0.1; done
-expect "beta's parked pane shows beta's tmux" '' "$(OUT capture-pane -p -t "$BETA_PANE" | grep -c . )"
+expect "beta's parked pane shows beta's tmux" 'remote-agent|Remote' "$(OUT capture-pane -p -t "$BETA_PANE")"
 expect "beta's tmux has a client (the parked pane)" '^1$' "$(tmux -L e2e-beta list-clients | wc -l | tr -d ' ')"
 # a hook on beta changes its row here (beta is not in front: unfocused there, so Stop ends done)
 rhook beta claude '{"hook_event_name":"PostToolUse","session_id":"r1","tool_name":"Bash","tool_use_id":"t2"}'
@@ -233,7 +227,7 @@ expect "... with right_pane back on the local pane" "^$RIGHT\$" "$(rt "r['right_
 
 # beta goes down: the serve session dies, the attach pane loses its client, both report it
 touch "$T/down-beta"
-pkill -f "serve --stdio" || true
+kill_serve beta
 tmux -L e2e-beta detach-client 2>/dev/null || true
 wait_for '✗ beta' 10 || true
 snap=$(capture)
@@ -249,7 +243,8 @@ expect "the parked pane re-attaches" '^1$' "$(tmux -L e2e-beta list-clients | wc
 
 # the host's tmux goes away: the parked work pane starts a fresh server with the default session,
 # and the row is back with it
-tmux -L e2e-gamma kill-server
+kill_server e2e-gamma
+wait_gone 'gamma +plain +[0-9]' 5 || true   # the row leaves its connected state before it can come back
 for _ in $(seq 1 150); do tmux -L e2e-gamma list-sessions -F '#{session_name}' 2>/dev/null | grep -qx main && break; sleep 0.1; done
 expect "the work pane starts tmux again with [hosts] session" '^main$' "$(tmux -L e2e-gamma list-sessions -F '#{session_name}' 2>/dev/null)"
 wait_for 'gamma +plain +[0-9]' 15 || true
@@ -357,19 +352,26 @@ expect "c connects it again" 'gamma +plain +[0-9]' "$(capture)"
 expect "flok's o replaces gamma's own while connected" 'prefix +o +set-option -g @flok-request jump' "$(tmux -L e2e-gamma list-keys -T prefix)"
 expect "... and gamma's own is recorded in its server" '^o bind-key +-T prefix +o +select-pane -t :.\+$' "$(tmux -L e2e-gamma show-options -gqv @flok-orig-o)"
 expect "... a key gamma had unbound is recorded as such" '^N$' "$(tmux -L e2e-gamma show-options -gqv @flok-orig-N)"
+# a mode flip rebuilds the connection: wait for the transition (only a new connection writes
+# last_connected), not for a row that may still show the old connection
+gamma_lc() { json "$T/state/hosts.json" "next(h.get('last_connected','') for h in s['hosts'] if h['name']=='gamma')"; }
+lc=$(gamma_lc)
 OUT send-keys -t "$SIDEBAR" m
-wait_for 'gamma +full' 15 || true
-expect "m flips the mode" 'gamma +full' "$(capture)"
+wait_json "$T/state/hosts.json" "next(h.get('last_connected','') for h in s['hosts'] if h['name']=='gamma') != '$lc'" 15 || true
+wait_for 'gamma +full +[0-9]' 10 || true
+expect "m flips the mode" 'gamma +full +[0-9]' "$(capture)"
 expect "... in the registry too" '"mode": "full"' "$(python3 -c "import json;print(json.dumps([h for h in json.load(open('$T/state/hosts.json'))['hosts'] if h['name']=='gamma'][0]))")"
+lc=$(gamma_lc)
 OUT send-keys -t "$SIDEBAR" m
-wait_for 'gamma +plain +[0-9]' 15 || true
+wait_json "$T/state/hosts.json" "next(h.get('last_connected','') for h in s['hosts'] if h['name']=='gamma') != '$lc'" 15 || true
+wait_for 'gamma +plain +[0-9]' 10 || true
 expect "... and back" 'gamma +plain +[0-9]' "$(capture)"
-# r reconnects beta: a new serve session replaces the old one
-before=$(pgrep -f 'flok serve --stdio' | sort | tr '\n' ' ')
+# r reconnects beta: a new serve session replaces the old one (its served record names the pid)
+before=$(serve_pid beta)
 OUT send-keys -t "$SIDEBAR" g j r
-sleep 1
+wait_json "$T/hosts/beta/state/served" "s['pid'] != ${before:-0}" 15 || true
 wait_hosts "beta=connected gamma=connected" 15 || true
-after=$(pgrep -f 'flok serve --stdio' | sort | tr '\n' ' ')
+after=$(serve_pid beta)
 expect "r reconnects the host (a new serve session)" '^changed$' "$([ -n "$after" ] && [ "$before" != "$after" ] && echo changed || echo "same: $before / $after")"
 expect "... and it is connected again" '^beta=connected gamma=connected$' "$(snap_hosts)"
 
@@ -441,7 +443,7 @@ expect "the sidebar was told it reconnects by itself" 'the sidebar reconnects ze
 wait_hosts "beta=connected zeta=connected" 25 || true
 expect "the sidebar reconnected zeta by itself" '^beta=connected zeta=connected$' "$(snap_hosts)"
 # I on the row: an upgrade in place (same path) through a popup (3.2+) or a window, then a reconnect request
-before=$(pgrep -f "$T/hosts/zeta/home/.local/bin/flok serve" | sort | tr '\n' ' ')
+before=$(serve_pid zeta)
 tmux -L "$TTYS" -f /dev/null new-session -d -s t -x 160 -y 45 "tmux -L e2e-outer attach-session -t flok"
 sleep 1
 servers_panel || true
@@ -458,10 +460,10 @@ else
   expect "I opens the install in a window on a tmux without popups" 'installed flok .* at ' "$shown"
   OUT send-keys -t flok-install-zeta Enter
 fi
-tmux -L "$TTYS" kill-server 2>/dev/null || true
-sleep 1
+kill_server "$TTYS"
+wait_json "$T/hosts/zeta/state/served" "s['pid'] != ${before:-0}" 15 || true
 wait_hosts "beta=connected zeta=connected" 25 || true
-after=$(pgrep -f "$T/hosts/zeta/home/.local/bin/flok serve" | sort | tr '\n' ' ')
+after=$(serve_pid zeta)
 expect "the reconnect started a new serve there" '^changed$' "$([ -n "$after" ] && [ "$before" != "$after" ] && echo changed || echo "same: $before / $after")"
 
 # down leaves the remote servers alone
