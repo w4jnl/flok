@@ -6,16 +6,8 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
-- An agent row keeps the name of the directory its session started in: Claude Code's Bash tool
-  keeps a `cd` between calls and reported the sub-directory on every later hook, so a row could
-  read `engine` for a while instead of its project. `n` on an agent row names it yourself
-  (Enter saves, an empty name restores the directory name); the name sticks to that pane and
-  is kept in `names.json` in the state dir.
-- Remote hosts: changing a host's mode, target or flok path, `r`, and `flok down` no longer wait
-  for the old connection to tear down (a dead link could hold the sidebar for the ssh timeout);
-  the replacement connects in the background and a replaced connection's last messages can no
-  longer overwrite the new one's row. A hook-less pane whose screen shows the model picker
-  keeps its `prompt` reason while the picker is open, instead of turning into `input`.
+## 0.5.1 (2026-09-30)
+
 - **Install flok on a host from here.** `flok host install <name>` (or `I` on the host's row in
   the servers panel, which shows the progress in a tmux popup, or `flok host add … --install`)
   puts flok on a host that has tmux but no flok, or upgrades an old one, over the same ssh:
@@ -28,13 +20,22 @@ updates this file first. Dates are the tag dates.
   sidebar footer, with the key; the `no flok` / `old flok` hints, `flok host status` and
   `flok doctor` name the command. `flok host reconnect <name>` asks the running sidebar to
   redial a host (what `r` does). Releases now ship macOS tarballs next to the Linux ones.
+- An agent row keeps the name of the directory its session started in: Claude Code's Bash tool
+  keeps a `cd` between calls and reported the sub-directory on every later hook, so a row could
+  read `engine` for a while instead of its project. `n` on an agent row names it yourself
+  (Enter saves, an empty name restores the directory name); the name sticks to that pane and
+  is kept in `names.json` in the state dir.
 - Sidebar footer: a warning or error wraps over up to three lines above the key hints, with a
   blank line between the two, instead of replacing the hints cut off ("+N" counts further
   warnings); key hints that do not fit the width wrap onto a second line instead of overrunning.
   The keys help (`?` in the sidebar, `prefix ?`) lists flok's bindings, then the sidebar's own
   keys (and the servers panel's), then the tmux tables; the sidebar sections used to sit at the
-  very end.
-  The old-flok warning reads `<host>: upgrade flok there, no key relay (<version>)`.
+  very end. The old-flok warning reads `<host>: upgrade flok there, no key relay (<version>)`.
+- Remote hosts: changing a host's mode, target or flok path, `r`, and `flok down` no longer wait
+  for the old connection to tear down (a dead link could hold the sidebar for the ssh timeout);
+  the replacement connects in the background and a replaced connection's last messages can no
+  longer overwrite the new one's row. A hook-less pane whose screen shows the model picker
+  keeps its `prompt` reason while the picker is open, instead of turning into `input`.
 
 ## 0.5.0 (2026-09-28)
 
