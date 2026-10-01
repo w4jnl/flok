@@ -18,12 +18,12 @@ import (
 // the same keys as the local tmux snippet, `?` excepted (tmux's own list-keys stays there).
 type KeyCommand struct{ Key, Cmd string }
 
-// KeyCommands in binding order: the agent keys, the three menus (A agents, S sessions, H
+// KeyCommands in binding order: the agent keys, the three menus (A agents, S sessions, R
 // servers), then the server keys (N/P next and previous server, O the last one, F1…F9 a
 // server by position, local first).
 var KeyCommands = append([]KeyCommand{
 	{"b", "toggle"}, {"B", "hide"}, {"g", "focus"}, {"o", "jump"}, {"a", "next"}, {"u", "keep-awake"},
-	{"A", "menu agents"}, {"S", "menu sessions"}, {"H", "menu servers"},
+	{"A", "menu agents"}, {"S", "menu sessions"}, {"R", "menu servers"},
 	{"N", "host next"}, {"P", "host prev"}, {"O", "host last"},
 }, serverDigits()...)
 
@@ -35,7 +35,7 @@ var legacyKeyCommands = []string{"prev", "host menu"}
 var LocalKeyCommands = append([]KeyCommand{
 	{"a", "next --client '#{client_tty}'"}, {"o", "jump --client '#{client_tty}'"},
 	{"b", "toggle"}, {"B", "hide"}, {"g", "focus"}, {"u", "keep-awake --notify"}, {"?", "keys --open --client '#{client_tty}'"},
-	{"A", "menu agents"}, {"S", "menu sessions"}, {"H", "menu servers"},
+	{"A", "menu agents"}, {"S", "menu sessions"}, {"R", "menu servers"},
 	{"N", "host next"}, {"P", "host prev"}, {"O", "host last"},
 }, serverDigits()...)
 

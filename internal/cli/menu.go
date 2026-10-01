@@ -23,7 +23,7 @@ const menuUsage = `usage: flok menu agents|sessions|servers
 A tmux menu over the work pane (tmux 3.0+): the agents in the sidebar's order (1-9 open the
 pane, remote ones tagged with their host), the sessions of the server in front (1-9 switch to
 one), or the servers (1-9 bring one to the front). Each menu links to the other two. The tmux
-snippet binds them to prefix A, S and H; on a tmux without menus the key moves the keyboard
+snippet binds them to prefix A, S and R; on a tmux without menus the key moves the keyboard
 into the sidebar instead.`
 
 // menuItem is one display-menu triple; an empty Name is a separator line.
@@ -139,7 +139,7 @@ func agentMenuItems(s snapshot.Snapshot, now time.Time, bin string) []menuItem {
 	}
 	return append(items, menuItem{},
 		menuItem{Name: "sessions…", Key: "S", Cmd: runFlok(bin, "menu", "sessions")},
-		menuItem{Name: "servers…", Key: "H", Cmd: runFlok(bin, "menu", "servers")})
+		menuItem{Name: "servers…", Key: "R", Cmd: runFlok(bin, "menu", "servers")})
 }
 
 // sessionMenuItems lists the sessions of the server in front, the current one marked; an entry
@@ -179,7 +179,7 @@ func sessionMenuItems(s snapshot.Snapshot, bin string) []menuItem {
 	}
 	return append(items, menuItem{},
 		menuItem{Name: "agents…", Key: "A", Cmd: runFlok(bin, "menu", "agents")},
-		menuItem{Name: "servers…", Key: "H", Cmd: runFlok(bin, "menu", "servers")})
+		menuItem{Name: "servers…", Key: "R", Cmd: runFlok(bin, "menu", "servers")})
 }
 
 // serverMenuItems lists local and the enabled hosts in order with their state; an entry brings

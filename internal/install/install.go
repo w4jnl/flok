@@ -220,7 +220,7 @@ bind a run-shell -b "%[1]s next --client '#{client_tty}'"
 bind o run-shell -b "%[1]s jump --client '#{client_tty}'"   # replaces select-pane -t :.+
 bind A run-shell -b "%[1]s menu agents"                   # tmux menus (3.0+) of the agents, the sessions in front,
 bind S run-shell -b "%[1]s menu sessions"                 # the servers; older tmux focuses the sidebar instead
-bind H run-shell -b "%[1]s menu servers"
+bind R run-shell -b "%[1]s menu servers"
 bind b run-shell -b "%[1]s toggle"
 bind B run-shell -b "%[1]s hide"
 bind g run-shell -b "%[1]s focus"                        # keyboard into the sidebar: j/k, enter, esc back

@@ -26,7 +26,7 @@ func TestMenuItems(t *testing.T) {
 	ag := agentMenuItems(s, now, "/x/flok")
 	if len(ag) != 5 || ag[0].Key != "1" || !strings.HasPrefix(ag[0].Name, "● proj · claude") || ag[0].Cmd != "run-shell -b '/x/flok goto %1 --no-focus'" ||
 		ag[1].Key != "2" || !strings.Contains(ag[1].Name, "api · claude @beta") || ag[1].Cmd != "run-shell -b '/x/flok goto beta:%7 --no-focus'" ||
-		ag[2].Name != "" || ag[3].Name != "sessions…" || ag[3].Key != "S" || ag[4].Name != "servers…" || ag[4].Key != "H" {
+		ag[2].Name != "" || ag[3].Name != "sessions…" || ag[3].Key != "S" || ag[4].Name != "servers…" || ag[4].Key != "R" {
 		t.Fatalf("agents: %+v", ag)
 	}
 	se := sessionMenuItems(s, "/x/flok")

@@ -118,7 +118,7 @@ func TestLocalKeys(t *testing.T) {
 		"bind-key    -T prefix       c                 new-window\n"
 	c := &keysClient{keys: table}
 	installed, conflicts := InstallLocalKeys(c, dir, "/x/flok", "missing")
-	if got := strings.Join(installed, ""); !strings.HasPrefix(got, "aBguASHNPOF1") || len(installed) != 19 {
+	if got := strings.Join(installed, ""); !strings.HasPrefix(got, "aBguASRNPOF1") || len(installed) != 19 {
 		t.Fatalf("installed %v", installed)
 	}
 	if len(conflicts) != 2 || conflicts["o"] != "select-pane -t :.+" || conflicts["?"] != "list-keys -N" {
@@ -133,7 +133,7 @@ func TestLocalKeys(t *testing.T) {
 	}
 	// a second sidebar (reload) with the keys now present: nothing new, the record stays
 	c.keys = table + "bind-key    -T prefix       a                 run-shell -b \"/x/flok next --client '#{client_tty}'\"\n"
-	if again, _ := InstallLocalKeys(c, dir, "/x/flok", "missing"); !strings.HasPrefix(strings.Join(again, ""), "BguASH") || len(again) != 18 {
+	if again, _ := InstallLocalKeys(c, dir, "/x/flok", "missing"); !strings.HasPrefix(strings.Join(again, ""), "BguASR") || len(again) != 18 {
 		t.Fatalf("second install %v", again)
 	}
 	status := LocalKeyStatus(c)
@@ -176,7 +176,7 @@ func TestLocalKeys(t *testing.T) {
 	}
 }
 
-const allKeys = "b B g o a u A S H N P O F1 F2 F3 F4 F5 F6 F7 F8 F9"
+const allKeys = "b B g o a u A S R N P O F1 F2 F3 F4 F5 F6 F7 F8 F9"
 
 func TestInstallRebindRestore(t *testing.T) {
 	c := &keysClient{}
@@ -311,25 +311,25 @@ func TestPrefixMirror(t *testing.T) {
 
 // An older snippet's A (prev) and S (the servers menu) are flok's own bindings: the sidebar
 // brings them up to date in mode missing, saves them for the restore and still leaves the
-// user's H alone.
+// user's R alone.
 func TestLocalKeysUpdateStaleFlokBindings(t *testing.T) {
 	dir := t.TempDir()
 	table := "bind-key    -T prefix       A                 run-shell -b \"flok prev --client '#{client_tty}'\"\n" +
 		"bind-key    -T prefix       S                 run-shell -b \"/opt/homebrew/bin/flok host menu\"\n" +
 		"bind-key    -T prefix       a                 run-shell -b \"flok next --client '#{client_tty}'\"\n" +
 		"bind-key    -T prefix       u                 run-shell -b \"msg=$(flok keep-awake 2>&1); tmux display-message \\\"\\$msg\\\"\"\n" +
-		"bind-key -r -T prefix       H                 resize-pane -L 10\n"
+		"bind-key    -T prefix       R                 source-file ~/.tmux.conf\n"
 	c := &keysClient{keys: table}
 	installed, conflicts := InstallLocalKeys(c, dir, "/x/flok", "missing")
 	got := strings.Join(installed, " ")
-	if !strings.Contains(got, " A ") || !strings.Contains(got, " S ") || strings.Contains(got, " a ") || strings.Contains(got, " u ") || strings.Contains(got, " H") {
+	if !strings.Contains(got, " A ") || !strings.Contains(got, " S ") || strings.Contains(got, " a ") || strings.Contains(got, " u ") || strings.Contains(got, " R") {
 		t.Fatalf("installed %v", installed)
 	}
-	if len(conflicts) != 1 || conflicts["H"] != "resize-pane -L 10" {
+	if len(conflicts) != 1 || conflicts["R"] != "source-file ~/.tmux.conf" {
 		t.Fatalf("conflicts %v", conflicts)
 	}
 	bind := strings.Join(c.calls[len(c.calls)-1], " ")
-	if !strings.Contains(bind, "bind-key -T prefix A run-shell -b /x/flok menu agents") || !strings.Contains(bind, "bind-key -T prefix S run-shell -b /x/flok menu sessions") || strings.Contains(bind, "prefix H ") {
+	if !strings.Contains(bind, "bind-key -T prefix A run-shell -b /x/flok menu agents") || !strings.Contains(bind, "bind-key -T prefix S run-shell -b /x/flok menu sessions") || strings.Contains(bind, "prefix R ") {
 		t.Fatalf("bind call %q", bind)
 	}
 	st := loadLocalKeys(dir)
@@ -337,7 +337,7 @@ func TestLocalKeysUpdateStaleFlokBindings(t *testing.T) {
 		t.Fatalf("saved %+v", st.Saved)
 	}
 	status := LocalKeyStatus(c) // the fake server still shows the old table: the stale ones read as such
-	if status["A"] != "flok prev" || status["S"] != "flok host menu" || status["a"] != "flok" || status["u"] != "flok" || status["H"] != "resize-pane -L 10" {
+	if status["A"] != "flok prev" || status["S"] != "flok host menu" || status["a"] != "flok" || status["u"] != "flok" || status["R"] != "source-file ~/.tmux.conf" {
 		t.Fatalf("status %v", status)
 	}
 	// a second sidebar: the same keys again, nothing saved twice
