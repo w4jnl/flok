@@ -535,8 +535,8 @@ tmux's own `prefix o` (next pane) and `prefix ?` (list-keys) keep working and fl
 are reached from the sidebar instead; `[keys] bind = "all"` takes them over for the session too,
 and `flok down` puts everything back. A key still running an older snippet's flok command
 (`prefix A` was "previous agent", `prefix S` the servers menu) is flok's own: the sidebar
-brings it up to date while it runs and says so in the footer; `flok install --tmux` prints the
-current snippet (reloading tmux.conf brings the old binding back until it is updated).
+brings it up to date, says so in the footer and unbinds it when it ends; `flok install --tmux`
+prints the current snippet (reloading tmux.conf brings the old binding back until it is updated).
 `flok doctor` lists which keys flok has, which are unbound, which tmux or you bound to something
 else and which an older snippet still holds.
 

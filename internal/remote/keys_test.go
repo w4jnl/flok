@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+
+	"github.com/w4jnl/flok/internal/state"
 	"testing"
 )
 
@@ -310,15 +312,17 @@ func TestPrefixMirror(t *testing.T) {
 }
 
 // An older snippet's A (prev) and S (the servers menu) are flok's own bindings: the sidebar
-// brings them up to date in mode missing, saves them for the restore and still leaves the
-// user's @ alone.
+// brings them up to date in mode missing, the restore only unbinds them (putting them back
+// would raise the same notice at the next start, snippet fixed or not), and the user's @ and
+// a flok command the user chose for a flok key (o = toggle) stay theirs.
 func TestLocalKeysUpdateStaleFlokBindings(t *testing.T) {
 	dir := t.TempDir()
 	table := "bind-key    -T prefix       A                 run-shell -b \"flok prev --client '#{client_tty}'\"\n" +
 		"bind-key    -T prefix       S                 run-shell -b \"/opt/homebrew/bin/flok host menu\"\n" +
 		"bind-key    -T prefix       a                 run-shell -b \"flok next --client '#{client_tty}'\"\n" +
 		"bind-key    -T prefix       u                 run-shell -b \"msg=$(flok keep-awake 2>&1); tmux display-message \\\"\\$msg\\\"\"\n" +
-		"bind-key    -T prefix       @                 join-pane -s !\n"
+		"bind-key    -T prefix       @                 join-pane -s !\n" +
+		"bind-key    -T prefix       o                 run-shell -b \"flok toggle\"\n"
 	c := &keysClient{keys: table}
 	installed, conflicts, stale := InstallLocalKeys(c, dir, "/x/flok", "missing")
 	if len(stale) != 2 || stale["A"] != "prev" || stale["S"] != "host menu" {
@@ -328,7 +332,7 @@ func TestLocalKeysUpdateStaleFlokBindings(t *testing.T) {
 	if !strings.Contains(got, " A ") || !strings.Contains(got, " S ") || strings.Contains(got, " a ") || strings.Contains(got, " u ") || strings.Contains(got, " @") {
 		t.Fatalf("installed %v", installed)
 	}
-	if len(conflicts) != 1 || conflicts["@"] != "join-pane -s !" {
+	if len(conflicts) != 2 || conflicts["@"] != "join-pane -s !" || !strings.Contains(conflicts["o"], "flok toggle") {
 		t.Fatalf("conflicts %v", conflicts)
 	}
 	bind := strings.Join(c.calls[len(c.calls)-1], " ")
@@ -336,16 +340,12 @@ func TestLocalKeysUpdateStaleFlokBindings(t *testing.T) {
 		t.Fatalf("bind call %q", bind)
 	}
 	st := loadLocalKeys(dir)
-	if len(st.Saved) != 2 || !strings.Contains(st.Saved[0], "flok prev") || !strings.Contains(st.Saved[1], "flok host menu") {
-		t.Fatalf("saved %+v", st.Saved)
+	if len(st.Saved) != 0 || strings.Join(st.Installed, "") != strings.Join(installed, "") {
+		t.Fatalf("record %+v", st)
 	}
 	status := LocalKeyStatus(c) // the fake server still shows the old table: the stale ones read as such
-	if status["A"] != "flok prev" || status["S"] != "flok host menu" || status["a"] != "flok" || status["u"] != "flok" || status["@"] != "join-pane -s !" {
+	if status["A"] != "flok prev" || status["S"] != "flok host menu" || status["a"] != "flok" || status["u"] != "flok" || status["@"] != "join-pane -s !" || !strings.Contains(status["o"], "flok toggle") {
 		t.Fatalf("status %v", status)
-	}
-	// a second sidebar: the same keys again, nothing saved twice
-	if _, _, _ = InstallLocalKeys(c, dir, "/x/flok", "missing"); len(loadLocalKeys(dir).Saved) != 2 {
-		t.Fatalf("saved twice: %+v", loadLocalKeys(dir).Saved)
 	}
 	c.calls = nil
 	if err := RestoreLocalKeys(c, dir); err != nil {
@@ -355,8 +355,21 @@ func TestLocalKeysUpdateStaleFlokBindings(t *testing.T) {
 	for _, call := range c.calls {
 		joined += strings.Join(call, " ") + "\n"
 	}
-	if !strings.Contains(joined, "unbind-key -T prefix A ;") || !strings.Contains(joined, "bind-key -T prefix A run-shell -b flok prev --client '#{client_tty}'") || !strings.Contains(joined, "bind-key -T prefix S run-shell -b /opt/homebrew/bin/flok host menu") {
+	if !strings.Contains(joined, "unbind-key -T prefix A ;") || !strings.Contains(joined, "unbind-key -T prefix S ;") || len(c.calls) != 1 { // one call: the unbinds, nothing put back
 		t.Fatalf("restore: %s", joined)
+	}
+	// a record an earlier flok wrote still saves the old line: the restore leaves it out, so the
+	// next start does not meet it again
+	_ = state.WriteJSONAtomic(filepath.Join(dir, LocalKeysFile), LocalKeys{Installed: []string{"A", "@"},
+		Saved: []string{"bind-key    -T prefix A       run-shell -b \"flok prev --client '#{client_tty}'\"", "bind-key    -T prefix @       join-pane -s !"}})
+	c.calls = nil
+	_ = RestoreLocalKeys(c, dir)
+	joined = ""
+	for _, call := range c.calls {
+		joined += strings.Join(call, " ") + "\n"
+	}
+	if strings.Contains(joined, "flok prev") || !strings.Contains(joined, "bind-key -T prefix @ join-pane -s !") {
+		t.Fatalf("restore of an old record: %s", joined)
 	}
 }
 

@@ -13,9 +13,9 @@ updates this file first. Dates are the tag dates.
   from `S` to `@`, and `prefix A` no longer steps to the previous agent (`a` cycles, `o` jumps to
   the one needing you, the menu picks). `flok goto` takes a session id (`$5`, `beta:$5`) as well.
   A sidebar start updates flok's own bindings from an older snippet (`A` = prev, `S` = the
-  servers menu) in the local tmux and puts them back when it ends; the footer and `flok doctor`
-  say so, `flok install --tmux` prints the current snippet (a tmux.conf reload brings the old
-  binding back until then).
+  servers menu) in the local tmux, and the end unbinds them rather than putting them back; the
+  footer and `flok doctor` say so, `flok install --tmux` prints the current snippet (a tmux.conf
+  reload brings the old binding back until then).
 
 ## 0.5.1 (2026-09-30)
 
