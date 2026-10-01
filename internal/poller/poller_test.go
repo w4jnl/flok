@@ -218,7 +218,7 @@ func TestRunMergesAndStops(t *testing.T) {
 // with the title known now.
 func TestLateScreenSampleFollowsTheTitle(t *testing.T) {
 	p, ft := newTestPoller(t)
-	p.d.Rules, p.d.Adapters = rules.Load("", false), agent.()
+	p.d.Rules, p.d.Adapters = rules.Load("", false), agent.Enabled(p.d.Cfg.Agents.Enabled)
 	var fp uint64
 	snap := func(title string) SnapshotMsg {
 		fp++
