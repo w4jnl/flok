@@ -537,7 +537,7 @@ func (c hostCmd) rotate(dir string) int {
 	return c.requestFront(order[cur])
 }
 
-// menu is `flok host menu`, the same as `flok menu servers` (prefix R).
+// menu is `flok host menu`, the same as `flok menu servers` (prefix @).
 func (c hostCmd) menu() int { return runMenu(c.cfg, []string{"servers"}) }
 
 // set edits a registered host; the sidebar picks the change up from the file and reconnects.

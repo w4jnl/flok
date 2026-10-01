@@ -8,13 +8,14 @@ updates this file first. Dates are the tag dates.
 
 - Three tmux menus over the work pane, one key each: `prefix A` the agents (`1`-`9` open one,
   remote ones tagged with their host), `prefix S` the sessions of the server in front (the
-  current one marked), `prefix R` the servers (R as in remotes; `H` is the vim-style resize key in many configs); each links to the other two (`flok menu
+  current one marked), `prefix @` the servers (as in `claude @beta`; the letters H and R are resize and reload keys in many configs); each links to the other two (`flok menu
   agents|sessions|servers`; `flok host menu` stays as the servers one). The servers menu moves
-  from `S` to `R`, and `prefix A` no longer steps to the previous agent (`a` cycles, `o` jumps to
+  from `S` to `@`, and `prefix A` no longer steps to the previous agent (`a` cycles, `o` jumps to
   the one needing you, the menu picks). `flok goto` takes a session id (`$5`, `beta:$5`) as well.
   A sidebar start updates flok's own bindings from an older snippet (`A` = prev, `S` = the
-  servers menu) in the local tmux and puts them back when it ends; `flok doctor` names them,
-  `flok install --tmux` prints the current snippet.
+  servers menu) in the local tmux and puts them back when it ends; the footer and `flok doctor`
+  say so, `flok install --tmux` prints the current snippet (a tmux.conf reload brings the old
+  binding back until then).
 
 ## 0.5.1 (2026-09-30)
 

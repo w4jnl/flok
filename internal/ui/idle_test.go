@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -92,5 +93,21 @@ func TestSpinnerPausesWhileIdle(t *testing.T) {
 	m = next.(Model)
 	if cmd == nil || !m.animating {
 		t.Fatal("visible again: the next snapshot restarts the spinner")
+	}
+}
+
+// What the start found worth saying (an older tmux snippet) rides in the footer after the
+// hosts' warnings, single-host too.
+func TestStartNoticesReachTheFooter(t *testing.T) {
+	cfg := config.Default()
+	cfg.Sounds.Enabled = false
+	m := New(Deps{Cfg: cfg, Inner: &tmuxtest.Fake{Screens: map[string]string{}}, Store: state.New(t.TempDir()),
+		Notices: []string{"older tmux snippet: A → prev (rebound for now) · flok install --tmux prints the current one"}})
+	m.refederate()
+	if view := strings.Join(render(m, 40, 30), "\n"); !strings.Contains(view, "older tmux snippet: A → prev") {
+		t.Fatalf("notice missing:\n%s", view)
+	}
+	if len(m.fed.Warnings) != 0 {
+		t.Fatalf("the published snapshot keeps its own warnings: %v", m.fed.Warnings)
 	}
 }

@@ -18,12 +18,12 @@ import (
 // the same keys as the local tmux snippet, `?` excepted (tmux's own list-keys stays there).
 type KeyCommand struct{ Key, Cmd string }
 
-// KeyCommands in binding order: the agent keys, the three menus (A agents, S sessions, R
+// KeyCommands in binding order: the agent keys, the three menus (A agents, S sessions, @
 // servers), then the server keys (N/P next and previous server, O the last one, F1…F9 a
 // server by position, local first).
 var KeyCommands = append([]KeyCommand{
 	{"b", "toggle"}, {"B", "hide"}, {"g", "focus"}, {"o", "jump"}, {"a", "next"}, {"u", "keep-awake"},
-	{"A", "menu agents"}, {"S", "menu sessions"}, {"R", "menu servers"},
+	{"A", "menu agents"}, {"S", "menu sessions"}, {"@", "menu servers"},
 	{"N", "host next"}, {"P", "host prev"}, {"O", "host last"},
 }, serverDigits()...)
 
@@ -35,7 +35,7 @@ var legacyKeyCommands = []string{"prev", "host menu"}
 var LocalKeyCommands = append([]KeyCommand{
 	{"a", "next --client '#{client_tty}'"}, {"o", "jump --client '#{client_tty}'"},
 	{"b", "toggle"}, {"B", "hide"}, {"g", "focus"}, {"u", "keep-awake --notify"}, {"?", "keys --open --client '#{client_tty}'"},
-	{"A", "menu agents"}, {"S", "menu sessions"}, {"R", "menu servers"},
+	{"A", "menu agents"}, {"S", "menu sessions"}, {"@", "menu servers"},
 	{"N", "host next"}, {"P", "host prev"}, {"O", "host last"},
 }, serverDigits()...)
 
@@ -331,11 +331,12 @@ func bindLocalArgs(flok string, cmds []KeyCommand) []string {
 // are left as they are; a key running another flok command (an older snippet's `A` = prev or
 // `S` = the servers menu, an earlier sidebar) is brought up to date in both modes, the old
 // binding saved so the restore puts it back. What was done is recorded in <dir>/keys.json;
-// conflicts lists the keys left alone in mode missing with their current command.
-func InstallLocalKeys(c tmux.Client, dir, flok, mode string) (installed []string, conflicts map[string]string) {
-	conflicts = map[string]string{}
+// conflicts lists the keys left alone in mode missing with their current command, stale the
+// keys an older snippet had on another flok command (key → that command).
+func InstallLocalKeys(c tmux.Client, dir, flok, mode string) (installed []string, conflicts, stale map[string]string) {
+	conflicts, stale = map[string]string{}, map[string]string{}
 	if mode == "off" || flok == "" {
-		return nil, conflicts
+		return nil, conflicts, stale
 	}
 	current := map[string]prefixBinding{}
 	for _, b := range prefixBindings(c) {
@@ -353,6 +354,7 @@ func InstallLocalKeys(c tmux.Client, dir, flok, mode string) (installed []string
 		case bound && b.flok && b.sub == cmdWords(k.Cmd):
 			continue // the snippet, or an earlier sidebar
 		case bound && b.flok: // flok's own, from before this key changed: update it, remember what it was
+			stale[k.Key] = b.sub
 			if !have[k.Key] {
 				st.Saved = append(st.Saved, b.line)
 			}
@@ -377,7 +379,7 @@ func InstallLocalKeys(c tmux.Client, dir, flok, mode string) (installed []string
 	if len(st.Installed) > 0 {
 		_ = state.WriteJSONAtomic(filepath.Join(dir, LocalKeysFile), st)
 	}
-	return installed, conflicts
+	return installed, conflicts, stale
 }
 
 func loadLocalKeys(dir string) LocalKeys {

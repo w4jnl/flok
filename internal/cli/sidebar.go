@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/pprof"
+	"sort"
 	"strings"
 	"time"
 
@@ -84,9 +85,20 @@ func runSidebar(cfg config.Config) int {
 	}
 	deps := sidebarDeps(cfg)
 	// flok's keys in the inner server for this session (the snippet makes them permanent)
-	installed, conflicts := remote.InstallLocalKeys(deps.Inner, config.StateDir(), deps.Bin, cfg.Keys.Bind)
+	installed, conflicts, stale := remote.InstallLocalKeys(deps.Inner, config.StateDir(), deps.Bin, cfg.Keys.Bind)
 	if os.Getenv("FLOK_DEBUG") != "" {
-		appendLog("sidebar.log", "keys bound: %v; left alone: %v", installed, conflicts)
+		appendLog("sidebar.log", "keys bound: %v; left alone: %v; older snippet: %v", installed, conflicts, stale)
+	}
+	if len(stale) > 0 { // the snippet in tmux.conf predates a key change: rebound for now, a reload brings the old one back
+		var keys []string
+		for k := range stale {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for i, k := range keys {
+			keys[i] = k + " → " + stale[k]
+		}
+		deps.Notices = append(deps.Notices, "older tmux snippet: "+strings.Join(keys, ", ")+" (rebound for now) · flok install --tmux prints the current one")
 	}
 	m := ui.New(deps)
 	_ = launcher.UpdateRuntime(func(r *launcher.Runtime) {

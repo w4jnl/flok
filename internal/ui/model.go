@@ -46,7 +46,8 @@ type Deps struct {
 	Awake func() (Releaser, error)
 	// NewRemote builds the remote-host manager reporting to sink; nil = no remote hosts (tests).
 	NewRemote func(sink chan<- remote.Msg) *remote.Manager
-	Bin       string // this executable, for the parked host panes
+	Bin       string   // this executable, for the parked host panes
+	Notices   []string // what the start found worth a footer line (an older tmux snippet)
 }
 
 const (

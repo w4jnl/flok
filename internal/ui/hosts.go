@@ -279,6 +279,9 @@ func (m *Model) refederate() {
 			}
 		}
 	}
+	if len(m.d.Notices) > 0 { // after the hosts' warnings; a fresh slice, m.fed is what gets published
+		m.snap.Warnings = append(append([]string(nil), m.snap.Warnings...), m.d.Notices...)
+	}
 	m.vc.valid = false
 }
 

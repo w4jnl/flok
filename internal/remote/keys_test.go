@@ -117,8 +117,8 @@ func TestLocalKeys(t *testing.T) {
 		"bind-key    -T prefix       b                 run-shell -b \"/opt/homebrew/bin/flok toggle\"\n" +
 		"bind-key    -T prefix       c                 new-window\n"
 	c := &keysClient{keys: table}
-	installed, conflicts := InstallLocalKeys(c, dir, "/x/flok", "missing")
-	if got := strings.Join(installed, ""); !strings.HasPrefix(got, "aBguASRNPOF1") || len(installed) != 19 {
+	installed, conflicts, stale := InstallLocalKeys(c, dir, "/x/flok", "missing")
+	if got := strings.Join(installed, ""); !strings.HasPrefix(got, "aBguAS@NPOF1") || len(installed) != 19 || len(stale) != 0 {
 		t.Fatalf("installed %v", installed)
 	}
 	if len(conflicts) != 2 || conflicts["o"] != "select-pane -t :.+" || conflicts["?"] != "list-keys -N" {
@@ -133,7 +133,7 @@ func TestLocalKeys(t *testing.T) {
 	}
 	// a second sidebar (reload) with the keys now present: nothing new, the record stays
 	c.keys = table + "bind-key    -T prefix       a                 run-shell -b \"/x/flok next --client '#{client_tty}'\"\n"
-	if again, _ := InstallLocalKeys(c, dir, "/x/flok", "missing"); !strings.HasPrefix(strings.Join(again, ""), "BguASR") || len(again) != 18 {
+	if again, _, _ := InstallLocalKeys(c, dir, "/x/flok", "missing"); !strings.HasPrefix(strings.Join(again, ""), "BguAS@") || len(again) != 18 {
 		t.Fatalf("second install %v", again)
 	}
 	status := LocalKeyStatus(c)
@@ -144,7 +144,7 @@ func TestLocalKeys(t *testing.T) {
 	if err := RestoreLocalKeys(c, dir); err != nil {
 		t.Fatal(err)
 	}
-	if u := strings.Join(c.calls[0], " "); !strings.HasPrefix(u, "unbind-key -T prefix A ; unbind-key -T prefix B") || len(c.calls) != 1 {
+	if u := strings.Join(c.calls[0], " "); !strings.HasPrefix(u, "unbind-key -T prefix @ ; unbind-key -T prefix A ; unbind-key -T prefix B") || len(c.calls) != 1 {
 		t.Fatalf("restore %v", c.calls)
 	}
 	if _, err := os.Stat(filepath.Join(dir, LocalKeysFile)); !os.IsNotExist(err) {
@@ -155,7 +155,7 @@ func TestLocalKeys(t *testing.T) {
 	}
 	// mode all replaces tmux's own and puts them back
 	c = &keysClient{keys: table}
-	installed, conflicts = InstallLocalKeys(c, dir, "/x/flok", "all")
+	installed, conflicts, _ = InstallLocalKeys(c, dir, "/x/flok", "all")
 	if len(conflicts) != 0 || !strings.Contains(strings.Join(installed, ""), "o") {
 		t.Fatalf("all: %v %v", installed, conflicts)
 	}
@@ -171,12 +171,12 @@ func TestLocalKeys(t *testing.T) {
 	if !strings.Contains(joined, "bind-key -T prefix o select-pane -t :.+") || !strings.Contains(joined, "bind-key -T prefix ? list-keys -N") {
 		t.Fatalf("restore after all: %s", joined)
 	}
-	if got, _ := InstallLocalKeys(c, dir, "/x/flok", "off"); got != nil {
+	if got, _, _ := InstallLocalKeys(c, dir, "/x/flok", "off"); got != nil {
 		t.Fatal("off binds nothing")
 	}
 }
 
-const allKeys = "b B g o a u A S R N P O F1 F2 F3 F4 F5 F6 F7 F8 F9"
+const allKeys = "b B g o a u A S @ N P O F1 F2 F3 F4 F5 F6 F7 F8 F9"
 
 func TestInstallRebindRestore(t *testing.T) {
 	c := &keysClient{}
@@ -311,25 +311,28 @@ func TestPrefixMirror(t *testing.T) {
 
 // An older snippet's A (prev) and S (the servers menu) are flok's own bindings: the sidebar
 // brings them up to date in mode missing, saves them for the restore and still leaves the
-// user's R alone.
+// user's @ alone.
 func TestLocalKeysUpdateStaleFlokBindings(t *testing.T) {
 	dir := t.TempDir()
 	table := "bind-key    -T prefix       A                 run-shell -b \"flok prev --client '#{client_tty}'\"\n" +
 		"bind-key    -T prefix       S                 run-shell -b \"/opt/homebrew/bin/flok host menu\"\n" +
 		"bind-key    -T prefix       a                 run-shell -b \"flok next --client '#{client_tty}'\"\n" +
 		"bind-key    -T prefix       u                 run-shell -b \"msg=$(flok keep-awake 2>&1); tmux display-message \\\"\\$msg\\\"\"\n" +
-		"bind-key    -T prefix       R                 source-file ~/.tmux.conf\n"
+		"bind-key    -T prefix       @                 join-pane -s !\n"
 	c := &keysClient{keys: table}
-	installed, conflicts := InstallLocalKeys(c, dir, "/x/flok", "missing")
+	installed, conflicts, stale := InstallLocalKeys(c, dir, "/x/flok", "missing")
+	if len(stale) != 2 || stale["A"] != "prev" || stale["S"] != "host menu" {
+		t.Fatalf("stale %v", stale)
+	}
 	got := strings.Join(installed, " ")
-	if !strings.Contains(got, " A ") || !strings.Contains(got, " S ") || strings.Contains(got, " a ") || strings.Contains(got, " u ") || strings.Contains(got, " R") {
+	if !strings.Contains(got, " A ") || !strings.Contains(got, " S ") || strings.Contains(got, " a ") || strings.Contains(got, " u ") || strings.Contains(got, " @") {
 		t.Fatalf("installed %v", installed)
 	}
-	if len(conflicts) != 1 || conflicts["R"] != "source-file ~/.tmux.conf" {
+	if len(conflicts) != 1 || conflicts["@"] != "join-pane -s !" {
 		t.Fatalf("conflicts %v", conflicts)
 	}
 	bind := strings.Join(c.calls[len(c.calls)-1], " ")
-	if !strings.Contains(bind, "bind-key -T prefix A run-shell -b /x/flok menu agents") || !strings.Contains(bind, "bind-key -T prefix S run-shell -b /x/flok menu sessions") || strings.Contains(bind, "prefix R ") {
+	if !strings.Contains(bind, "bind-key -T prefix A run-shell -b /x/flok menu agents") || !strings.Contains(bind, "bind-key -T prefix S run-shell -b /x/flok menu sessions") || strings.Contains(bind, "prefix @ ") {
 		t.Fatalf("bind call %q", bind)
 	}
 	st := loadLocalKeys(dir)
@@ -337,11 +340,11 @@ func TestLocalKeysUpdateStaleFlokBindings(t *testing.T) {
 		t.Fatalf("saved %+v", st.Saved)
 	}
 	status := LocalKeyStatus(c) // the fake server still shows the old table: the stale ones read as such
-	if status["A"] != "flok prev" || status["S"] != "flok host menu" || status["a"] != "flok" || status["u"] != "flok" || status["R"] != "source-file ~/.tmux.conf" {
+	if status["A"] != "flok prev" || status["S"] != "flok host menu" || status["a"] != "flok" || status["u"] != "flok" || status["@"] != "join-pane -s !" {
 		t.Fatalf("status %v", status)
 	}
 	// a second sidebar: the same keys again, nothing saved twice
-	if _, _ = InstallLocalKeys(c, dir, "/x/flok", "missing"); len(loadLocalKeys(dir).Saved) != 2 {
+	if _, _, _ = InstallLocalKeys(c, dir, "/x/flok", "missing"); len(loadLocalKeys(dir).Saved) != 2 {
 		t.Fatalf("saved twice: %+v", loadLocalKeys(dir).Saved)
 	}
 	c.calls = nil
