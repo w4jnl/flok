@@ -230,7 +230,9 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
   the 1 s tick spawns tmux — screen results, registry samples and hook/marker changes go through
   `rebuild()`, which re-merges the cached tmux snapshot (`screenSeq` still advances once per
   sample with results, identical or not, because the merge counts samples); all screen captures
-  go in one tmux invocation (`captureAll`); the registry is only queried while a Claude
+  go in one tmux invocation (`captureAll`), and a sample is judged again at `ApplyScreen` when
+  the pane's title or progress moved while the capture was out (`ScreenSample`; a late sample
+  judged against the old title flipped a hook-less row working → idle → done on slow runners); the registry is only queried while a Claude
   turn/prompt is open or a pane lacks hooks (else once a minute); sidebar focus comes from
   `tea.FocusMsg`/`BlurMsg` with an outer `pane_active window_zoomed_flag` check every 5th poll as
   fallback; **idle mode** (`sidebar-hidden` = 1, written by `flok hide`/`toggle` and verified against
