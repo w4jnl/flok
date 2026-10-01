@@ -12,6 +12,10 @@ updates this file first. Dates are the tag dates.
   agents|sessions|servers`; `flok host menu` stays as the servers one). The servers menu moves
   from `S` to `H`, and `prefix A` no longer steps to the previous agent (`a` cycles, `o` jumps to
   the one needing you, the menu picks). `flok goto` takes a session id (`$5`, `beta:$5`) as well.
+  A sidebar start updates flok's own bindings from an older snippet (`A` = prev, `S` = the
+  servers menu) in the local tmux and puts them back when it ends; `flok doctor` names them,
+  `flok install --tmux` prints the current snippet.
+
 ## 0.5.1 (2026-09-30)
 
 - **Install flok on a host from here.** `flok host install <name>` (or `I` on the host's row in

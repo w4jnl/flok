@@ -308,3 +308,69 @@ func TestPrefixMirror(t *testing.T) {
 		t.Fatalf("moved prefix: %s", w)
 	}
 }
+
+// An older snippet's A (prev) and S (the servers menu) are flok's own bindings: the sidebar
+// brings them up to date in mode missing, saves them for the restore and still leaves the
+// user's H alone.
+func TestLocalKeysUpdateStaleFlokBindings(t *testing.T) {
+	dir := t.TempDir()
+	table := "bind-key    -T prefix       A                 run-shell -b \"flok prev --client '#{client_tty}'\"\n" +
+		"bind-key    -T prefix       S                 run-shell -b \"/opt/homebrew/bin/flok host menu\"\n" +
+		"bind-key    -T prefix       a                 run-shell -b \"flok next --client '#{client_tty}'\"\n" +
+		"bind-key    -T prefix       u                 run-shell -b \"msg=$(flok keep-awake 2>&1); tmux display-message \\\"\\$msg\\\"\"\n" +
+		"bind-key -r -T prefix       H                 resize-pane -L 10\n"
+	c := &keysClient{keys: table}
+	installed, conflicts := InstallLocalKeys(c, dir, "/x/flok", "missing")
+	got := strings.Join(installed, " ")
+	if !strings.Contains(got, " A ") || !strings.Contains(got, " S ") || strings.Contains(got, " a ") || strings.Contains(got, " u ") || strings.Contains(got, " H") {
+		t.Fatalf("installed %v", installed)
+	}
+	if len(conflicts) != 1 || conflicts["H"] != "resize-pane -L 10" {
+		t.Fatalf("conflicts %v", conflicts)
+	}
+	bind := strings.Join(c.calls[len(c.calls)-1], " ")
+	if !strings.Contains(bind, "bind-key -T prefix A run-shell -b /x/flok menu agents") || !strings.Contains(bind, "bind-key -T prefix S run-shell -b /x/flok menu sessions") || strings.Contains(bind, "prefix H ") {
+		t.Fatalf("bind call %q", bind)
+	}
+	st := loadLocalKeys(dir)
+	if len(st.Saved) != 2 || !strings.Contains(st.Saved[0], "flok prev") || !strings.Contains(st.Saved[1], "flok host menu") {
+		t.Fatalf("saved %+v", st.Saved)
+	}
+	status := LocalKeyStatus(c) // the fake server still shows the old table: the stale ones read as such
+	if status["A"] != "flok prev" || status["S"] != "flok host menu" || status["a"] != "flok" || status["u"] != "flok" || status["H"] != "resize-pane -L 10" {
+		t.Fatalf("status %v", status)
+	}
+	// a second sidebar: the same keys again, nothing saved twice
+	if _, _ = InstallLocalKeys(c, dir, "/x/flok", "missing"); len(loadLocalKeys(dir).Saved) != 2 {
+		t.Fatalf("saved twice: %+v", loadLocalKeys(dir).Saved)
+	}
+	c.calls = nil
+	if err := RestoreLocalKeys(c, dir); err != nil {
+		t.Fatal(err)
+	}
+	joined := ""
+	for _, call := range c.calls {
+		joined += strings.Join(call, " ") + "\n"
+	}
+	if !strings.Contains(joined, "unbind-key -T prefix A ;") || !strings.Contains(joined, "bind-key -T prefix A run-shell -b flok prev --client '#{client_tty}'") || !strings.Contains(joined, "bind-key -T prefix S run-shell -b /opt/homebrew/bin/flok host menu") {
+		t.Fatalf("restore: %s", joined)
+	}
+}
+
+func TestFlokSub(t *testing.T) {
+	for cmd, want := range map[string]string{
+		`run-shell -b flok prev --client '#{client_tty}'`:                       "prev",
+		`run-shell -b /opt/homebrew/bin/flok host menu`:                         "host menu",
+		`run-shell -b /x/flok host front 3`:                                     "host front 3",
+		`run-shell -b '/x/flok' menu agents`:                                    "menu agents",
+		`run-shell -b msg=$(flok keep-awake 2>&1); tmux display-message "$msg"`: "keep-awake",
+		`display-popup -E -w 80% -h 85% -b rounded -T ' keybinds ' flok keys`:   "keys",
+		`run-shell -b flok nextdoor`:                                            "",
+		`select-pane -t :.+`:                                                    "",
+		`run-shell -b flokker next`:                                             "", // "flok " followed by a key command is the mark
+	} {
+		if got := flokSub(cmd); got != want {
+			t.Errorf("flokSub(%q) = %q, want %q", cmd, got, want)
+		}
+	}
+}

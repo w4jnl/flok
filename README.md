@@ -533,8 +533,11 @@ These come from the tmux snippet (`flok install --tmux`). Without it, the sideba
 your tmux server for the session when it starts: by default only the keys nothing else uses, so
 tmux's own `prefix o` (next pane) and `prefix ?` (list-keys) keep working and flok's jump and help
 are reached from the sidebar instead; `[keys] bind = "all"` takes them over for the session too,
-and `flok down` puts everything back. `flok doctor` lists which keys flok has, which are unbound
-and which tmux or you bound to something else.
+and `flok down` puts everything back. A key still running an older snippet's flok command
+(`prefix A` was "previous agent", `prefix S` the servers menu) is flok's own: the sidebar
+brings it up to date while it runs; `flok install --tmux` prints the current snippet.
+`flok doctor` lists which keys flok has, which are unbound, which tmux or you bound to something
+else and which an older snippet still holds.
 
 Menu bar (when enabled): click an agent row to return to it (remote agents read `project ·
 claude @beta`, and a row per host under them brings that host's pane to the front), "Show

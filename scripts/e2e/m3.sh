@@ -122,4 +122,13 @@ expect "sidebar ? shows keybinds overlay" 'keybinds' "$snap"
 OUT send-keys -t "$SIDEBAR" Escape
 sleep 0.5
 expect "esc returns to the sidebar" '^sessions' "$(capture)"
+
+# an older snippet's A (flok prev) is flok's own binding: a restarted sidebar brings it up to
+# date; the user's own H (vim-style resize) is a conflict and stays
+IN bind-key -T prefix A run-shell -b "flok prev --client '#{client_tty}'"
+IN bind-key -r -T prefix H resize-pane -L 10
+"$BIN" reload
+expect_soon -t 10 "a restarted sidebar updates flok's own older binding (A was prev)" "prefix +A +run-shell -b \"$BIN menu agents\"" IN list-keys -T prefix
+expect "... and leaves the user's H alone" 'prefix +H +resize-pane -L 10' "$(IN list-keys -T prefix)"
+expect "... doctor names the key it left" 'tmux.s or yours: .*H → resize-pane -L 10' "$("$BIN" doctor 2>&1 || true)"
 finish

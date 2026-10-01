@@ -130,8 +130,10 @@ One binary, several roles selected by subcommand (`internal/cli/root.go`):
   `keys.PopupArgsTitled`, a window before 3.2); the footer names the install for a `no flok`/
   `old flok` host. Only ever write `~/.local/bin/flok` there.
   Locally, `runSidebar` calls `remote.InstallLocalKeys` (mode `[keys] bind`: missing/all/off) so
-  the snippet is optional; what it bound is in `$FLOK_STATE/keys.json` and `RestoreLocalKeys`
-  (sidebar exit, `flok down`, the attach-loop teardown) undoes exactly that. Server keys:
+  the snippet is optional; a key running flok's command for it is left alone, one running another
+  flok command (`flokSub`: an older snippet's `A` = prev, `S` = the servers menu) is rebound in
+  both modes with the old line saved; what it bound is in `$FLOK_STATE/keys.json` and
+  `RestoreLocalKeys` (sidebar exit, `flok down`, the attach-loop teardown) undoes exactly that. Server keys:
   `flok host next|prev|last` and `front <N>`, the menus `flok menu agents|sessions|servers` on
   `prefix A/S/H` (`internal/cli/menu.go`: display-menu over the work pane, items run `flok goto
   <paneref|sessionref> --no-focus` / `host front N`; `flok host menu` = servers; `flok goto` takes

@@ -81,12 +81,14 @@ func runDoctor(cfg config.Config) int {
 		}
 	}
 	if _, err := inner.Run("list-sessions"); err == nil {
-		var flok, other, unbound []string
+		var flok, stale, other, unbound []string
 		status := remote.LocalKeyStatus(inner)
 		for _, k := range remote.LocalKeyCommands {
 			switch s := status[k.Key]; {
 			case s == "flok":
 				flok = append(flok, k.Key)
+			case strings.HasPrefix(s, "flok "):
+				stale = append(stale, k.Key+" → "+s)
 			case s == "":
 				unbound = append(unbound, k.Key)
 			default:
@@ -102,6 +104,9 @@ func runDoctor(cfg config.Config) int {
 		}
 		if len(other) > 0 {
 			line += "; tmux's or yours: " + strings.Join(other, ", ") + " (the snippet or [keys] bind = all would take them)"
+		}
+		if len(stale) > 0 {
+			line += "; an older snippet: " + strings.Join(stale, ", ") + " (the sidebar rebinds them while it runs; `flok install --tmux` prints the current snippet)"
 		}
 		level := "ok"
 		if len(flok) == 0 && cfg.Keys.Bind != "off" {
