@@ -2,6 +2,7 @@ package poller
 
 import (
 	"context"
+	"os"
 	"reflect"
 	"testing"
 	"time"
@@ -209,5 +210,46 @@ func TestRunMergesAndStops(t *testing.T) {
 	}
 	if len(ft.Calls) < 2 {
 		t.Fatalf("Run must keep polling, got %d calls", len(ft.Calls))
+	}
+}
+
+// A capture scheduled while the title still read idle comes back after a poll saw the spinner:
+// applied as judged (idle prompt box) it would undo the working state, so it is judged again
+// with the title known now.
+func TestLateScreenSampleFollowsTheTitle(t *testing.T) {
+	p, ft := newTestPoller(t)
+	p.d.Rules, p.d.Adapters = rules.Load("", false), agent.Enabled(p.d.Cfg.Agents.Enabled)
+	var fp uint64
+	snap := func(title string) SnapshotMsg {
+		fp++
+		return SnapshotMsg{FP: fp, Snap: tmux.Snapshot{Panes: []tmux.Pane{{ID: "%1", SessionID: "$1", SessionName: "A", WindowID: "@1", Command: "claude", Title: title}}}}
+	}
+	fixture, err := os.ReadFile("../rules/testdata/claude_prompt_box.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ft.Screens["%1"] = string(fixture)
+	p.ApplySnapshot(snap("✳ fake"), true)
+	if len(p.snap.Agents) != 1 {
+		t.Fatalf("agents %+v", p.snap.Agents)
+	}
+	capture := p.PollScreen()             // scheduled with the idle title
+	p.ApplySnapshot(snap("◑ fake"), true) // the spinner appeared before the capture came back
+	msg := capture()
+	if r := msg.Results["%1"]; !r.Matched || r.State != agent.Idle {
+		t.Fatalf("the capture itself saw an idle prompt box: %+v", r)
+	}
+	if !p.ApplyScreen(msg) {
+		t.Fatal("a sample")
+	}
+	if r := p.screen["%1"]; r.State != agent.Working || r.Region != "osc_title" {
+		t.Fatalf("applied against the current title: %+v", r)
+	}
+	// the same sample with the title unchanged is taken as it is
+	p.ApplySnapshot(snap("✳ fake"), true)
+	msg = p.PollScreen()()
+	p.ApplyScreen(msg)
+	if r := p.screen["%1"]; r.State != agent.Idle {
+		t.Fatalf("unchanged title: %+v", r)
 	}
 }

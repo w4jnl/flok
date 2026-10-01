@@ -40,3 +40,13 @@ func TestGotoResolvesHostSpelling(t *testing.T) {
 		}
 	}
 }
+
+func TestSessionRef(t *testing.T) {
+	for in, want := range map[string][3]string{"$5": {"", "$5", "ok"}, "beta:$12": {"beta", "$12", "ok"}, "LOCAL:$1": {"", "$1", "ok"},
+		"%5": {"", "", ""}, "beta:%5": {"", "", ""}, "$x": {"", "", ""}, "bad host:$1": {"", "", ""}} {
+		h, id, ok := sessionRef(in)
+		if ok != (want[2] == "ok") || h != want[0] || id != want[1] {
+			t.Fatalf("%q: %q %q %v", in, h, id, ok)
+		}
+	}
+}

@@ -18,19 +18,35 @@ import (
 // the same keys as the local tmux snippet, `?` excepted (tmux's own list-keys stays there).
 type KeyCommand struct{ Key, Cmd string }
 
-// KeyCommands in binding order: the agent keys, then the server keys (N/P next and previous
-// server, O the last one, S the servers menu, F1…F9 a server by position, local first).
+// KeyCommands in binding order: the agent keys, the three menus (A agents, S sessions, @
+// servers), then the server keys (N/P next and previous server, O the last one, F1…F9 a
+// server by position, local first).
 var KeyCommands = append([]KeyCommand{
-	{"b", "toggle"}, {"B", "hide"}, {"g", "focus"}, {"o", "jump"}, {"a", "next"}, {"A", "prev"}, {"u", "keep-awake"},
-	{"N", "host next"}, {"P", "host prev"}, {"O", "host last"}, {"S", "host menu"},
+	{"b", "toggle"}, {"B", "hide"}, {"g", "focus"}, {"o", "jump"}, {"a", "next"}, {"u", "keep-awake"},
+	{"A", "menu agents"}, {"S", "menu sessions"}, {"@", "menu servers"},
+	{"N", "host next"}, {"P", "host prev"}, {"O", "host last"},
 }, serverDigits()...)
+
+// legacyKeyCommands are what bindings from before the menus may still relay, and what an older
+// snippet may still have on a key (A was prev, S the servers menu).
+var legacyKeyCommands = []string{"prev", "host menu"}
+
+func isLegacy(cmd string) bool {
+	for _, c := range legacyKeyCommands {
+		if c == cmd {
+			return true
+		}
+	}
+	return false
+}
 
 // LocalKeyCommands are the bindings the tmux snippet (`flok install --tmux`) makes in the local
 // inner server, with their arguments; the sidebar binds the missing ones at start.
 var LocalKeyCommands = append([]KeyCommand{
-	{"a", "next --client '#{client_tty}'"}, {"A", "prev --client '#{client_tty}'"}, {"o", "jump --client '#{client_tty}'"},
+	{"a", "next --client '#{client_tty}'"}, {"o", "jump --client '#{client_tty}'"},
 	{"b", "toggle"}, {"B", "hide"}, {"g", "focus"}, {"u", "keep-awake --notify"}, {"?", "keys --open --client '#{client_tty}'"},
-	{"N", "host next"}, {"P", "host prev"}, {"O", "host last"}, {"S", "host menu"},
+	{"A", "menu agents"}, {"S", "menu sessions"}, {"@", "menu servers"},
+	{"N", "host next"}, {"P", "host prev"}, {"O", "host last"},
 }, serverDigits()...)
 
 // serverDigits are F1 … F9: bring server N to the front (1 = local, then the hosts in registry
@@ -59,7 +75,7 @@ func IsKeyCommand(cmd string) bool {
 			return true
 		}
 	}
-	return false
+	return isLegacy(cmd)
 }
 
 // RequestOption is the tmux user option a plain-mode binding sets; the local poller reads it
@@ -201,8 +217,9 @@ func joinCmds(cmds [][]string) []string {
 // prefixBinding is one line of `list-keys -T prefix`.
 type prefixBinding struct {
 	key, cmd, line string
-	ours           bool // flok's remote binding (relay or request option), this or an earlier session
-	flok           bool // ours, or any other command running flok (the local snippet)
+	ours           bool   // flok's remote binding (relay or request option), this or an earlier session
+	flok           bool   // ours, or any other command running flok (the local snippet)
+	sub            string // the flok command a local binding runs ("prev", "menu agents"), "" when not flok's
 }
 
 func prefixBindings(c tmux.Client) []prefixBinding {
@@ -221,7 +238,8 @@ func parsePrefixBindings(out string) []prefixBinding {
 			if w[i] == "-T" && w[i+1] == "prefix" {
 				cmd := strings.Join(w[i+3:], " ")
 				ours := strings.Contains(line, "set-option -g "+RequestOption) || strings.Contains(cmd, "flok relay ") || strings.Contains(cmd, "flok' relay ")
-				list = append(list, prefixBinding{key: w[i+2], cmd: cmd, line: strings.TrimSpace(line), ours: ours, flok: ours || flokCommand(cmd)})
+				sub := flokSub(cmd)
+				list = append(list, prefixBinding{key: w[i+2], cmd: cmd, line: strings.TrimSpace(line), ours: ours, flok: ours || sub != "", sub: sub})
 				break
 			}
 		}
@@ -229,18 +247,43 @@ func parsePrefixBindings(out string) []prefixBinding {
 	return list
 }
 
-// flokCommand says whether a binding's command runs flok (any path) with one of its key
-// commands.
-func flokCommand(cmd string) bool {
+// flokSub names the flok key command a binding runs (any path to flok, the snippet's bare
+// `flok` included): "next", "menu agents", "host front 1", or one of the commands older
+// snippets bound ("prev", "host menu"). "" when the binding is not flok's.
+func flokSub(cmd string) string {
 	if !strings.Contains(cmd, "flok") {
-		return false
+		return ""
 	}
+	subs := legacyKeyCommands
 	for _, k := range LocalKeyCommands {
-		if strings.Contains(cmd, "flok "+strings.Fields(k.Cmd)[0]) || strings.Contains(cmd, "flok' "+strings.Fields(k.Cmd)[0]) {
-			return true
+		subs = append(subs, cmdWords(k.Cmd))
+	}
+	best := ""
+	for _, sub := range subs {
+		if len(sub) <= len(best) {
+			continue
+		}
+		for _, lead := range []string{"flok ", "flok' "} {
+			if i := strings.Index(cmd, lead+sub); i >= 0 {
+				if rest := cmd[i+len(lead)+len(sub):]; rest == "" || rest[0] == ' ' || rest[0] == '"' || rest[0] == ';' {
+					best = sub
+				}
+			}
 		}
 	}
-	return false
+	return best
+}
+
+// cmdWords is a key command without its flags: "next --client '#{client_tty}'" → "next".
+func cmdWords(cmd string) string {
+	var words []string
+	for _, w := range strings.Fields(cmd) {
+		if strings.HasPrefix(w, "-") {
+			break
+		}
+		words = append(words, w)
+	}
+	return strings.Join(words, " ")
 }
 
 // bindArgs turns saved bind-key lines back into one batch of commands (a `;` word inside a
@@ -289,13 +332,18 @@ func bindLocalArgs(flok string, cmds []KeyCommand) []string {
 
 // InstallLocalKeys binds flok's keys in the local inner server: mode "missing" binds only keys
 // that are not bound at all (tmux's own `o` and `?` stay), "all" binds every key and saves what
-// was there, "off" does nothing. Keys already running flok (the snippet) are left as they are.
-// What was done is recorded in <dir>/keys.json; conflicts lists the keys left alone in mode
-// missing with their current command.
-func InstallLocalKeys(c tmux.Client, dir, flok, mode string) (installed []string, conflicts map[string]string) {
-	conflicts = map[string]string{}
+// was there, "off" does nothing. Keys already running flok's command for that key (the snippet)
+// are left as they are; a key running a flok command flok no longer binds there (an older
+// snippet's `A` = prev or `S` = the servers menu, an earlier sidebar) is brought up to date in
+// both modes and only unbound by the restore: putting the old line back would make the next
+// start find it again, long after the snippet was fixed (the snippet re-creates it on the next
+// reload if it was not). Any other command is the user's. What was done is recorded in
+// <dir>/keys.json; conflicts lists the keys left alone in mode missing with their current
+// command, stale the keys an older snippet had (key → that command).
+func InstallLocalKeys(c tmux.Client, dir, flok, mode string) (installed []string, conflicts, stale map[string]string) {
+	conflicts, stale = map[string]string{}, map[string]string{}
 	if mode == "off" || flok == "" {
-		return nil, conflicts
+		return nil, conflicts, stale
 	}
 	current := map[string]prefixBinding{}
 	for _, b := range prefixBindings(c) {
@@ -310,8 +358,10 @@ func InstallLocalKeys(c tmux.Client, dir, flok, mode string) (installed []string
 	for _, k := range LocalKeyCommands {
 		b, bound := current[k.Key]
 		switch {
-		case bound && b.flok:
+		case bound && (b.ours || b.sub == cmdWords(k.Cmd)):
 			continue // the snippet, or an earlier sidebar
+		case bound && isLegacy(b.sub): // flok's own, from before this key changed: update it
+			stale[k.Key] = b.sub
 		case bound && mode != "all":
 			conflicts[k.Key] = b.cmd
 			continue
@@ -333,7 +383,7 @@ func InstallLocalKeys(c tmux.Client, dir, flok, mode string) (installed []string
 	if len(st.Installed) > 0 {
 		_ = state.WriteJSONAtomic(filepath.Join(dir, LocalKeysFile), st)
 	}
-	return installed, conflicts
+	return installed, conflicts, stale
 }
 
 func loadLocalKeys(dir string) LocalKeys {
@@ -344,7 +394,8 @@ func loadLocalKeys(dir string) LocalKeys {
 	return st
 }
 
-// RestoreLocalKeys undoes InstallLocalKeys: flok's keys go, the server's own come back, the
+// RestoreLocalKeys undoes InstallLocalKeys: flok's keys go, the server's own come back (a saved
+// line that is itself an older snippet's flok binding stays gone, see InstallLocalKeys), the
 // record is removed. Safe to call twice.
 func RestoreLocalKeys(c tmux.Client, dir string) error {
 	st := loadLocalKeys(dir)
@@ -357,14 +408,21 @@ func RestoreLocalKeys(c tmux.Client, dir string) error {
 			return err
 		}
 	}
-	if args := bindArgs(st.Saved); len(args) > 0 {
+	var keep []string
+	for _, line := range st.Saved {
+		if !isLegacy(flokSub(line)) {
+			keep = append(keep, line)
+		}
+	}
+	if args := bindArgs(keep); len(args) > 0 {
 		_, _ = c.Run(args...)
 	}
 	return os.Remove(filepath.Join(dir, LocalKeysFile))
 }
 
 // LocalKeyStatus reports, for every key of the snippet, what the local server has: "flok",
-// "" (unbound) or the other command bound there.
+// "flok <cmd>" for an older snippet's flok command on that key, "" (unbound) or the other
+// command bound there.
 func LocalKeyStatus(c tmux.Client) map[string]string {
 	status := map[string]string{}
 	current := map[string]prefixBinding{}
@@ -373,8 +431,10 @@ func LocalKeyStatus(c tmux.Client) map[string]string {
 	}
 	for _, k := range LocalKeyCommands {
 		if b, ok := current[k.Key]; ok {
-			if b.flok {
+			if b.ours || b.sub == cmdWords(k.Cmd) {
 				status[k.Key] = "flok"
+			} else if isLegacy(b.sub) {
+				status[k.Key] = "flok " + b.sub
 			} else {
 				status[k.Key] = b.cmd
 			}

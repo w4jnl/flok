@@ -399,7 +399,47 @@ if tmux_at_least 3 0; then
   expect "the menu lists local and the hosts with their state" 'local' "$menu"
   expect "... beta with its mode and agents" 'beta · full · [0-9]' "$menu"
   expect "... the front marked" '▸ ' "$menu"
+  # tmux ignores a display-menu while one is still on screen: Escape, then wait for it to go
+  menu_gone() { local i; for i in $(seq 1 30); do tmux -L "$TTYS" capture-pane -p -t t | grep -qE '\([1-9]\)' || return 0; sleep 0.1; done; return 1; }
   tmux -L "$TTYS" send-keys -t t Escape
+  menu_gone || true
+  # the agents menu (prefix A): the sidebar's order with hotkeys, remote agents tagged
+  rc=0; out=$("$BIN" menu agents 2>&1) || rc=$?
+  expect "the agents menu opens: $out" '^0$' "$rc"
+  for _ in $(seq 1 50); do tmux -L "$TTYS" capture-pane -p -t t | grep -qE 'claude.*\(1\)' && break; sleep 0.1; done
+  menu=$(tmux -L "$TTYS" capture-pane -p -t t)
+  expect "the agents menu lists the agents with hotkeys" 'claude.*\(1\)' "$menu"
+  expect "... remote agents tagged with their host" '@(beta|gamma)' "$menu"
+  tmux -L "$TTYS" send-keys -t t Escape
+  menu_gone || true
+  # the sessions menu (prefix S): the sessions of the server in front (beta), the current one marked
+  rc=0; out=$("$BIN" menu sessions 2>&1) || rc=$?
+  expect "the sessions menu opens: $out" '^0$' "$rc"
+  for _ in $(seq 1 50); do tmux -L "$TTYS" capture-pane -p -t t | grep -qE 'Remote.*\(1\)' && break; sleep 0.1; done
+  menu=$(tmux -L "$TTYS" capture-pane -p -t t)
+  expect "the sessions menu is titled after the front server" 'sessions · beta' "$menu"
+  expect "... lists its sessions with hotkeys" 'Remote · 1 agent +\(1\)' "$menu"
+  expect "... the current one marked" '▸ . Remote' "$menu"
+  expect "... and links to the other menus" 'agents… +\(A\)' "$menu"
+  tmux -L "$TTYS" send-keys -t t Escape
+  menu_gone || true
+  # a key inside a remote session relays the menu to this machine (prefix A there)
+  FLOK_STATE=$T/hosts/beta/state "$BIN" relay menu agents
+  for _ in $(seq 1 50); do tmux -L "$TTYS" capture-pane -p -t t | grep -qE 'claude.*\(1\)' && break; sleep 0.1; done
+  expect "prefix A inside a remote session opens the agents menu here" 'claude.*\(1\)' "$(tmux -L "$TTYS" capture-pane -p -t t)"
+  tmux -L "$TTYS" send-keys -t t Escape
+  menu_gone || true
+  # with local in front the sessions menu lists the local sessions
+  "$BIN" host front local >/dev/null; front_is "" || true
+  "$BIN" menu sessions >/dev/null 2>&1 || true
+  for _ in $(seq 1 50); do tmux -L "$TTYS" capture-pane -p -t t | grep -qE 'Alpha.*\(1\)' && break; sleep 0.1; done
+  menu=$(tmux -L "$TTYS" capture-pane -p -t t)
+  expect "with local in front the sessions menu lists the local sessions" 'sessions · local' "$menu"
+  expect "... Alpha first with its hotkey" 'Alpha.*\(1\)' "$menu"
+  expect "... the current one marked" '▸ . (Alpha|Beta)' "$menu"
+  tmux -L "$TTYS" send-keys -t t Escape
+  menu_gone || true
+  "$BIN" host front 2 >/dev/null; front_is beta || true
 fi
 tmux -L "$TTYS" kill-server 2>/dev/null || true
 sleep 0.5

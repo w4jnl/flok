@@ -103,7 +103,7 @@ One binary, several roles selected by subcommand (`internal/cli/root.go`):
   prints in double quotes), never by the window they sit in; a second loop for the same host is a
   stray and is killed; every 5th poll the sidebar re-reads which pane is next to it and resyncs
   `front`/runtime.json (`resyncFront`). flok's keys inside a remote session: `remote.InstallKeys`
-  binds `prefix b B g o a A u` in the host's running tmux (serve does it in full mode with
+  binds `prefix b B g o a u`, the menus `A S @` and the server keys in the host's running tmux (serve does it in full mode with
   `run-shell "<flok> relay <cmd>"`, the plain-mode conn with `set-option -g @flok-request <cmd>`)
   and restores the host's own bindings on disconnect, one tmux invocation each way; the originals
   are recorded in that server as `@flok-orig-<key>` user options in the same invocation that
@@ -130,9 +130,15 @@ One binary, several roles selected by subcommand (`internal/cli/root.go`):
   `keys.PopupArgsTitled`, a window before 3.2); the footer names the install for a `no flok`/
   `old flok` host. Only ever write `~/.local/bin/flok` there.
   Locally, `runSidebar` calls `remote.InstallLocalKeys` (mode `[keys] bind`: missing/all/off) so
-  the snippet is optional; what it bound is in `$FLOK_STATE/keys.json` and `RestoreLocalKeys`
-  (sidebar exit, `flok down`, the attach-loop teardown) undoes exactly that. Server keys:
-  `flok host next|prev|last|menu` and `front <N>` (rotation order = local + enabled hosts;
+  the snippet is optional; a key running flok's command for it is left alone, one running another
+  legacy flok command (`flokSub`/`isLegacy`: an older snippet's `A` = prev, `S` = the servers
+  menu) is rebound in both modes and only unbound at the end (never saved: a restored line would
+  raise the footer notice at every start); what it bound is in `$FLOK_STATE/keys.json` and
+  `RestoreLocalKeys` (sidebar exit, `flok down`, the attach-loop teardown) undoes exactly that. Server keys:
+  `flok host next|prev|last` and `front <N>`, the menus `flok menu agents|sessions|servers` on
+  `prefix A/S/@` (`internal/cli/menu.go`: display-menu over the work pane, items run `flok goto
+  <paneref|sessionref> --no-focus` / `host front N`; `flok host menu` = servers; `flok goto` takes
+  `$5`/`beta:$5` session refs, remote ones through a `goto` request with `Session`) (rotation order = local + enabled hosts;
   `runtime.json` `previous_front`; the menu is an outer `display-menu` over the work pane,
   3.0+); `notifyFront` flashes the new front's name on that server's status line (`notify`
   frame in full mode, `display-message` over ssh in plain mode). One-shot commands aimed at a remote host
@@ -224,7 +230,9 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
   the 1 s tick spawns tmux — screen results, registry samples and hook/marker changes go through
   `rebuild()`, which re-merges the cached tmux snapshot (`screenSeq` still advances once per
   sample with results, identical or not, because the merge counts samples); all screen captures
-  go in one tmux invocation (`captureAll`); the registry is only queried while a Claude
+  go in one tmux invocation (`captureAll`), and a sample is judged again at `ApplyScreen` when
+  the pane's title or progress moved while the capture was out (`ScreenSample`; a late sample
+  judged against the old title flipped a hook-less row working → idle → done on slow runners); the registry is only queried while a Claude
   turn/prompt is open or a pane lacks hooks (else once a minute); sidebar focus comes from
   `tea.FocusMsg`/`BlurMsg` with an outer `pane_active window_zoomed_flag` check every 5th poll as
   fallback; **idle mode** (`sidebar-hidden` = 1, written by `flok hide`/`toggle` and verified against

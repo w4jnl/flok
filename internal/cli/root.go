@@ -43,12 +43,13 @@ usage: flok <command>
               (--claude, --copilot, --tmux, --tmux-resurrect, --config; default excludes
               the opt-in tmux-resurrect integration)
   resurrect   tmux-resurrect integration (save <state-file>; called by its save hook)
+  menu        agents | sessions | servers: a tmux menu over the work pane (prefix A / S / H)
   host        remote tmux servers shown next to the local one: add <name> <user@host>
               [--mode full|plain], set, remove, connect, disconnect, list, status, front,
               install (put flok on the host from here), reconnect (flok host --help)
   serve       --stdio: run headless on this host for a flok on another machine (started over
               ssh by that flok; --hello prints the greeting and exits)
-  relay       <toggle|hide|focus|jump|next|prev|keep-awake|host …>: a flok key pressed inside
+  relay       <toggle|hide|focus|jump|next|keep-awake|menu …|host …>: a flok key pressed inside
               a served host's tmux (bound there by flok while connected)
   hook        hook receiver used by the agents (stdin JSON; never call by hand)
   completion  print a bash or zsh completion script (flok completion bash|zsh)
@@ -104,6 +105,8 @@ func Main(args []string) int {
 		return runResurrect(cfg, args[1:])
 	case "host":
 		return runHost(cfg, args[1:])
+	case "menu":
+		return runMenu(cfg, args[1:])
 	case "serve":
 		return runServe(cfg, args[1:])
 	case "relay":

@@ -45,6 +45,8 @@ expect "next moves to the other agent (Alpha:agent)" '^Alpha agent$' "$(IN displ
 expect "next wraps around to agent2" '^Beta agent2$' "$(IN display -p -t "$CLIENT" '#{session_name} #{window_name}')"
 "$BIN" prev --client "$CLIENT"; sleep 0.4
 expect "prev goes back" '^Alpha agent$' "$(IN display -p -t "$CLIENT" '#{session_name} #{window_name}')"
+"$BIN" goto "$(IN display -p -t Beta '#{session_id}')" --no-focus   # what the sessions menu runs
+expect_soon "goto a session id switches the client to it" '^Beta$' IN display -p -t "$CLIENT" '#{client_session}'
 
 # toggle: full -> rail -> full; hide: zoom right pane and back
 "$BIN" toggle; sleep 0.3
@@ -120,4 +122,14 @@ expect "sidebar ? shows keybinds overlay" 'keybinds' "$snap"
 OUT send-keys -t "$SIDEBAR" Escape
 sleep 0.5
 expect "esc returns to the sidebar" '^sessions' "$(capture)"
+
+# an older snippet's A (flok prev) is flok's own binding: a restarted sidebar brings it up to
+# date; the user's own @ (join-pane, say) is a conflict and stays
+IN bind-key -T prefix A run-shell -b "flok prev --client '#{client_tty}'"
+IN bind-key -T prefix @ display-message mine
+"$BIN" reload
+expect_soon -t 10 "a restarted sidebar updates flok's own older binding (A was prev)" "prefix +A +run-shell -b \"$BIN menu agents\"" IN list-keys -T prefix
+expect "... and leaves the user's @ alone" 'prefix +@ +display-message mine' "$(IN list-keys -T prefix)"
+expect "... doctor names the key it left" 'tmux.s or yours: .*@ → display-message mine' "$("$BIN" doctor 2>&1 || true)"
+expect_soon "... and the footer says the snippet is older" 'older tmux snippet: A' capture
 finish

@@ -79,7 +79,14 @@ type SnapshotMsg struct {
 type RegistryMsg struct{ Entries map[string]claudereg.Entry }
 
 // ScreenMsg is one screen-rule sample; empty Results means nothing was evaluated (not a sample).
-type ScreenMsg struct{ Results map[string]rules.Result }
+// ScreenSample is what a screen result was judged from: the capture and the title and progress
+// the pane had when the capture was scheduled.
+type ScreenSample struct{ Kind, Title, Progress, Text string }
+
+type ScreenMsg struct {
+	Results map[string]rules.Result
+	Samples map[string]ScreenSample
+}
 
 // Poller holds the pipeline state. It is not safe for concurrent use: the sidebar touches it
 // from Update only, Run from one goroutine.
@@ -311,6 +318,23 @@ func (p *Poller) ApplyRegistry(msg RegistryMsg) bool {
 // otherwise the sequence advances, identical results or not, because the merge counts samples.
 // It reports whether a Rebuild is due.
 func (p *Poller) ApplyScreen(msg ScreenMsg) bool {
+	// A capture is scheduled with the titles of the last tmux poll and comes back later. When the
+	// title moved in between (the spinner appeared), the result was judged against the old title
+	// and, applied now, would undo what the newer poll saw: a hook-less row would read idle, and
+	// unfocused, done. Judge such a sample again with the title known now.
+	if p.d.Rules != nil {
+		for pane, s := range msg.Samples {
+			title, ok := p.titles[pane]
+			if !ok || (title == s.Title && p.progress[pane] == s.Progress) {
+				continue
+			}
+			if m := p.d.Rules.Get(s.Kind); m != nil {
+				sc := rules.NewScreen(s.Text, title)
+				sc.Progress = p.progress[pane]
+				msg.Results[pane] = m.Evaluate(sc)
+			}
+		}
+	}
 	p.screen = msg.Results
 	if len(msg.Results) == 0 {
 		return false
@@ -416,9 +440,9 @@ func (p *Poller) PollScreen() func() ScreenMsg {
 	}
 	c, set, n := p.d.Tmux, p.d.Rules, p.d.Cfg.Sidebar.CaptureLines
 	return func() ScreenMsg {
-		res := map[string]rules.Result{}
+		res, samples := map[string]rules.Result{}, map[string]ScreenSample{}
 		if len(targets) == 0 {
-			return ScreenMsg{res}
+			return ScreenMsg{Results: res}
 		}
 		panes := make([]string, 0, len(targets))
 		for _, t := range targets {
@@ -433,8 +457,9 @@ func (p *Poller) PollScreen() func() ScreenMsg {
 			sc := rules.NewScreen(out, t.title)
 			sc.Progress = t.progress
 			res[t.pane] = set.Get(t.kind).Evaluate(sc)
+			samples[t.pane] = ScreenSample{Kind: t.kind, Title: t.title, Progress: t.progress, Text: out}
 		}
-		return ScreenMsg{res}
+		return ScreenMsg{Results: res, Samples: samples}
 	}
 }
 

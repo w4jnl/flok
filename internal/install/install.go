@@ -217,17 +217,18 @@ func TmuxSnippet(bin string) string {
 	return fmt.Sprintf(`# >>> flok >>>
 unbind a                                                 # was send-prefix; C-a C-a still sends the prefix
 bind a run-shell -b "%[1]s next --client '#{client_tty}'"
-bind A run-shell -b "%[1]s prev --client '#{client_tty}'"
 bind o run-shell -b "%[1]s jump --client '#{client_tty}'"   # replaces select-pane -t :.+
+bind A run-shell -b "%[1]s menu agents"                   # tmux menus (3.0+) of the agents, the sessions in front,
+bind S run-shell -b "%[1]s menu sessions"                 # the servers; older tmux focuses the sidebar instead
+bind @ run-shell -b "%[1]s menu servers"
 bind b run-shell -b "%[1]s toggle"
 bind B run-shell -b "%[1]s hide"
 bind g run-shell -b "%[1]s focus"                        # keyboard into the sidebar: j/k, enter, esc back
 bind u run-shell -b "%[1]s keep-awake --notify"          # keep the Mac awake, toggles; state on the status line (macOS)
 bind ? run-shell -b "%[1]s keys --open --client '#{client_tty}'"   # popup on tmux 3.2+, a window before
-bind N run-shell -b "%[1]s host next"                     # servers (remote hosts): next / previous / last / menu
+bind N run-shell -b "%[1]s host next"                     # servers (remote hosts): next / previous / last
 bind P run-shell -b "%[1]s host prev"
 bind O run-shell -b "%[1]s host last"
-bind S run-shell -b "%[1]s host menu"                     # tmux 3.0+; older tmux focuses the sidebar instead
 bind F1 run-shell -b "%[1]s host front 1"                 # F1 … F9: local, then the hosts in order
 bind F2 run-shell -b "%[1]s host front 2"
 bind F3 run-shell -b "%[1]s host front 3"

@@ -448,8 +448,10 @@ host's `flok serve` exits on the closed pipe and its hooks play there again.
 Navigation crosses hosts: `prefix o` goes to the agent needing you on any host, `1`-`9`, a
 click and the menu bar reach any row, `flok goto beta:%12` scripts it; `prefix a` / `A` walk the
 agents of the host in front, so a step never swaps the work pane. `flok host front beta` (or
-`local`) switches hosts from a key binding, `flok host next|prev|last` rotates, `flok host menu`
-shows a tmux menu of them, and the same keys work with a remote server in front. Every switch
+`local`) switches hosts from a key binding, `flok host next|prev|last` rotates, `flok menu
+servers` (`prefix @`; `flok menu agents` and `flok menu sessions` are its siblings on `prefix A`
+and `prefix S`, each menu linking to the other two) shows a tmux menu of them, and the same keys
+work with a remote server in front. Every switch
 flashes `flok: now on <server>` on the status line of the server that came to the front, the
 one the work pane shows.
 
@@ -517,20 +519,26 @@ In tmux (your prefix; the snippet assumes `C-a`):
 | `prefix B` | hide / show the sidebar (zooms the work pane) |
 | `prefix g` | move the keyboard into the sidebar, or back to the work pane |
 | `prefix o` | jump to the newest agent needing input, else the newest finished one |
-| `prefix a` / `prefix A` | next / previous agent pane, in sidebar order |
+| `prefix a` | next agent pane, in sidebar order |
+| `prefix A` | a tmux menu of the agents over the work pane: `1`-`9` open one, remote ones tagged `@host` (tmux 3.0+) |
+| `prefix S` | the same for the sessions of the server in front, the current one marked |
+| `prefix @` | the same for the servers (as in `@beta`): local and the hosts with their state |
 | `prefix u` | keep the Mac awake, display on, while flok runs; toggles, the state shows on the status line (macOS) |
 | `prefix ?` | keybinds help popup (`?` inside the sidebar opens the same) |
 | `prefix N` / `prefix P` | next / previous server to the front (local, then the hosts in order, wrapping) |
 | `prefix O` | the previous server again (back and forth) |
-| `prefix S` | a tmux menu of the servers over the work pane (tmux 3.0+) |
 | `prefix F1` … `F9` | server N to the front: F1 is local, F2 the first host |
 
 These come from the tmux snippet (`flok install --tmux`). Without it, the sidebar binds them in
 your tmux server for the session when it starts: by default only the keys nothing else uses, so
 tmux's own `prefix o` (next pane) and `prefix ?` (list-keys) keep working and flok's jump and help
 are reached from the sidebar instead; `[keys] bind = "all"` takes them over for the session too,
-and `flok down` puts everything back. `flok doctor` lists which keys flok has, which are unbound
-and which tmux or you bound to something else.
+and `flok down` puts everything back. A key still running an older snippet's flok command
+(`prefix A` was "previous agent", `prefix S` the servers menu) is flok's own: the sidebar
+brings it up to date, says so in the footer and unbinds it when it ends; `flok install --tmux`
+prints the current snippet (reloading tmux.conf brings the old binding back until it is updated).
+`flok doctor` lists which keys flok has, which are unbound, which tmux or you bound to something
+else and which an older snippet still holds.
 
 Menu bar (when enabled): click an agent row to return to it (remote agents read `project ·
 claude @beta`, and a row per host under them brings that host's pane to the front), "Show
