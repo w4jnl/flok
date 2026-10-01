@@ -18,19 +18,25 @@ import (
 // the same keys as the local tmux snippet, `?` excepted (tmux's own list-keys stays there).
 type KeyCommand struct{ Key, Cmd string }
 
-// KeyCommands in binding order: the agent keys, then the server keys (N/P next and previous
-// server, O the last one, S the servers menu, F1…F9 a server by position, local first).
+// KeyCommands in binding order: the agent keys, the three menus (A agents, S sessions, H
+// servers), then the server keys (N/P next and previous server, O the last one, F1…F9 a
+// server by position, local first).
 var KeyCommands = append([]KeyCommand{
-	{"b", "toggle"}, {"B", "hide"}, {"g", "focus"}, {"o", "jump"}, {"a", "next"}, {"A", "prev"}, {"u", "keep-awake"},
-	{"N", "host next"}, {"P", "host prev"}, {"O", "host last"}, {"S", "host menu"},
+	{"b", "toggle"}, {"B", "hide"}, {"g", "focus"}, {"o", "jump"}, {"a", "next"}, {"u", "keep-awake"},
+	{"A", "menu agents"}, {"S", "menu sessions"}, {"H", "menu servers"},
+	{"N", "host next"}, {"P", "host prev"}, {"O", "host last"},
 }, serverDigits()...)
+
+// legacyKeyCommands are what bindings from before the menus may still relay.
+var legacyKeyCommands = []string{"prev", "host menu"}
 
 // LocalKeyCommands are the bindings the tmux snippet (`flok install --tmux`) makes in the local
 // inner server, with their arguments; the sidebar binds the missing ones at start.
 var LocalKeyCommands = append([]KeyCommand{
-	{"a", "next --client '#{client_tty}'"}, {"A", "prev --client '#{client_tty}'"}, {"o", "jump --client '#{client_tty}'"},
+	{"a", "next --client '#{client_tty}'"}, {"o", "jump --client '#{client_tty}'"},
 	{"b", "toggle"}, {"B", "hide"}, {"g", "focus"}, {"u", "keep-awake --notify"}, {"?", "keys --open --client '#{client_tty}'"},
-	{"N", "host next"}, {"P", "host prev"}, {"O", "host last"}, {"S", "host menu"},
+	{"A", "menu agents"}, {"S", "menu sessions"}, {"H", "menu servers"},
+	{"N", "host next"}, {"P", "host prev"}, {"O", "host last"},
 }, serverDigits()...)
 
 // serverDigits are F1 … F9: bring server N to the front (1 = local, then the hosts in registry
@@ -56,6 +62,11 @@ func keyNames(cmds []KeyCommand) []string {
 func IsKeyCommand(cmd string) bool {
 	for _, k := range KeyCommands {
 		if k.Cmd == cmd {
+			return true
+		}
+	}
+	for _, c := range legacyKeyCommands {
+		if c == cmd {
 			return true
 		}
 	}

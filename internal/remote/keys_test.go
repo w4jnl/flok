@@ -21,7 +21,8 @@ func TestKeyBindings(t *testing.T) {
 	if u := strings.Join(UnbindArgs(keyNames(KeyCommands)), " "); !strings.HasPrefix(u, "unbind-key -T prefix b ; unbind-key -T prefix B") {
 		t.Fatalf("unbind %q", u)
 	}
-	if !IsKeyCommand("jump") || IsKeyCommand("goto") || IsKeyCommand("") || !IsKeyCommand("host next") || !IsKeyCommand("host front 3") || IsKeyCommand("host front 10") || IsKeyCommand("host remove x") {
+	if !IsKeyCommand("jump") || IsKeyCommand("goto") || IsKeyCommand("") || !IsKeyCommand("host next") || !IsKeyCommand("host front 3") || IsKeyCommand("host front 10") || IsKeyCommand("host remove x") ||
+		!IsKeyCommand("menu agents") || !IsKeyCommand("menu sessions") || !IsKeyCommand("menu servers") || !IsKeyCommand("host menu") || !IsKeyCommand("prev") || IsKeyCommand("menu x") {
 		t.Fatal("IsKeyCommand")
 	}
 	if got := strings.Join(BindRelayArgs("/x/flok"), " "); !strings.Contains(got, "prefix N run-shell -b /x/flok relay host next") || !strings.Contains(got, "prefix F9 run-shell -b /x/flok relay host front 9") {
@@ -117,7 +118,7 @@ func TestLocalKeys(t *testing.T) {
 		"bind-key    -T prefix       c                 new-window\n"
 	c := &keysClient{keys: table}
 	installed, conflicts := InstallLocalKeys(c, dir, "/x/flok", "missing")
-	if got := strings.Join(installed, ""); !strings.HasPrefix(got, "aABguNPOSF1") || len(installed) != 18 {
+	if got := strings.Join(installed, ""); !strings.HasPrefix(got, "aBguASHNPOF1") || len(installed) != 19 {
 		t.Fatalf("installed %v", installed)
 	}
 	if len(conflicts) != 2 || conflicts["o"] != "select-pane -t :.+" || conflicts["?"] != "list-keys -N" {
@@ -127,12 +128,12 @@ func TestLocalKeys(t *testing.T) {
 	if !strings.Contains(bind, "bind-key -T prefix a run-shell -b /x/flok next --client '#{client_tty}'") || strings.Contains(bind, "prefix o") || strings.Contains(bind, "prefix b ") {
 		t.Fatalf("bind call %q", bind)
 	}
-	if st := loadLocalKeys(dir); len(st.Installed) != 18 || len(st.Saved) != 0 {
+	if st := loadLocalKeys(dir); len(st.Installed) != 19 || len(st.Saved) != 0 {
 		t.Fatalf("keys.json %+v", st)
 	}
 	// a second sidebar (reload) with the keys now present: nothing new, the record stays
 	c.keys = table + "bind-key    -T prefix       a                 run-shell -b \"/x/flok next --client '#{client_tty}'\"\n"
-	if again, _ := InstallLocalKeys(c, dir, "/x/flok", "missing"); !strings.HasPrefix(strings.Join(again, ""), "ABgu") || len(again) != 17 {
+	if again, _ := InstallLocalKeys(c, dir, "/x/flok", "missing"); !strings.HasPrefix(strings.Join(again, ""), "BguASH") || len(again) != 18 {
 		t.Fatalf("second install %v", again)
 	}
 	status := LocalKeyStatus(c)
@@ -175,7 +176,7 @@ func TestLocalKeys(t *testing.T) {
 	}
 }
 
-const allKeys = "b B g o a A u N P O S F1 F2 F3 F4 F5 F6 F7 F8 F9"
+const allKeys = "b B g o a u A S H N P O F1 F2 F3 F4 F5 F6 F7 F8 F9"
 
 func TestInstallRebindRestore(t *testing.T) {
 	c := &keysClient{}

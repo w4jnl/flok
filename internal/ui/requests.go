@@ -39,6 +39,15 @@ func (m *Model) runRequest(r state.Request) tea.Cmd {
 	}
 	switch r.Cmd {
 	case "goto":
+		if r.Pane == "" && r.Session != "" { // the sessions menu
+			for _, s := range m.fed.Spaces {
+				if s.Host == r.Host && s.SessionID == r.Session {
+					return m.gotoCmd(r.Host, r.Session, "", "", false)
+				}
+			}
+			m.errText = "goto: no session " + r.Session + " on " + hostLabel(r.Host)
+			return nil
+		}
 		for _, a := range m.fed.Agents {
 			if a.Host == r.Host && a.PaneID == r.Pane {
 				return m.gotoCmd(a.Host, a.SessionID, a.WindowID, a.PaneID, false)

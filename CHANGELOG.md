@@ -6,6 +6,12 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+- Three tmux menus over the work pane, one key each: `prefix A` the agents (`1`-`9` open one,
+  remote ones tagged with their host), `prefix S` the sessions of the server in front (the
+  current one marked), `prefix H` the servers; each links to the other two (`flok menu
+  agents|sessions|servers`; `flok host menu` stays as the servers one). The servers menu moves
+  from `S` to `H`, and `prefix A` no longer steps to the previous agent (`a` cycles, `o` jumps to
+  the one needing you, the menu picks). `flok goto` takes a session id (`$5`, `beta:$5`) as well.
 ## 0.5.1 (2026-09-30)
 
 - **Install flok on a host from here.** `flok host install <name>` (or `I` on the host's row in

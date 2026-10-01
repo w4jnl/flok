@@ -45,6 +45,8 @@ expect "next moves to the other agent (Alpha:agent)" '^Alpha agent$' "$(IN displ
 expect "next wraps around to agent2" '^Beta agent2$' "$(IN display -p -t "$CLIENT" '#{session_name} #{window_name}')"
 "$BIN" prev --client "$CLIENT"; sleep 0.4
 expect "prev goes back" '^Alpha agent$' "$(IN display -p -t "$CLIENT" '#{session_name} #{window_name}')"
+"$BIN" goto "$(IN display -p -t Beta '#{session_id}')" --no-focus   # what the sessions menu runs
+expect_soon "goto a session id switches the client to it" '^Beta$' IN display -p -t "$CLIENT" '#{client_session}'
 
 # toggle: full -> rail -> full; hide: zoom right pane and back
 "$BIN" toggle; sleep 0.3

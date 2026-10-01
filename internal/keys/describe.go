@@ -26,6 +26,7 @@ var flokLabels = map[string]string{
 	"keep-awake": "keep the Mac awake (toggle)",
 	"host next":  "next server to the front", "host prev": "previous server to the front",
 	"host last": "the previous server again", "host menu": "servers menu", "host front": "server by position",
+	"menu agents": "agents menu", "menu sessions": "sessions menu", "menu servers": "servers menu",
 }
 
 // Label returns a short human description for a binding: the tmux note when present, an

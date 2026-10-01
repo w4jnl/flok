@@ -7,10 +7,8 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
-	"syscall"
 	"text/tabwriter"
 	"time"
 
@@ -22,7 +20,6 @@ import (
 	"github.com/w4jnl/flok/internal/remote/proto"
 	"github.com/w4jnl/flok/internal/snapshot"
 	"github.com/w4jnl/flok/internal/state"
-	"github.com/w4jnl/flok/internal/tmux"
 )
 
 const hostUsage = `usage: flok host <command>
@@ -540,64 +537,8 @@ func (c hostCmd) rotate(dir string) int {
 	return c.requestFront(order[cur])
 }
 
-// menu shows the servers as a tmux menu over the work pane of the outer (whichever host is in
-// front, the outer is what the terminal shows); an item brings that server to the front. Older
-// tmux (before 3.0) has no menus: the keyboard goes to the sidebar's servers panel instead.
-func (c hostCmd) menu() int {
-	rt, err := launcher.ReadRuntime()
-	if err != nil || rt.SidebarPane == "" {
-		return c.fail(errors.New("the sidebar is not running (flok up)"))
-	}
-	outer := tmux.NewLocal(rt.OuterSocket).SetVersion(rt.Version())
-	if !outer.Features().Menu {
-		_, err := outer.Run("select-pane", "-t", rt.SidebarPane)
-		return report(err)
-	}
-	if clients, err := outer.Run("list-clients", "-F", "#{client_tty}"); err != nil || strings.TrimSpace(clients) == "" {
-		return c.fail(errors.New("no terminal is attached to flok (the menu needs one)"))
-	}
-	order, err := c.servers()
-	if err != nil {
-		return c.fail(err)
-	}
-	snap, _ := snapshot.Load(c.dir, c.now())
-	states := map[string]snapshot.Host{}
-	for _, h := range snap.Hosts {
-		states[h.Name] = h
-	}
-	args := []string{"display-menu", "-t", rt.RightPane, "-T", " servers ", "-x", "C", "-y", "C"}
-	for i, host := range order {
-		label := agent.LocalHost
-		if host != "" {
-			label = host
-			if h, ok := states[host]; ok {
-				switch h.State {
-				case "connected", "stale":
-					label += fmt.Sprintf(" · %s · %d", h.Mode, h.Agents)
-				default:
-					label += " · " + h.State
-				}
-			}
-		}
-		mark := "  "
-		if host == snap.FrontHost {
-			mark = "▸ "
-		}
-		key := ""
-		if i < 9 {
-			key = strconv.Itoa(i + 1)
-		}
-		args = append(args, mark+label, key, fmt.Sprintf("run-shell -b %s", tmux.ShellQuote(binPath()+" host front "+strconv.Itoa(i+1))))
-	}
-	// display-menu holds its caller until the menu closes: start it and let it be
-	cmd := exec.Command("tmux", outer.Argv(args...)...)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	if err := cmd.Start(); err != nil {
-		return c.fail(err)
-	}
-	go func() { _ = cmd.Wait() }()
-	return 0
-}
+// menu is `flok host menu`, the same as `flok menu servers` (prefix H).
+func (c hostCmd) menu() int { return runMenu(c.cfg, []string{"servers"}) }
 
 // set edits a registered host; the sidebar picks the change up from the file and reconnects.
 func (c hostCmd) set(args []string) int {

@@ -29,6 +29,7 @@ var commands = []command{
 	{"theme", "show or switch the light/dark palette", nil},
 	{"install", "wire agent hooks and print the tmux snippet", []string{"--claude", "--copilot", "--tmux"}},
 	{"host", "manage remote tmux servers (add, set, remove, connect, disconnect, list, status, front)", nil},
+	{"menu", "a tmux menu of the agents, sessions or servers over the work pane (prefix A / S / H)", nil},
 	{"completion", "print a shell completion script", nil},
 	{"version", "print the version", nil},
 	{"help", "show usage", nil},
@@ -113,6 +114,8 @@ func bashCompletion() string {
                     status) COMPREPLY=( $(compgen -W "--json" -- "$cur") ) ;;
                 esac
             fi ;;
+        menu)
+            [ "$COMP_CWORD" -eq 2 ] && COMPREPLY=( $(compgen -W "agents sessions servers" -- "$cur") ) ;;
 `)
 	for _, c := range commands {
 		switch c.name {
@@ -178,6 +181,8 @@ func zshCompletion() string {
                     status) _arguments '--json[machine-readable output]' ;;
                 esac
             fi ;;
+        menu)
+            (( CURRENT == 3 )) && _values 'menu' 'agents[the agents, 1-9 open one]' 'sessions[the sessions in front]' 'servers[local and the hosts]' ;;
 `)
 	for _, c := range commands {
 		switch c.name {
