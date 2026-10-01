@@ -16,6 +16,7 @@ PROJ=$(basename "$R")   # agent rows show the cwd base name
 BIN=$R/bin/flok
 go build -o "$BIN" "$R/cmd/flok"
 T=$(mktemp -d)
+cd "$T"   # tmux -vv (a debug run) writes its logs into the cwd: here, never next to the sources (go builds use -C "$R")
 export FLOK_STATE=$T/state FLOK_CONFIG=$T/config.toml
 cat > "$T/config.toml" <<CFG
 [inner]
@@ -32,7 +33,7 @@ screen_poll_ms = 500
 enabled = false
 ${E2E_EXTRA_CONFIG:-}
 CFG
-FAKE=$T/fakebin; mkdir -p "$FAKE"; go build -o "$FAKE/claude" "$R/scripts/e2e/fakeagent"
+FAKE=$T/fakebin; mkdir -p "$FAKE"; go build -C "$R" -o "$FAKE/claude" ./scripts/e2e/fakeagent
 export PATH="$FAKE:$PATH" FLOK_E2E_REGISTRY=$T/registry.json   # the sidebar's `claude agents --json` hits the shim
 registry() { printf '%s' "$1" > "$FLOK_E2E_REGISTRY"; }     # registry '[{"pid":N,"status":"idle",...}]'
 IN() { tmux -L e2e-inner "$@"; }
@@ -44,7 +45,7 @@ cleanup() { [ -n "${summary_done:-}" ] || echo "== ${pass:-0} passed, ${fail:-0}
     d=/tmp/flok-e2e-logs/$(basename "$0" .sh); rm -rf "$d"; mkdir -p "$d"
     cp "$T"/state/*.log "$d"/ 2>/dev/null || true
     for h in ${FAKE_HOSTS:-}; do cp "$T/hosts/$h/state/serve.log" "$d/serve-$h.log" 2>/dev/null || true; done
-    mv "$R"/tmux-server-*.log "$R"/tmux-client-*.log "$d"/ 2>/dev/null || true   # written next to the suite by tmux -vv
+    mv "$T"/tmux-*.log "$R"/tmux-*.log "$d"/ 2>/dev/null || true   # tmux -vv's server/client/out logs
   fi
   rm -rf "$T"; }
 trap cleanup EXIT

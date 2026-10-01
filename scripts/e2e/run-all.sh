@@ -37,7 +37,7 @@ run_one() {
   ( sleep "$TIMEOUT"; kill -TERM "$pid" 2>/dev/null; sleep 10; kill -KILL "$pid" 2>/dev/null ) 2>/dev/null &
   wd=$!
   wait "$pid"; rc=$?
-  kill "$wd" 2>/dev/null; wait "$wd" 2>/dev/null
+  pkill -P "$wd" 2>/dev/null; kill "$wd" 2>/dev/null; wait "$wd" 2>/dev/null   # the sleep too: it holds our stdout (a pipe) open
   sleep 0.3 # tee drains
   sweep_servers
   SECS=$(( $(date +%s) - t0 ))
