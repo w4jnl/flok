@@ -2,7 +2,7 @@
 # M4: screen-rule detection for hook-less agents (Copilot, and Claude without hooks).
 source "$(dirname "$0")/lib.sh"
 FIX=$R/internal/rules/testdata
-go build -o "$FAKE/copilot" "$R/scripts/e2e/fakeagent"
+go build -C "$R" -o "$FAKE/copilot" ./scripts/e2e/fakeagent
 
 # Copilot pane in Beta painted from a file
 SCR=$T/copilot.txt; paint "$SCR" "$FIX/copilot_selection.txt"
