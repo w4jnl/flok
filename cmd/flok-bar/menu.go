@@ -40,7 +40,9 @@ type menuBar struct {
 
 	header, show, keepAwake, edit, reload, quit, about, repo *systray.MenuItem
 	slots                                                    []*slot
-	hostSlots                                                []*slot // remote hosts, under the agents; hidden without any
+	hostSlots                                                []*slot           // remote hosts, under the agents; hidden without any
+	hostsGap, hostsHead                                      *systray.MenuItem // a blank row and a "servers" caption over the host rows
+	hostsHeadShown                                           bool
 
 	mu          sync.Mutex
 	snap        snapshot.Snapshot
@@ -98,6 +100,14 @@ func (b *menuBar) onReady() {
 		b.slots = append(b.slots, s)
 		go b.slotClicks(s)
 	}
+	// a systray separator cannot be hidden later, so the servers block is set off by a blank
+	// disabled row and a caption that show with the first host
+	b.hostsGap = systray.AddMenuItem(" ", "")
+	b.hostsGap.Disable()
+	b.hostsGap.Hide()
+	b.hostsHead = systray.AddMenuItem("servers", "")
+	b.hostsHead.Disable()
+	b.hostsHead.Hide()
 	for i := 0; i < maxHostRows; i++ { // the menu cannot grow later: the host rows exist from the start
 		s := &slot{item: systray.AddMenuItem("", "bring this host's work pane next to the sidebar")}
 		s.item.Hide()
@@ -246,6 +256,16 @@ func (b *menuBar) render(now time.Time) {
 	hostRows := []bar.HostRow{}
 	if f == snapshot.Fresh {
 		hostRows = bar.HostRows(s)
+	}
+	if on := len(hostRows) > 0; on != b.hostsHeadShown {
+		if on {
+			b.hostsGap.Show()
+			b.hostsHead.Show()
+		} else {
+			b.hostsGap.Hide()
+			b.hostsHead.Hide()
+		}
+		b.hostsHeadShown = on
 	}
 	for i, sl := range b.hostSlots {
 		if i >= len(hostRows) {

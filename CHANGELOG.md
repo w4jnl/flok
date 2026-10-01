@@ -8,7 +8,8 @@ updates this file first. Dates are the tag dates.
 
 - Three tmux menus over the work pane, one key each: `prefix A` the agents (`1`-`9` open one,
   remote ones tagged with their host), `prefix S` the sessions of the server in front (the
-  current one marked), `prefix @` the servers (as in `claude @beta`; the letters H and R are resize and reload keys in many configs); each links to the other two (`flok menu
+  current one marked), `prefix @` the servers (as in `claude @beta`; H and R are resize and
+  reload keys in many configs); each links to the other two (`flok menu
   agents|sessions|servers`; `flok host menu` stays as the servers one). The servers menu moves
   from `S` to `@`, and `prefix A` no longer steps to the previous agent (`a` cycles, `o` jumps to
   the one needing you, the menu picks). `flok goto` takes a session id (`$5`, `beta:$5`) as well.
@@ -19,6 +20,7 @@ updates this file first. Dates are the tag dates.
 - A hook-less agent's row no longer flips to done for a moment when a screen sample scheduled
   before its spinner appeared comes back late: the sample is judged against the title the
   sidebar knows now (seen as an m1 failure on a slow CI runner).
+- Menu bar: the host rows sit under their own `servers` caption, set off from the agents.
 
 ## 0.5.1 (2026-09-30)
 
