@@ -4,7 +4,7 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
-## Unreleased
+## 0.5.2 (2026-10-02)
 
 - Three tmux menus over the work pane, one key each: `prefix A` the agents (`1`-`9` open one,
   remote ones tagged with their host), `prefix S` the sessions of the server in front (the
@@ -29,12 +29,12 @@ updates this file first. Dates are the tag dates.
   `flok install --tmux` prints the snippet for a tmux.conf that should carry them. The README's
   setup drops the tmux.conf step, and the demo recording and menu bar capture are current (the
   capture's scene has a remote host, so the servers block shows).
-- A hook-less agent's row no longer flips to done for a moment when a screen sample scheduled
-  before its spinner appeared comes back late: the sample is judged against the title the
-  sidebar knows now (seen as an m1 failure on a slow CI runner).
 - Menu bar: the host rows sit under their own `servers` caption, set off from the agents, with
   local listed first (its agents and who is waiting), so the front can be switched back from
   there too.
+- A hook-less agent's row no longer flips to done for a moment when a screen sample scheduled
+  before its spinner appeared comes back late: the sample is judged against the title the
+  sidebar knows now (seen as an m1 failure on a slow CI runner).
 
 ## 0.5.1 (2026-09-30)
 
