@@ -20,7 +20,9 @@ updates this file first. Dates are the tag dates.
 - A hook-less agent's row no longer flips to done for a moment when a screen sample scheduled
   before its spinner appeared comes back late: the sample is judged against the title the
   sidebar knows now (seen as an m1 failure on a slow CI runner).
-- Menu bar: the host rows sit under their own `servers` caption, set off from the agents.
+- Menu bar: the host rows sit under their own `servers` caption, set off from the agents, with
+  local listed first (its agents and who is waiting), so the front can be switched back from
+  there too.
 
 ## 0.5.1 (2026-09-30)
 

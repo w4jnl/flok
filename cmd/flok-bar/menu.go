@@ -40,7 +40,7 @@ type menuBar struct {
 
 	header, show, keepAwake, edit, reload, quit, about, repo *systray.MenuItem
 	slots                                                    []*slot
-	hostSlots                                                []*slot           // remote hosts, under the agents; hidden without any
+	hostSlots                                                []*slot           // the servers (local, then the hosts), under the agents; hidden without a host
 	hostsGap, hostsHead                                      *systray.MenuItem // a blank row and a "servers" caption over the host rows
 	hostsHeadShown                                           bool
 
@@ -454,8 +454,9 @@ func (b *menuBar) slotClicks(s *slot) {
 	}
 }
 
-// maxHostRows is the number of pre-created host rows (systray menus cannot grow).
-const maxHostRows = 8
+// maxHostRows is the number of pre-created server rows, local plus eight hosts (systray menus
+// cannot grow).
+const maxHostRows = 9
 
 // hostClicks brings a host's work pane to the front and raises the terminal window.
 func (b *menuBar) hostClicks(s *slot) {

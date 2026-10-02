@@ -29,10 +29,11 @@ type Row struct {
 	State     agent.State
 }
 
-// HostRow is one remote host in the dropdown (absent without any).
+// HostRow is one server in the dropdown's servers block: local first, then the remote hosts
+// (the block is absent without any host).
 type HostRow struct {
-	Name      string
-	Label     string // "beta · 3 agents · 1 waiting", "beta · needs auth", "beta · off"
+	Name      string // what `flok host front` takes: "local" or the host's name
+	Label     string // "local · 2 agents", "beta · 3 agents · 1 waiting", "beta · needs auth", "beta · off"
 	Front     bool   // its work pane is next to the sidebar
 	Attention bool   // agents waiting there
 }
@@ -128,9 +129,29 @@ func hostsDown(s snapshot.Snapshot) int {
 	return n
 }
 
-// HostRows lists the remote hosts in registry order, for the block under the agents.
+// HostRows lists the servers for the block under the agents: local, then the remote hosts in
+// registry order. Nothing without a host: a single-server flok has no front to switch.
 func HostRows(s snapshot.Snapshot) []HostRow {
-	var rows []HostRow
+	if len(s.Hosts) == 0 {
+		return nil
+	}
+	n, waiting := 0, 0
+	for _, a := range s.Agents {
+		if a.Host == "" {
+			n++
+			if attention(a) {
+				waiting++
+			}
+		}
+	}
+	label := fmt.Sprintf("local · %d agent", n)
+	if n != 1 {
+		label += "s"
+	}
+	if waiting > 0 {
+		label += fmt.Sprintf(" · %d waiting", waiting)
+	}
+	rows := []HostRow{{Name: "local", Label: label, Front: s.FrontHost == "", Attention: waiting > 0}}
 	for _, h := range s.Hosts {
 		label := h.Name + " · "
 		if h.Mode != "" {

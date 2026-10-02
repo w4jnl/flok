@@ -76,9 +76,16 @@ func TestRemoteHostsInTheDropdown(t *testing.T) {
 		t.Fatalf("rows %+v", rows)
 	}
 	hosts := HostRows(s)
-	if len(hosts) != 5 || hosts[0].Label != "beta · full · 1 agent · 1 waiting" || !hosts[0].Front || !hosts[0].Attention ||
-		hosts[1].Label != "gamma · plain · needs auth" || hosts[2].Label != "delta · plain · off" || hosts[2].Front || hosts[3].Label != "eps · full · old flok" || hosts[4].Label != "zeta · plain · no tmux server" {
+	if len(hosts) != 6 || hosts[0].Name != "local" || hosts[0].Label != "local · 1 agent" || hosts[0].Front || hosts[0].Attention ||
+		hosts[1].Label != "beta · full · 1 agent · 1 waiting" || !hosts[1].Front || !hosts[1].Attention ||
+		hosts[2].Label != "gamma · plain · needs auth" || hosts[3].Label != "delta · plain · off" || hosts[3].Front || hosts[4].Label != "eps · full · old flok" || hosts[5].Label != "zeta · plain · no tmux server" {
 		t.Fatalf("host rows %+v", hosts)
+	}
+	// local in front, with an agent waiting there
+	s.FrontHost, s.Hosts[0].Front = "", false
+	s.Agents[0].State, s.Agents[0].Unseen = agent.Done, 1
+	if hosts = HostRows(s); hosts[0].Label != "local · 1 agent · 1 waiting" || !hosts[0].Front || !hosts[0].Attention || hosts[1].Front {
+		t.Fatalf("local row %+v", hosts[:2])
 	}
 	if HostRows(snapshot.Snapshot{}) != nil || Header(snapshot.Snapshot{}, snapshot.Fresh) != "flok · 0 agents" {
 		t.Fatal("no hosts: nothing added")
