@@ -2,69 +2,71 @@
 
 [![ci](https://github.com/w4jnl/flok/actions/workflows/ci.yml/badge.svg)](https://github.com/w4jnl/flok/actions/workflows/ci.yml)
 
-See every Claude Code and Copilot CLI session in your tmux, which one is waiting on you, and jump
-there. Your tmux server, config and plugins stay untouched.
+See every Claude Code and Copilot CLI session in your tmux, on this machine and on the servers
+you ssh into, which one is waiting on you, and jump there. Your tmux servers, configs and plugins
+stay untouched.
 
-flok is a narrow sidebar pane next to your normal tmux: sessions on top, agents below, a sound
-when an agent needs you, and a `prefix ?` popup with your live keybinds. On macOS a menu bar
-item shows the same states while the terminal is behind other windows. The sidebar is modelled
-on [herdr](https://herdr.dev)'s.
+flok is a narrow sidebar pane next to your normal tmux: the servers when there is more than one,
+the sessions, the agents below with their state, a sound when an agent needs you, tmux menus of
+all three, and a `prefix ?` popup with your live keybinds. Agents can run wherever the work is:
+a host runs the same flok over your ssh config, and its agents, sessions and sounds arrive in the
+one sidebar, its tmux a key press away. On macOS a menu bar item shows the same states while the
+terminal is behind other windows. The sidebar is modelled on [herdr](https://herdr.dev)'s.
 
-<p align="center"><img src="assets/demo.gif" alt="A 20-second recording of the sidebar next to three tmux sessions: api asks for a Bash permission and turns orange, prefix o jumps to it, the answer is typed, api works again; docs stays done with one unread completion" width="936"></p>
+<p align="center"><img src="assets/demo.gif" alt="A 20-second recording of the sidebar next to three tmux sessions, with a servers panel listing local and the remote host beta: api asks for a Bash permission and turns orange, prefix o jumps to it, the answer is typed, api works again; docs stays done with one unread completion, build keeps working on beta" width="936"></p>
 
-<img src="assets/menubar-stack.png" alt="The macOS menu bar item with a working spinner and an orange badge for two agents waiting, and its dropdown listing the three agents with their states" width="168" align="left">
+<img src="assets/menubar-stack.png" alt="The macOS menu bar item with a working spinner and an orange badge for two agents waiting, and its dropdown: the agents with their states, one of them on the remote host beta, then a servers block with local and beta" width="168" align="left">
 
 The macOS menu bar companion, opt-in with `[bar] enabled = true`: the badge counts the agents
-waiting on you, the dropdown lists them all with the same state detail as the sidebar, and a
-click on a row brings the terminal to the front on that pane. The spinner turns while any agent
-works.
+waiting on you, the dropdown lists them all with the same state detail as the sidebar (remote
+agents tagged `@host`, with a servers block to switch the front once a host is registered), and
+a click on a row brings the terminal to the front on that pane. The spinner turns while any
+agent works.
 
 <br clear="all">
 
 ## Setup
 
-Current version: 0.4.4 · [release notes](CHANGELOG.md). Needs tmux 2.7 or newer (everything
+Current version: 0.5.1 · [release notes](CHANGELOG.md). Needs tmux 2.7 or newer (everything
 from 3.3) and Claude Code or Copilot CLI; details under [Requirements](#requirements).
 
 1. Install the binary. Homebrew, on macOS or Linux:
    ```sh
    brew install w4jnl/tap/flok
    ```
-   Or a prebuilt static Linux binary from the [releases page](https://github.com/w4jnl/flok/releases)
-   (`amd64` and `arm64`, no Go, no root):
+   Or a prebuilt static binary from the [releases page](https://github.com/w4jnl/flok/releases)
+   (Linux and macOS, `amd64` and `arm64`, no Go, no root):
    ```sh
-   ver=0.4.4; arch=$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')
-   curl -fsSLO "https://github.com/w4jnl/flok/releases/download/v$ver/flok_${ver}_linux_${arch}.tar.gz"
+   ver=0.5.1; os=$(uname -s | tr A-Z a-z); arch=$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')
+   curl -fsSLO "https://github.com/w4jnl/flok/releases/download/v$ver/flok_${ver}_${os}_${arch}.tar.gz"
    curl -fsSLO "https://github.com/w4jnl/flok/releases/download/v$ver/sha256sums.txt"
-   sha256sum -c --ignore-missing sha256sums.txt
-   mkdir -p ~/.local/bin && tar -xzf "flok_${ver}_linux_${arch}.tar.gz" --strip-components=1 -C ~/.local/bin "flok_${ver}_linux_${arch}/flok"
+   shasum -a 256 -c --ignore-missing sha256sums.txt
+   mkdir -p ~/.local/bin && tar -xzf "flok_${ver}_${os}_${arch}.tar.gz" --strip-components=1 -C ~/.local/bin "flok_${ver}_${os}_${arch}/flok"
    ```
 2. Wire it up. This writes a commented `config.toml` with the defaults, installs the Claude Code
-   hooks in `~/.claude/settings.json`, writes the Copilot CLI hooks when `~/.copilot` exists, and
-   prints a tmux snippet:
+   hooks in `~/.claude/settings.json` and writes the Copilot CLI hooks when `~/.copilot` exists:
    ```sh
    flok install
    ```
-3. Paste the printed snippet below the tpm `run` line of your tmux.conf (bindings above it get
-   overwritten by plugins), then reload tmux:
-   ```sh
-   tmux source-file ~/.config/tmux/tmux.conf     # or ~/.tmux.conf
-   ```
-4. Restart the Claude Code and Copilot sessions that are already running. Hooks load at start.
-5. Start flok from a plain terminal, not from inside tmux:
+   Your tmux.conf stays as it is: the sidebar binds flok's keys in your tmux server when it
+   starts and removes them when it ends (see [Keys](#keys); `flok install --tmux` prints a
+   snippet for those who want them in tmux.conf).
+3. Restart the Claude Code and Copilot sessions that are already running. Hooks load at start.
+4. Start flok from a plain terminal, not from inside tmux:
    ```sh
    flok up
    ```
 
 `flok doctor` checks every step: tmux version, hooks and the binary they call, sounds,
-manifests, tmux.conf, the running outer session.
+manifests, the keys flok has in your tmux, the running outer session, every remote host.
 
 ### More install options
 
 - From source (Go 1.27): `git clone https://github.com/w4jnl/flok.git && cd flok && make install`
   builds `bin/flok` and copies it to `~/.local/bin`.
-- One part at a time: `flok install --claude`, `--copilot`, `--tmux` or `--config` do only that
-  step; `--tmux-resurrect` prints the opt-in snippet described below.
+- One part at a time: `flok install --claude`, `--copilot` or `--config` do only that step;
+  `--tmux` prints the optional tmux.conf snippet, `--tmux-resurrect` the opt-in snippet described
+  below.
 - Shell completion (commands, flags, pane ids for `explain`, client ttys for `--client`):
   ```sh
   echo 'eval "$(flok completion bash)"' >> ~/.bashrc
@@ -142,11 +144,18 @@ The problem:
 - Several agents run at once, one per tmux session or window, and each shows only its own state.
 - There is no glance-level overview. To learn which one finished you cycle through sessions.
 - An agent waiting for a permission answer stays unnoticed while you work in another session.
+- The work is not all on one machine: a build box, a GPU server, the workstation at the office
+  each have their own tmux behind ssh, each in its own terminal window, and the agent that has
+  been waiting there for an hour is the one you forgot.
 
 What flok does about it:
 
 - A nested outer tmux server frames your own server with a sidebar. Your server, its config,
   plugins and layouts are never modified; a detach returns you to plain tmux.
+- One sidebar for every machine. A host you register runs the same flok over plain ssh (or,
+  without flok, is read through its tmux alone): its agents, sessions and sounds arrive here,
+  its tmux is attached in a pane next to the sidebar, and one key or click brings a server to the
+  front. Agents run where the work is; you watch and answer them from one place.
 - Four state sources are merged, with the agents' own hooks as the source of truth: hooks,
   Claude's session registry, pane titles and herdr's screen rules.
 - Sounds play only for panes you are not looking at (unless `when_focused`), and are debounced.
@@ -163,12 +172,20 @@ What flok does about it:
   session title.
 - **Live states** from hooks: working with the current tool and elapsed time (`Bash 0:42`),
   blocked (`perm:Bash`, `question`, `elicit`), done with an unread count, idle.
+- **Agents across servers**: register the machines you ssh into and their agents join the same
+  panels, tagged with their host, attention-sorted together with the local ones. A servers panel
+  shows each machine's state and agent count; `Enter`, `prefix F1`…`F9`, `prefix @` or the menu
+  bar bring its tmux next to the sidebar, and flok's keys work inside that remote session too.
+  A host runs `flok serve` over ssh (hooks and all; `flok host install` puts flok there from
+  here), or is read through tmux alone where flok cannot be installed.
 - **Sounds** when an agent gets blocked or finishes in a pane you are not looking at; not for
   the pane in front of you unless `[sounds] when_focused = true`; debounced so ten agents
   finishing together beep once.
 - **Jump**: click or `Enter` on a row to go to that pane.
 - **`prefix o`** goes to the agent that needs you: the newest one waiting for input, else the
   newest one that finished.
+- **Menus** over the work pane (tmux 3.0+): `prefix A` the agents, `prefix S` the sessions of the
+  server in front, `prefix @` the servers; `1`-`9` picks, each menu links to the other two.
 - **Rail** mode at six columns, one keystroke away. The `[flok]` wordmark sits on top of the wide
   sidebar, the mark on the rail.
 - **Hide** mode at zero columns, also one keystroke away; the sidebar polls slowly while hidden
@@ -177,26 +194,23 @@ What flok does about it:
   grouped (flok, prefix, no prefix, copy-mode, plugins), with tmux's own notes as labels and `/`
   to filter.
 - **Menu bar companion** (macOS, opt-in): a flok icon in the menu bar that spins while agents
-  work, a badge for agents waiting for you, and a dropdown of agents; a click brings the terminal
-  window to the front and puts you on that agent's pane.
+  work, a badge for agents waiting for you, and a dropdown of agents (and of servers, once a
+  remote host is registered); a click brings the terminal window to the front and puts you on
+  that agent's pane.
 - **Keep awake** (macOS, off by default): `flok keep-awake` or the menu bar's "Keep awake" row stops
   the Mac from idle-sleeping and keeps the display on while agents run unattended, until you
   turn it off or flok stops; a ⚡ in the menu bar shows it is on. With
   `[keep_awake] presence = true` Teams, Slack & co. keep showing you as active as well.
-- **Remote hosts**: one flok shows and drives tmux servers on other machines over plain ssh. A
-  servers panel above the sessions, remote agents tagged with their host in the agents panel and
-  the menu bar, a persistent attach pane per host swapped in next to the sidebar when you pick
-  it; the host runs `flok serve` (hooks and all) or, where flok cannot be installed, is read
-  through tmux alone.
-- **Zero footprint by default** on your tmux: no plugin and no pane injected into your windows.
+- **Zero footprint** on your tmux: no plugin, no pane injected into your windows, no change to
+  tmux.conf; the keys flok binds for the session are removed when it ends.
 - **tmux-resurrect** (opt-in): saves each Claude Code and Copilot pane with its exact session ID,
   so a restore resumes the same conversations.
 
 ## Scope and status
 
 flok is a personal tool. I built it for my own workflow: several Claude Code sessions in
-parallel, tmux everywhere, Ghostty on macOS, herdr's sidebar as the model of what I wanted and
-nothing beyond it. It is published because there is no reason not to, and because the approach
+parallel, on the Mac in front of me and on servers over ssh, tmux everywhere, Ghostty on macOS,
+herdr's sidebar as the model of what I wanted and nothing beyond it. It is published because there is no reason not to, and because the approach
 (a nested outer tmux server, hook-driven agent state) may be useful to others.
 
 What that means in practice:
@@ -210,18 +224,23 @@ What that means in practice:
   `brew upgrade`.
 - Bug reports with a reproduction are welcome; support is best effort.
 
-flok is at 0.4.4 (2026-09-22). [`CHANGELOG.md`](CHANGELOG.md) lists what changed in every
+flok is at 0.5.1 (2026-09-30). [`CHANGELOG.md`](CHANGELOG.md) lists what changed in every
 release, newest first; the same text is on each GitHub release.
 
 ## How it works
 
-What the sidebar shows next to your tmux:
+What the sidebar shows next to your tmux (the servers panel appears once a host is registered;
+`beta` here is a machine reached over ssh, its agent `build` listed with the local ones):
 
 ```
 ┌──────────────────────────┬────────────────────────────────────────┐
-│ sessions                 │                                        │
-│  ◑ Claude          main  │   your normal tmux server, untouched   │
-│  ○ Hugo            main  │   (sessions, windows, plugins, keys)   │
+│ servers                  │                                        │
+│  ◑ local            3 · 1│   the work pane: your tmux server, or  │
+│  ○ beta full           1 │   a host's over ssh, both untouched    │
+│                          │   (sessions, windows, plugins, keys)   │
+│ sessions · local         │                                        │
+│  ◑ Claude          main  │                                        │
+│  ○ Hugo            main  │                                        │
 │  ● flok            main  │                                        │
 │                          │                                        │
 │ agents · 1     priority  │                                        │
@@ -229,6 +248,8 @@ What the sidebar shows next to your tmux:
 │    claude · feasibility  │                                        │
 │  ◑ trading-jou… Bash 0:42│                                        │
 │    claude · add-settle…  │                                        │
+│  ◑ build        Bash 0:08│                                        │
+│    beta · claude         │                                        │
 │  ○ mwrelay               │                                        │
 │    claude · store-forwa… │                                        │
 │ j/k ⏎ ⇥ 1-9      ? help  │                                        │
@@ -241,23 +262,30 @@ What the sidebar shows next to your tmux:
 Ghostty (or any terminal)
 └── outer tmux server   socket "flok" · prefix None · status off · mouse on
     └── session "flok"
-        ├── left pane   flok sidebar            (Bubble Tea program)
-        └── right pane  tmux attach ───────────► inner tmux server   (your normal server)
-                                                 ├── session Claude   ├─ window 1 ─ pane: claude
-                                                 ├── session Hugo     │            ─ pane: zsh
-                                                 └── session ...      └─ ...
+        ├── window 0
+        │   ├── left pane   flok sidebar            (Bubble Tea program)
+        │   └── right pane  tmux attach ───────────► inner tmux server   (your normal server)
+        │                                            ├── session Claude   ├─ window 1 ─ pane: claude
+        │                                            ├── session Hugo     │            ─ pane: zsh
+        │                                            └── session ...      └─ ...
+        └── window flok-host-beta   (one parked window per registered host)
+            └── pane  ssh -t beta tmux attach ────► beta's tmux server; swapped in next to the
+                                                     sidebar when beta comes to the front
 ```
 
 `flok up` starts the outer server from a generated config and attaches your terminal to it. The
 outer server has no prefix key and no status bar, so every keystroke and mouse event reaches the
-inner tmux exactly as before; it merely frames your session with a sidebar. The right pane runs an
+inner tmux exactly as before; it merely frames your session with a sidebar. A remote host gets
+the same treatment: its `ssh -t … tmux attach` lives in a parked window of the outer, and
+bringing the host to the front is one `swap-pane`, so your keys reach that tmux just as directly. The right pane runs an
 attach loop: a killed session re-attaches elsewhere, a deliberate detach (`prefix d`) tears the
 outer down and returns you to the shell.
 
 The sidebar never modifies the inner server. It reads it (`list-sessions`, `list-panes`,
 `list-clients`, `capture-pane`, `list-keys`) and drives your client with `switch-client`,
-`select-window` and `select-pane`. The `prefix` bindings you paste into your tmux.conf are plain
-`run-shell` calls to `flok jump|next|prev|toggle|hide|focus` and a `display-popup` for the help.
+`select-window` and `select-pane`. The `prefix` bindings it adds for the session (or the
+optional tmux.conf snippet) are plain `run-shell` calls to `flok jump|next|toggle|hide|focus|
+menu …|host …`; the help is `flok keys --open`, a popup on tmux 3.2+.
 
 ### Where agent state comes from
 
@@ -280,6 +308,11 @@ Four sources feed the merge, most authoritative first:
 | **Claude's registry** (`claude agents --json`) | busy / idle per running session, matched to a pane through the process tty | the label, and clearing a turn that ended without a Stop hook (Esc, usage limit, error): two idle samples, or the screen rules showing a bare prompt box three times, whichever comes first |
 | **Pane title** | Claude Code writes `✳ <name>` and a spinner glyph | the agent's own session name; a spinner counts as working. An idle glyph is *not* evidence: inside tmux Claude keeps `✳` while busy |
 | **Screen rules** | herdr's detection manifests (TOML, Apache-2.0) evaluated over the visible pane text, the title and tmux's OSC 9;4 progress state | agents without hooks, and hook-driven agents while working or blocked, to notice a prompt dismissed with Esc |
+
+A host in full mode runs this same pipeline on its side (`flok serve`, started over ssh) and
+streams the merged result; the local sidebar federates every host's view with its own, so a
+remote agent is sorted, coloured and sounded exactly like a local one, with the host's name on
+its row. A plain-mode host is read through its tmux from here: titles and screen rules only.
 
 The hook record is the source of truth for hook-driven agents. The other sources only refine it
 in two narrow cases: two consecutive registry samples saying idle (or, without a registry, the
@@ -320,7 +353,10 @@ only. It never talks to tmux itself: the sidebar publishes its merged view as a 
 `flok goto`. The title text is `○` when everything is idle, an animated `◐◓◑◒` while an agent
 works, and `● N` when N agents are waiting for you (the icon gains a dot as well); `⚡` follows
 the glyph while keep-awake is on (`◑ ⚡ ● 2`). The dropdown
-lists agents in the sidebar's order with the same state detail. With `[bar] enabled = true`,
+lists agents in the sidebar's order with the same state detail, remote ones tagged `@host`, and
+once a host is registered a `servers` block: local first, then every host with its mode, agent
+count or connection state, the front one marked; a click brings that server's work pane to the
+front (`flok host front <name> --focus`). With `[bar] enabled = true`,
 `flok up` starts the bar (single instance) and `flok down` or a detach ends it; the bar also quits
 by itself 30 s after flok disappears.
 
@@ -374,8 +410,10 @@ drops the events. The key is read when the sidebar starts; `flok reload` applies
 
 ### Remote hosts
 
-One flok can show and drive tmux servers on other machines, over plain `ssh` with your
-`~/.ssh/config` (aliases, jump hosts, keys or an agent; flok never answers a password prompt):
+Agents do not have to run where you sit. One flok shows and drives tmux servers on other
+machines, over plain `ssh` with your `~/.ssh/config` (aliases, jump hosts, keys or an agent;
+flok never answers a password prompt), and treats them like the local one: same panels, same
+keys, same sounds, one work pane that shows whichever server is in front:
 
 ```sh
 flok host add beta jaro@beta              # full: flok on the host streams its agents
@@ -446,19 +484,20 @@ serves that host) every 10 s. A laptop going to sleep ends the dead ssh within a
 host's `flok serve` exits on the closed pipe and its hooks play there again.
 
 Navigation crosses hosts: `prefix o` goes to the agent needing you on any host, `1`-`9`, a
-click and the menu bar reach any row, `flok goto beta:%12` scripts it; `prefix a` / `A` walk the
+click and the menu bar reach any row, `flok goto beta:%12` scripts it; `prefix a` walks the
 agents of the host in front, so a step never swaps the work pane. `flok host front beta` (or
 `local`) switches hosts from a key binding, `flok host next|prev|last` rotates, `flok menu
 servers` (`prefix @`; `flok menu agents` and `flok menu sessions` are its siblings on `prefix A`
-and `prefix S`, each menu linking to the other two) shows a tmux menu of them, and the same keys
-work with a remote server in front. Every switch
+and `prefix S`, each menu linking to the other two) shows a tmux menu of them, the menu bar's
+servers block does the same with a click, and the same keys work with a remote server in front.
+Every switch
 flashes `flok: now on <server>` on the status line of the server that came to the front, the
 one the work pane shows.
 
 flok's keys work inside a remote session too, without touching the host's tmux config: while a
-host is connected, flok binds `prefix b B g o a A u` in that tmux server (`bind-key` lives in the
-running server, not in a file) and puts the host's own bindings of those keys back when it
-disconnects. What a key had before is noted in that server too (`@flok-orig-<key>` user
+host is connected, flok binds `prefix b B g o a u`, the menus `A S @` and the server keys
+`N P O F1`…`F9` in that tmux server (`bind-key` lives in the running server, not in a file) and
+puts the host's own bindings of those keys back when it disconnects. What a key had before is noted in that server too (`@flok-orig-<key>` user
 options), so a session that ends abruptly loses nothing: the next one restores from the note.
 A connected host also takes your local prefix: its own moves to `prefix2`, so both `C-a b` and
 its native chord work there, and `<prefix> <prefix>` still sends the key through; everything
@@ -467,9 +506,9 @@ flok predates the key relay is called out by `flok doctor`, `flok host status`, 
 screen (`i` in the servers panel) and the sidebar footer instead of failing silently.
 On a full-mode host the binding runs `flok relay <cmd>` and `flok serve` forwards it
 at once; on a plain host it sets a tmux user option that the next poll picks up (within a
-second). Either way the local sidebar runs the same `flok toggle|hide|focus|jump|next|prev|
-keep-awake` the local binding would. `[hosts] keys = false` turns it off. `prefix ?` stays the
-remote tmux's own list-keys.
+second). Either way the local sidebar runs the same `flok toggle|hide|focus|jump|next|menu …|
+host …|keep-awake` the local binding would. `[hosts] keys = false` turns it off. `prefix ?`
+stays the remote tmux's own list-keys.
 
 Security: ssh only, no listening sockets, no daemons. The local side execs the ssh argv (never a
 shell) with `BatchMode=yes`, its own ControlMaster socket under `~/.local/state/flok/ssh`
@@ -511,7 +550,7 @@ end-to-end suites on macOS (3.7), Ubuntu (3.4), Rocky 9 (3.2a) and Rocky 8 (2.7)
 
 ## Keys
 
-In tmux (your prefix; the snippet assumes `C-a`):
+In tmux (your prefix):
 
 | key | action |
 |---|---|
@@ -529,16 +568,18 @@ In tmux (your prefix; the snippet assumes `C-a`):
 | `prefix O` | the previous server again (back and forth) |
 | `prefix F1` … `F9` | server N to the front: F1 is local, F2 the first host |
 
-These come from the tmux snippet (`flok install --tmux`). Without it, the sidebar binds them in
-your tmux server for the session when it starts: by default only the keys nothing else uses, so
-tmux's own `prefix o` (next pane) and `prefix ?` (list-keys) keep working and flok's jump and help
-are reached from the sidebar instead; `[keys] bind = "all"` takes them over for the session too,
-and `flok down` puts everything back. A key still running an older snippet's flok command
-(`prefix A` was "previous agent", `prefix S` the servers menu) is flok's own: the sidebar
-brings it up to date, says so in the footer and unbinds it when it ends; `flok install --tmux`
-prints the current snippet (reloading tmux.conf brings the old binding back until it is updated).
-`flok doctor` lists which keys flok has, which are unbound, which tmux or you bound to something
-else and which an older snippet still holds.
+The sidebar binds them in your tmux server when it starts and removes them when it ends
+(`flok down`, a detach, a crash of the outer): nothing in tmux.conf. `[keys] bind` says how far
+it goes: `missing` (the default) binds only the keys nothing else uses, so tmux's own `prefix o`
+(next pane) and `prefix ?` (list-keys) keep working and flok's jump and help are reached from the
+sidebar instead; `all` takes those over for the session too and puts them back at the end; `off`
+binds nothing. If you would rather have the bindings in your config, `flok install --tmux` prints
+the same keys as a snippet (paste it below the tpm `run` line, where plugins cannot overwrite
+it); the sidebar then leaves them alone. A key still running an older snippet's flok command
+(`prefix A` was "previous agent", `prefix S` the servers menu) is brought up to date for the
+session, the footer says so, and the current snippet replaces the old one. `flok doctor` lists
+which keys flok has, which are unbound, which tmux or you bound to something else and which an
+older snippet still holds.
 
 Menu bar (when enabled): click an agent row to return to it (remote agents read `project ·
 claude @beta`; under them a `servers` block lists local and every host, the front one marked, and a
@@ -583,6 +624,7 @@ flok down                   stop the outer session
 flok keep-awake [on|off|toggle|status] [--notify]   keep the Mac awake, display on, while flok runs (macOS)
 flok status [--json]        one-shot dump of sessions and agents
 flok jump | next | prev     navigation, used by the bindings           [--client <tty>]
+flok menu agents|sessions|servers   a tmux menu over the work pane (prefix A / S / @), 1-9 picks
 flok toggle | hide | focus  sidebar layout and keyboard focus
 flok goto [pane] [--no-focus]   switch to an agent pane (%12 here, beta:%12 on a host) and bring the
                             terminal window to the front
@@ -590,7 +632,7 @@ flok edit-config [--no-focus]      open config.toml (new tmux window with [bar] 
 flok reload                 restart the sidebar pane after editing config.toml
 flok keys [--print [--filter q]]   keybinds help; --print dumps it as text
 flok explain [pane ...]     which screen-detection rules match agent panes
-flok install [--claude] [--copilot] [--tmux]
+flok install [--config] [--claude] [--copilot]   config.toml and the hooks; [--tmux] prints the optional snippet
 flok doctor                 checks tmux, hooks, sounds, the outer session and every remote host
 flok completion bash|zsh
 flok host add [<name>] <user@host|ssh alias> [--mode full|plain] [--socket name] [--session name]
@@ -699,7 +741,8 @@ backoff_max_s = 30          # reconnect backoff 1, 2, 4 … up to this many seco
 multiplex = true            # one ControlMaster connection per host, shared by the data channel,
                             # tmux calls and the work pane (sockets under the state dir)
 session = "main"            # a host whose tmux is not running gets this session from its work pane
-keys = true                 # bind flok's keys (prefix b B g o a A u) in a host's tmux while connected
+keys = true                 # bind flok's keys (prefix b B g o a u, the menus A S @, N P O F1…F9) in a
+                            # host's tmux while connected
 remote_path = "/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:/opt/local/bin"
                             # appended to PATH for every command flok runs on a host: a non-interactive
                             # ssh shell sees only the system PATH (Homebrew's tmux would be invisible)
@@ -732,6 +775,7 @@ brand = "#12999D"
 | `~/.local/state/flok/snapshot.json` | the sidebar's merged view, read by flok-bar |
 | `~/.local/state/flok/flok-bar.pid` | the menu bar process started by `flok up` |
 | `~/.local/state/flok/keep-awake` | `1` while `flok keep-awake` asks the sidebar to keep the Mac awake |
+| `~/.local/state/flok/keys.json` | the keys the sidebar bound in your tmux for this session, and what `all` replaced |
 | `~/.local/state/flok/outer.conf` | the generated outer tmux config |
 | `~/.local/state/flok/hosts.json` | the remote hosts (`flok host …`), with `enabled`, a probed `flok` path and `last_connected` |
 | `~/.local/state/flok/hosts/<name>/` | a plain-mode host's local store (records, seen marks) |
@@ -745,8 +789,11 @@ brand = "#12999D"
 
 ## Troubleshooting
 
-- `flok doctor` first. It reports the binary path the hooks use, missing hooks, the tmux snippet,
-  the manifests and whether the outer is running.
+- `flok doctor` first. It reports the binary path the hooks use, missing hooks, which keys flok
+  has in your tmux, the manifests and whether the outer is running.
+- The footer says `older tmux snippet: A → prev`: your tmux.conf still carries a flok snippet from
+  before the menus. Replace it with the one `flok install --tmux` prints, or drop it and let the
+  sidebar bind the keys itself.
 - `flok status` shows what the sidebar sees, with the source of each state (`hook`, `registry`,
   `title`, `screen`). `flok explain <pane>` lists the screen rules matching a pane.
 - `tail -f ~/.local/state/flok/events.log` while an agent works shows the hook events arriving.
