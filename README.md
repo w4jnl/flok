@@ -541,7 +541,8 @@ prints the current snippet (reloading tmux.conf brings the old binding back unti
 else and which an older snippet still holds.
 
 Menu bar (when enabled): click an agent row to return to it (remote agents read `project ·
-claude @beta`, and a row per host under them brings that host's pane to the front), "Show
+claude @beta`; under them a `servers` block lists local and every host, the front one marked, and a
+click brings that server's pane to the front), "Show
 flok" to bring the terminal window to the front, "Keep awake" to toggle it (checked while it is on), "Edit config…" to
 open `config.toml` (in a new tmux window with `[bar] editor`
 set, else with the default app), "Reload sidebar" to apply it, "Quit flok-bar" to remove the item
