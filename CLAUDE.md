@@ -271,7 +271,13 @@ main thread. Icons come from `assets/icons/gen` (`make icons`). e2e coverage: `s
   `FLOK_RIGHT_PANE`, `TMUX_PANE` are set by the launcher for the sidebar pane. Tests and e2e
   scripts rely on the first two for isolation.
 - `internal/install` edits Claude Code `settings.json` and `~/.copilot/hooks` idempotently and
-  keys on the ` hook claude` marker in the command string to find its own entries. Adding a new
+  keys on the ` hook claude` marker in the command string to find its own entries. It also holds
+  the starter `tmux.conf.tmpl` (go:embed, text/template: `{{.Conf}}`, `{{.Plugins}}` as `~`
+  paths, `{{.Resurrect}}` = `TmuxResurrectSnippet`) that `flok install` offers when
+  `FindTmuxConf` finds nothing (`--tmux-conf` writes it outright, never over an existing file;
+  `TmuxConfPath` picks `~/.tmux.conf` below tmux 3.1). Keep it loadable by tmux 2.7: no
+  `terminal-features` or `choose-tree -Z` without a version guard; m8 loads it on an isolated
+  server with a stub tpm. Adding a new
   Claude hook event means updating `ClaudeEvents` there and the `MapHook` switch in
   `agent/claude.go`.
 - Claude Code's title convention (spinner glyph ranges while working, `✳` idle) is duplicated in

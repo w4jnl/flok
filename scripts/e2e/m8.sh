@@ -49,4 +49,25 @@ expect "malformed state file is reported" 'want at least 11' "$out"
 expect "malformed state file exits non-zero" '^[1-9]' "$rc"
 expect "malformed state file unchanged" '^pane	too	short$' "$(cat "$SAVE")"
 
+# the starter tmux.conf: written where this tmux reads it, names this flok in the resurrect hook,
+# and loads clean on an isolated server (a stub tpm stands in: no git, no network)
+H=$T/home; mkdir -p "$H"
+rc=0; out=$(HOME=$H XDG_CONFIG_HOME=$H/.config "$BIN" install --tmux-conf 2>&1 </dev/null) || rc=$?
+expect "install --tmux-conf writes a starter: $out" '^0$' "$rc"
+if tmux_at_least 3 1; then CONF=$H/.config/tmux/tmux.conf; PLUG=$H/.config/tmux/plugins; else CONF=$H/.tmux.conf; PLUG=$H/.tmux/plugins; fi
+expect "... at the path this tmux version reads" 'prefix C-a' "$(cat "$CONF" 2>/dev/null)"
+expect "... with the resurrect hook naming this flok" "'$BIN' resurrect save" "$(cat "$CONF")"
+mkdir -p "$PLUG/tpm" && printf '#!/bin/sh\nexit 0\n' > "$PLUG/tpm/tpm" && chmod +x "$PLUG/tpm/tpm"
+HOME=$H tmux -L e2e-conf -f "$CONF" new-session -d -s t -x 120 -y 30
+expect "the starter loads: the prefix is C-a" '^C-a$' "$(HOME=$H tmux -L e2e-conf display -p -t t '#{prefix}')"
+expect "... mouse on" '^on$' "$(HOME=$H tmux -L e2e-conf show -gv mouse)"
+expect "... and no error overlay" '^0$' "$(HOME=$H tmux -L e2e-conf display -p -t t '#{pane_in_mode}')"
+kill_server e2e-conf
+out=$(HOME=$H XDG_CONFIG_HOME=$H/.config "$BIN" install --tmux-conf 2>&1 </dev/null) || true
+expect "a second run keeps the file" 'keeping existing' "$out"
+rm -f "$CONF"
+out=$(HOME=$H XDG_CONFIG_HOME=$H/.config FLOK_CONFIG=$T/cfg2.toml "$BIN" install 2>&1 </dev/null) || true
+expect "install without a terminal only mentions the starter" 'none found' "$out"
+expect "... and writes none" '^0$' "$([ -e "$CONF" ] && echo 1 || echo 0)"
+
 finish

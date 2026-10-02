@@ -50,7 +50,12 @@ from 3.3) and Claude Code or Copilot CLI; details under [Requirements](#requirem
    ```
    Your tmux.conf stays as it is: the sidebar binds flok's keys in your tmux server when it
    starts and removes them when it ends (see [Keys](#keys); `flok install --tmux` prints a
-   snippet for those who want them in tmux.conf).
+   snippet for those who want them in tmux.conf). No tmux configuration at all? `flok install`
+   offers to write a starter one: prefix `C-a`, mouse, vi keys, splits that keep the directory,
+   and tpm with sensible, yank, resurrect, continuum and the Dracula status line, installed at
+   the first tmux start. Every line is annotated;
+   [read it first](internal/install/tmux.conf.tmpl). `flok install --tmux-conf` writes it
+   without asking, never over a file that exists.
 3. Restart the Claude Code and Copilot sessions that are already running. Hooks load at start.
 4. Start flok from a plain terminal, not from inside tmux:
    ```sh
@@ -64,9 +69,9 @@ manifests, the keys flok has in your tmux, the running outer session, every remo
 
 - From source (Go 1.27): `git clone https://github.com/w4jnl/flok.git && cd flok && make install`
   builds `bin/flok` and copies it to `~/.local/bin`.
-- One part at a time: `flok install --claude`, `--copilot` or `--config` do only that step;
-  `--tmux` prints the optional tmux.conf snippet, `--tmux-resurrect` the opt-in snippet described
-  below.
+- One part at a time: `flok install --claude`, `--copilot`, `--config` or `--tmux-conf` do only
+  that step; `--tmux` prints the optional tmux.conf snippet, `--tmux-resurrect` the opt-in snippet
+  described below.
 - Shell completion (commands, flags, pane ids for `explain`, client ttys for `--client`):
   ```sh
   echo 'eval "$(flok completion bash)"' >> ~/.bashrc
@@ -632,7 +637,8 @@ flok edit-config [--no-focus]      open config.toml (new tmux window with [bar] 
 flok reload                 restart the sidebar pane after editing config.toml
 flok keys [--print [--filter q]]   keybinds help; --print dumps it as text
 flok explain [pane ...]     which screen-detection rules match agent panes
-flok install [--config] [--claude] [--copilot]   config.toml and the hooks; [--tmux] prints the optional snippet
+flok install [--config] [--claude] [--copilot] [--tmux-conf]   config.toml, the hooks, a starter tmux.conf
+                            when there is none; [--tmux] prints the optional key snippet
 flok doctor                 checks tmux, hooks, sounds, the outer session and every remote host
 flok completion bash|zsh
 flok host add [<name>] <user@host|ssh alias> [--mode full|plain] [--socket name] [--session name]

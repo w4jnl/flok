@@ -27,7 +27,7 @@ var commands = []command{
 	{"explain", "show matching screen-detection rules for a pane", nil},
 	{"doctor", "check the installation", nil},
 	{"theme", "show or switch the light/dark palette", nil},
-	{"install", "wire agent hooks and print the tmux snippet", []string{"--claude", "--copilot", "--tmux"}},
+	{"install", "config, agent hooks, a starter tmux.conf", []string{"--config", "--claude", "--copilot", "--tmux-conf", "--tmux", "--tmux-resurrect"}},
 	{"host", "manage remote tmux servers (add, set, remove, connect, disconnect, list, status, front)", nil},
 	{"menu", "a tmux menu of the agents, sessions or servers over the work pane (prefix A / S / H)", nil},
 	{"completion", "print a shell completion script", nil},
@@ -38,7 +38,7 @@ var commands = []command{
 var flagHelp = map[string]string{
 	"--detach": "create the outer session without attaching", "--json": "machine-readable output",
 	"--client": "inner client tty to drive", "--print": "dump the help as text", "--filter": "keep bindings matching a substring",
-	"--claude": "Claude Code hooks", "--copilot": "Copilot CLI hooks", "--tmux": "print the tmux.conf snippet",
+	"--claude": "Claude Code hooks", "--copilot": "Copilot CLI hooks", "--tmux": "print the tmux.conf snippet", "--tmux-conf": "write a starter tmux.conf when there is none", "--config": "write the default config.toml", "--tmux-resurrect": "print the tmux-resurrect snippet",
 }
 
 // runCompletion prints the completion script for bash or zsh.
