@@ -71,7 +71,7 @@ func runDoctor(cfg config.Config) int {
 	// binary + tmux.conf
 	bin := binPath()
 	add("ok", "binary %s", bin)
-	if conf := findTmuxConf(); conf != "" {
+	if conf := install.FindTmuxConf(); conf != "" {
 		if data, err := os.ReadFile(conf); err == nil && strings.Contains(string(data), "flok") {
 			add("ok", "tmux.conf snippet present in %s", conf)
 		} else if cfg.Keys.Bind == "off" {
@@ -79,6 +79,8 @@ func runDoctor(cfg config.Config) int {
 		} else {
 			add("ok", "no snippet in %s: the sidebar binds flok's keys at start ([keys] bind = %s; `flok install --tmux` makes them permanent)", conf, cfg.Keys.Bind)
 		}
+	} else {
+		add("warn", "no tmux configuration (~/.config/tmux/tmux.conf or ~/.tmux.conf): `flok install --tmux-conf` writes a starter (prefix C-a, mouse, vi keys, tpm with a few plugins)")
 	}
 	if _, err := inner.Run("list-sessions"); err == nil {
 		var flok, stale, other, unbound []string
@@ -303,16 +305,6 @@ func runDoctor(cfg config.Config) int {
 		}
 	}
 	return rc
-}
-
-func findTmuxConf() string {
-	home, _ := os.UserHomeDir()
-	for _, p := range []string{filepath.Join(home, ".config", "tmux", "tmux.conf"), filepath.Join(home, ".tmux.conf")} {
-		if _, err := os.Stat(p); err == nil {
-			return p
-		}
-	}
-	return ""
 }
 
 // doubleTmuxConfig reports whether the configuration runs twice: tmux 3.1+ loads both the

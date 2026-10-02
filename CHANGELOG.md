@@ -17,6 +17,14 @@ updates this file first. Dates are the tag dates.
   servers menu) in the local tmux, and the end unbinds them rather than putting them back; the
   footer and `flok doctor` say so, `flok install --tmux` prints the current snippet (a tmux.conf
   reload brings the old binding back until then).
+- **A starter tmux.conf for people who have none.** `flok install` notices when neither
+  `~/.config/tmux/tmux.conf` nor `~/.tmux.conf` exists and offers to write one: prefix `C-a`,
+  mouse, vi keys, splits that keep the directory, the vim navigator keys, and tpm with sensible,
+  pain-control, yank, open, resurrect, continuum and the Dracula status line, which install
+  themselves at the first tmux start; the flok bits (exact Claude/Copilot conversations in
+  resurrect saves, continuum's autosave under flok) are in place. Every line is annotated. `flok
+  install --tmux-conf` writes it without asking, never over an existing file; tmux older than
+  3.1 gets `~/.tmux.conf`. `flok doctor` warns when there is no tmux configuration.
 - `flok install` no longer prints the tmux snippet: the sidebar binds flok's keys itself, and
   `flok install --tmux` prints the snippet for a tmux.conf that should carry them. The README's
   setup drops the tmux.conf step, and the demo recording and menu bar capture are current (the

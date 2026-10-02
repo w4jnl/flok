@@ -38,12 +38,12 @@ usage: flok <command>
   doctor      check tmux, hooks, sounds, manifests and the running outer session
   theme       [auto|dark|light]: show the terminal background flok detects, or switch the
               sidebar between its dark and light palette
-  install     wire Claude Code / Copilot CLI hooks and print the tmux.conf snippet
-              and write a commented default config.toml if none exists
-              (--claude, --copilot, --tmux, --tmux-resurrect, --config; default excludes
-              the opt-in tmux-resurrect integration)
+  install     write a commented default config.toml if none exists, wire the Claude Code /
+              Copilot CLI hooks and, with no tmux configuration at all, offer a starter
+              tmux.conf (--config, --claude, --copilot, --tmux-conf; opt-in: --tmux prints
+              the key snippet, --tmux-resurrect the tmux-resurrect integration)
   resurrect   tmux-resurrect integration (save <state-file>; called by its save hook)
-  menu        agents | sessions | servers: a tmux menu over the work pane (prefix A / S / H)
+  menu        agents | sessions | servers: a tmux menu over the work pane (prefix A / S / @)
   host        remote tmux servers shown next to the local one: add <name> <user@host>
               [--mode full|plain], set, remove, connect, disconnect, list, status, front,
               install (put flok on the host from here), reconnect (flok host --help)
