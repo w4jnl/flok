@@ -1,14 +1,19 @@
 #!/usr/bin/env bash
 # Records assets/demo.gif: scene.sh builds the scene, vhs (brew install vhs) plays demo.tape
 # into a frames directory and ffmpeg assembles the GIF. A timeline in the background turns api
-# blocked and, after the answer, working again, in step with the sleeps in the tape.
+# blocked and, after the answer, working again, in step with the sleeps in the tape. The scene
+# has a remote host (DEMO_HOST), so the servers panel is in the picture.
 set -euo pipefail
 R=$(cd "$(dirname "$0")/../.." && pwd)
 cd "$R"
 FPS=20
-D=$("$R/assets/demo/scene.sh")
+D=$(DEMO_HOST=1 "$R/assets/demo/scene.sh")
 W=$(mktemp -d "${TMPDIR:-/tmp}/flok-vhs.XXXX")   # vhs work dir on the system volume
-trap 'tmux -L demo-outer kill-server 2>/dev/null; tmux -L demo-inner kill-server 2>/dev/null; rm -rf "$D" "$W"' EXIT
+for _ in $(seq 1 100); do   # beta connected before the recording starts
+  python3 -c "import json,sys; s=json.load(open('$D/state/snapshot.json')); sys.exit(0 if any(h.get('state')=='connected' for h in s.get('hosts',[])) else 1)" 2>/dev/null && break
+  sleep 0.2
+done
+trap 'tmux -L demo-outer kill-server 2>/dev/null; tmux -L demo-inner kill-server 2>/dev/null; tmux -L demo-beta kill-server 2>/dev/null; rm -rf "$D" "$W"' EXIT
 cp assets/demo.tape "$W/demo.tape"
 (
   sleep 8   # vhs needs 2-3 s to start, then hides the attach for 2 s: this lands a few seconds into the GIF

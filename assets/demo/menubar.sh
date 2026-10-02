@@ -2,19 +2,31 @@
 # Captures assets/menubar-stack.png (the status item above its open menu, transparent around
 # both) from the demo scene: a second flok-bar runs against the scene's state dir, opens its own menu on
 # request (FLOK_BAR_SHOT) and reports the frames; screencapture takes them. Needs the Screen
-# Recording permission for the terminal. The scene has api blocked, docs done, web working.
+# Recording permission for the terminal. The scene has api blocked, docs done, web working, and
+# a remote host beta (DEMO_HOST) so the servers block shows. The capture is taken in dark mode,
+# like the recording: a light Mac is switched to dark for the few seconds it takes and put back
+# (MENUBAR_DARK=0 keeps the current appearance).
 set -euo pipefail
 R=$(cd "$(dirname "$0")/../.." && pwd)
 cd "$R"
-D=$("$R/assets/demo/scene.sh")
+D=$(DEMO_HOST=1 "$R/assets/demo/scene.sh")
 W=$(mktemp -d "${TMPDIR:-/tmp}/flok-shot.XXXX")
-trap 'kill "${BAR:-}" 2>/dev/null; wait "${BAR:-}" 2>/dev/null || true; tmux -L demo-outer kill-server 2>/dev/null; tmux -L demo-inner kill-server 2>/dev/null; rm -rf "$D" "$W"' EXIT
+dark() { osascript -e "tell application \"System Events\" to tell appearance preferences to set dark mode to $1" >/dev/null 2>&1; }
+RESTORE_LIGHT=
+trap 'kill "${BAR:-}" 2>/dev/null; wait "${BAR:-}" 2>/dev/null || true; [ -z "$RESTORE_LIGHT" ] || dark false; tmux -L demo-outer kill-server 2>/dev/null; tmux -L demo-inner kill-server 2>/dev/null; tmux -L demo-beta kill-server 2>/dev/null; rm -rf "$D" "$W"' EXIT
+if [ "${MENUBAR_DARK:-1}" = 1 ] && [ "$(osascript -e 'tell application "System Events" to tell appearance preferences to get dark mode' 2>/dev/null)" = false ]; then
+  dark true; RESTORE_LIGHT=1; sleep 2   # the appearance transition
+fi
 cp "$D/screens/api-blocked.txt" "$D/screens/api-working.txt"
 "$D/hook.sh" api '{"hook_event_name":"PermissionRequest","session_id":"api-1","tool_name":"Bash","tool_input":{"command":"npm run db:reset && npm test"},"tool_use_id":"t4"}'
 # a bar built with the latest release's version string, so the version row reads like a release
 ver=$(git -C "$R" describe --tags --abbrev=0 | sed 's/^v//')
 CGO_ENABLED=1 go build -ldflags "-s -w -X github.com/w4jnl/flok/internal/cli.Version=$ver -X main.version=$ver" -o "$W/flok-bar" ./cmd/flok-bar
 sleep 2.5   # the sidebar publishes snapshot.json
+for _ in $(seq 1 100); do   # … and beta is connected in it
+  python3 -c "import json,sys; s=json.load(open('$D/state/snapshot.json')); sys.exit(0 if any(h.get('state')=='connected' for h in s.get('hosts',[])) else 1)" 2>/dev/null && break
+  sleep 0.2
+done
 FLOK_STATE=$D/state FLOK_CONFIG=$D/config.toml FLOK_BAR_SHOT=$W "$W/flok-bar" >/dev/null 2>&1 &
 BAR=$!
 for _ in $(seq 1 40); do [ -f "$W/menu.json" ] && break; sleep 0.2; done

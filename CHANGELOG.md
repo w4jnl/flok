@@ -17,6 +17,10 @@ updates this file first. Dates are the tag dates.
   servers menu) in the local tmux, and the end unbinds them rather than putting them back; the
   footer and `flok doctor` say so, `flok install --tmux` prints the current snippet (a tmux.conf
   reload brings the old binding back until then).
+- `flok install` no longer prints the tmux snippet: the sidebar binds flok's keys itself, and
+  `flok install --tmux` prints the snippet for a tmux.conf that should carry them. The README's
+  setup drops the tmux.conf step, and the demo recording and menu bar capture are current (the
+  capture's scene has a remote host, so the servers block shows).
 - A hook-less agent's row no longer flips to done for a moment when a screen sample scheduled
   before its spinner appeared comes back late: the sample is judged against the title the
   sidebar knows now (seen as an m1 failure on a slow CI runner).
