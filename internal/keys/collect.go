@@ -159,7 +159,7 @@ type Section struct {
 
 // Organize labels and groups bindings: flok, prefix, no prefix, copy-mode-vi, plugins.
 func Organize(bindings []Binding, prefix, bin string, overrides map[string]string, showMouse bool) []Section {
-	order := []string{FlokSection, "prefix " + prefix, "no prefix", "copy-mode-vi"}
+	order := []string{FlokSection, FlokBackSection, "prefix " + prefix, "no prefix", "copy-mode-vi"}
 	groups := map[string][]Binding{}
 	var plugins []string
 	for _, b := range bindings {

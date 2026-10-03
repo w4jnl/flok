@@ -276,12 +276,15 @@ func (m *Model) refederate() {
 			// a host whose flok cannot relay keys says so too: nothing else would
 			if m.d.Cfg.Hosts.Keys && v.state == remote.Connected && v.hello != nil && !v.hello.Has(proto.FeatureKeys) {
 				m.snap.Warnings = append(m.snap.Warnings, h.Name+": upgrade flok there, no key relay ("+strings.TrimSpace(versionWord(v.hello.Version))+") · I")
+			} else if m.d.Cfg.Hosts.Keys && len(m.d.Cfg.Keys.Map) > 0 && v.state == remote.Connected && v.hello != nil && !v.hello.Has(proto.FeatureKeyMap) {
+				m.snap.Warnings = append(m.snap.Warnings, h.Name+": upgrade flok there for [keys] map ("+strings.TrimSpace(versionWord(v.hello.Version))+") · I")
 			}
 		}
 	}
 	if len(m.d.Notices) > 0 { // after the hosts' warnings; a fresh slice, m.fed is what gets published
 		m.snap.Warnings = append(append([]string(nil), m.snap.Warnings...), m.d.Notices...)
 	}
+	m.noteFocus()
 	m.vc.valid = false
 }
 

@@ -70,6 +70,7 @@ type Model struct {
 	hostsApplied  bool
 	restartPanes  []string          // hosts whose parked pane must be rebuilt (attach target changed)
 	front         string            // host whose work pane is next to the sidebar; "" = local
+	history       []merge.Focus     // where the keyboard has been, newest first, across servers (flok last …)
 	confirmRemove string            // host `x` asked to remove; the next key answers (y removes)
 	names         map[string]string // row names chosen with n, by pane ref (state.NamesFile)
 	renaming      bool              // the "name:" prompt is open for renameKey

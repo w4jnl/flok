@@ -73,6 +73,8 @@ type Deps struct {
 	// LocalPrefix is the inner server's prefix, which a host's tmux takes while connected
 	// ([hosts] prefix); "" leaves the hosts' own.
 	LocalPrefix string
+	// ExtraKeys are the mapped keys ([keys] map) a host's tmux binds next to flok's own.
+	ExtraKeys []KeyCommand
 	// StopTimeout bounds how long a replacement waits for the connection it replaces to tear
 	// down, and how long Close waits for all of them; 0 = 5 s.
 	StopTimeout time.Duration
@@ -628,8 +630,12 @@ func (c *conn) attemptFull(ctx context.Context) (State, string) {
 	now := c.m.d.Now()
 	c.persist(func(h *hosts.Host) { h.LastConnected = now })
 	c.setVisible(visible)
-	if p := c.m.d.LocalPrefix; p != "" && hello.Has(proto.FeaturePrefix) {
-		_ = send(proto.Frame{Type: proto.TypePrefix, Key: p})
+	if p, extra := c.m.d.LocalPrefix, c.m.d.ExtraKeys; (p != "" || len(extra) > 0) && hello.Has(proto.FeaturePrefix) {
+		f := proto.Frame{Type: proto.TypePrefix, Key: p}
+		for _, k := range extra {
+			f.Keys = append(f.Keys, proto.KeyBind{Key: k.Key, Cmd: k.Cmd})
+		}
+		_ = send(f)
 	}
 	ping := time.NewTicker(pingEvery)
 	defer ping.Stop()
@@ -737,8 +743,8 @@ func (c *conn) attemptPlain(ctx context.Context) (State, string) {
 	defer cancel()
 	var keys *Keys
 	if c.m.d.Cfg.Hosts.Keys { // flok's keys (and the local prefix) inside that tmux, for as long as this session lasts
-		hello.Features = []string{proto.FeatureKeys, proto.FeaturePrefix}
-		keys = InstallKeys(client, BindOptionArgs(), c.m.d.LocalPrefix)
+		hello.Features = []string{proto.FeatureKeys, proto.FeaturePrefix, proto.FeatureKeyMap}
+		keys = InstallKeys(client, OptionBinder(), c.m.d.LocalPrefix, c.m.d.ExtraKeys)
 		defer keys.Restore()
 	}
 	var lastErr error

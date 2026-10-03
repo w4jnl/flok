@@ -317,6 +317,8 @@ expect "... with the send-prefix chords" 'prefix +C-a +send-prefix' "$(tmux -L e
 expect "gamma's tmux took the local prefix too (plain, over ssh)" '^C-a$' "$(tmux -L e2e-gamma show-options -gv prefix)"
 expect "... its own answers send-prefix -2" 'prefix +C-b +send-prefix -2' "$(tmux -L e2e-gamma list-keys -T prefix)"
 expect "... and the host's own prefix is recorded in its server" '^prefix C-b$' "$(tmux -L e2e-gamma show-options -gqv @flok-orig-prefix)"
+expect "the mapped keys reach beta's tmux (relay)" 'prefix +Tab +run-shell -b .*relay last session' "$(tmux -L e2e-beta list-keys -T prefix)"
+expect "... and gamma's (option)" 'prefix +Tab +set-option -g @flok-request "last session"' "$(tmux -L e2e-gamma list-keys -T prefix)"
 expect "the info screen names the mirrored prefix" 'C-a there too' "$(OUT send-keys -t "$SIDEBAR" i; sleep 0.5; capture; OUT send-keys -t "$SIDEBAR" Escape)"
 FRONT=$(rt "r['right_pane']")
 tmux -L e2e-gamma set-option -g @flok-request hide   # what prefix B does inside gamma's session
@@ -386,6 +388,12 @@ front_is() { local i; for i in $(seq 1 50); do [ "$(rt "r.get('front_host','')")
 "$BIN" host last >/dev/null;  front_is "" || true;    expect "host last goes back" '^$' "$(rt "r.get('front_host','')")"
 expect "runtime.json remembers the previous front" '^gamma$' "$(rt "r.get('previous_front','')")"
 "$BIN" host front 2 >/dev/null; front_is beta || true; expect "host front 2 is the first host" '^beta$' "$(rt "r.get('front_host','')")"
+# last server / last session walk the focus history across servers: the front follows
+"$BIN" last server >/dev/null; front_is "" || true;   expect "last server goes back to local" '^$' "$(rt "r.get('front_host','')")"
+"$BIN" last server >/dev/null; front_is beta || true; expect "... and forth to beta" '^beta$' "$(rt "r.get('front_host','')")"
+"$BIN" last session >/dev/null; front_is "" || true;  expect "last session crosses servers: back to the local session" '^$' "$(rt "r.get('front_host','')")"
+FLOK_STATE=$T/hosts/beta/state "$BIN" relay last session   # prefix Tab inside beta's session, relayed
+front_is beta || true; expect "prefix Tab inside a remote session relays last session (beta in front again)" '^beta$' "$(rt "r.get('front_host','')")"
 # the servers menu needs a client looking at the outer (the terminal, in real life): attach one from a
 # throwaway tmux server acting as the terminal, read the menu through it, close it again
 TTYS=e2e-tty-m10

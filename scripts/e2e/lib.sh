@@ -31,6 +31,10 @@ registry_poll_ms = 1000
 screen_poll_ms = 500
 [sounds]
 enabled = false
+[keys.map]
+Tab = "last session"
+";" = "last pane"
+BTab = "last server"
 ${E2E_EXTRA_CONFIG:-}
 CFG
 FAKE=$T/fakebin; mkdir -p "$FAKE"; go build -C "$R" -o "$FAKE/claude" ./scripts/e2e/fakeagent

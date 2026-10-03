@@ -44,6 +44,8 @@ usage: flok <command>
               the key snippet, --tmux-resurrect the tmux-resurrect integration)
   resurrect   tmux-resurrect integration (save <state-file>; called by its save hook)
   menu        agents | sessions | servers: a tmux menu over the work pane (prefix A / S / @)
+  last        session | window | pane | agent | server: back to the previous one
+              (bind your keys to these with [keys] map in config.toml)
   host        remote tmux servers shown next to the local one: add <name> <user@host>
               [--mode full|plain], set, remove, connect, disconnect, list, status, front,
               install (put flok on the host from here), reconnect (flok host --help)
@@ -107,6 +109,8 @@ func Main(args []string) int {
 		return runHost(cfg, args[1:])
 	case "menu":
 		return runMenu(cfg, args[1:])
+	case "last":
+		return runLast(cfg, args[1:])
 	case "serve":
 		return runServe(cfg, args[1:])
 	case "relay":

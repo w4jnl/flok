@@ -31,6 +31,52 @@ var KeyCommands = append([]KeyCommand{
 // snippet may still have on a key (A was prev, S the servers menu).
 var legacyKeyCommands = []string{"prev", "host menu"}
 
+// lastKeyCommands go back to the previously focused session, window, pane or server across
+// every server (the sidebar's focus history); they have no default key and are bound through
+// [keys] map.
+var lastKeyCommands = []string{"last session", "last window", "last pane", "last server", "last agent"}
+
+// KeyMap turns [keys] map (tmux key → flok key command) into bindings, sorted by key; bad
+// lists the entries that name no flok key command, as "key → command".
+func KeyMap(m map[string]string) (cmds []KeyCommand, bad []string) {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		cmd := strings.Join(strings.Fields(m[k]), " ")
+		if strings.TrimSpace(k) == "" || !IsKeyCommand(cmd) || isLegacy(cmd) {
+			bad = append(bad, k+" → "+m[k])
+			continue
+		}
+		cmds = append(cmds, KeyCommand{strings.TrimSpace(k), cmd})
+	}
+	return cmds, bad
+}
+
+// withExtra is the key set with the mapped keys: a mapped key replaces flok's default on that
+// key, the rest are appended in map order.
+func withExtra(base, extra []KeyCommand) []KeyCommand {
+	if len(extra) == 0 {
+		return base
+	}
+	mapped := map[string]bool{}
+	for _, e := range extra {
+		mapped[e.Key] = true
+	}
+	out := make([]KeyCommand, 0, len(base)+len(extra))
+	for _, k := range base {
+		if !mapped[k.Key] {
+			out = append(out, k)
+		}
+	}
+	return append(out, extra...)
+}
+
+// LocalKeySet is what the sidebar binds locally: the snippet's keys with the mapped ones.
+func LocalKeySet(extra []KeyCommand) []KeyCommand { return withExtra(LocalKeyCommands, extra) }
+
 func isLegacy(cmd string) bool {
 	for _, c := range legacyKeyCommands {
 		if c == cmd {
@@ -75,37 +121,56 @@ func IsKeyCommand(cmd string) bool {
 			return true
 		}
 	}
-	return isLegacy(cmd)
+	return isLegacy(cmd) || slices.Contains(lastKeyCommands, cmd)
 }
 
 // RequestOption is the tmux user option a plain-mode binding sets; the local poller reads it
 // with its next snapshot and clears it. Full-mode bindings go through `flok relay` instead.
 const RequestOption = tmux.RequestOption
 
-// BindRelayArgs binds every key to `<flok> relay <cmd>` (full mode: the host's serve forwards
-// the request at once), as one tmux invocation.
-func BindRelayArgs(flok string) []string {
-	var args []string
-	for i, k := range KeyCommands {
-		if i > 0 {
-			args = append(args, ";")
-		}
-		args = append(args, "bind-key", "-T", "prefix", k.Key, "run-shell", "-b", tmux.ShellQuote(flok)+" relay "+k.Cmd)
+// keyArg is a key name as a tmux argument: a bare ";" would end the command, tmux reads "\;".
+func keyArg(key string) string {
+	if key == ";" {
+		return `\;`
 	}
-	return args
+	return key
 }
 
-// BindOptionArgs binds every key to setting RequestOption (plain mode: no flok on the host).
-func BindOptionArgs() []string {
-	var args []string
-	for i, k := range KeyCommands {
-		if i > 0 {
-			args = append(args, ";")
+// Binder turns a key set into the one tmux invocation that binds it.
+type Binder func(set []KeyCommand) []string
+
+// RelayBinder binds every key to `<flok> relay <cmd>` (full mode: the host's serve forwards
+// the request at once).
+func RelayBinder(flok string) Binder {
+	return func(set []KeyCommand) []string {
+		var args []string
+		for i, k := range set {
+			if i > 0 {
+				args = append(args, ";")
+			}
+			args = append(args, "bind-key", "-T", "prefix", keyArg(k.Key), "run-shell", "-b", tmux.ShellQuote(flok)+" relay "+k.Cmd)
 		}
-		args = append(args, "bind-key", "-T", "prefix", k.Key, "set-option", "-g", RequestOption, k.Cmd)
+		return args
 	}
-	return args
 }
+
+// OptionBinder binds every key to setting RequestOption (plain mode: no flok on the host).
+func OptionBinder() Binder {
+	return func(set []KeyCommand) []string {
+		var args []string
+		for i, k := range set {
+			if i > 0 {
+				args = append(args, ";")
+			}
+			args = append(args, "bind-key", "-T", "prefix", keyArg(k.Key), "set-option", "-g", RequestOption, k.Cmd)
+		}
+		return args
+	}
+}
+
+// BindRelayArgs and BindOptionArgs bind flok's default key set.
+func BindRelayArgs(flok string) []string { return RelayBinder(flok)(KeyCommands) }
+func BindOptionArgs() []string           { return OptionBinder()(KeyCommands) }
 
 // UnbindArgs removes the given keys from the prefix table, as one tmux invocation.
 func UnbindArgs(keys []string) []string {
@@ -114,7 +179,7 @@ func UnbindArgs(keys []string) []string {
 		if i > 0 {
 			args = append(args, ";")
 		}
-		args = append(args, "unbind-key", "-T", "prefix", k)
+		args = append(args, "unbind-key", "-T", "prefix", keyArg(k))
 	}
 	return args
 }
@@ -126,7 +191,23 @@ func UnbindArgs(keys []string) []string {
 // next to the bindings, so whatever ends a session (a killed serve, a mode flip, a crash
 // between unbind and rebind) the next flok on that server still knows what to give back, and
 // never mistakes a leftover of its own for the host's binding.
-func recordOption(name string) string { return "@flok-orig-" + name }
+func recordOption(name string) string { return "@flok-orig-" + keyToken(name) }
+
+// keyToken is a key name as it goes into the records: ";" would end a tmux command wherever it
+// ends an argument (the option name, the held list), so it travels as "semicolon".
+func keyToken(key string) string {
+	if key == ";" {
+		return "semicolon"
+	}
+	return key
+}
+
+func keyFromToken(tok string) string {
+	if tok == "semicolon" {
+		return ";"
+	}
+	return tok
+}
 
 const heldRecord = "keys" // recordOption("keys") = "keys b B g … C-a C-b"
 
@@ -158,8 +239,11 @@ func readServerKeys(c tmux.Client, keys []string) serverKeys {
 	}
 	sk.parse(lines)
 	var more [][]string
-	for _, k := range strings.Fields(sk.record[heldRecord]) {
-		if _, ok := sk.record[k]; !ok && !slices.Contains(keys, k) {
+	for _, tok := range strings.Fields(sk.record[heldRecord]) {
+		if k := keyFromToken(tok); !slices.Contains(keys, k) {
+			if _, ok := sk.record[k]; ok {
+				continue
+			}
 			more = append(more, []string{"show-options", "-gqv", recordOption(k)})
 		}
 	}
@@ -182,7 +266,7 @@ func (sk *serverKeys) parse(lines []string) {
 			bindLines = append(bindLines, line)
 		default:
 			name, rest, _ := strings.Cut(t, " ")
-			sk.record[name] = strings.TrimSpace(rest)
+			sk.record[keyFromToken(name)] = strings.TrimSpace(rest)
 		}
 	}
 	for _, b := range parsePrefixBindings(strings.Join(bindLines, "\n")) {
@@ -254,7 +338,7 @@ func flokSub(cmd string) string {
 	if !strings.Contains(cmd, "flok") {
 		return ""
 	}
-	subs := legacyKeyCommands
+	subs := append(slices.Clone(legacyKeyCommands), lastKeyCommands...)
 	for _, k := range LocalKeyCommands {
 		subs = append(subs, cmdWords(k.Cmd))
 	}
@@ -325,7 +409,7 @@ func bindLocalArgs(flok string, cmds []KeyCommand) []string {
 		if i > 0 {
 			args = append(args, ";")
 		}
-		args = append(args, "bind-key", "-T", "prefix", k.Key, "run-shell", "-b", tmux.ShellQuote(flok)+" "+k.Cmd)
+		args = append(args, "bind-key", "-T", "prefix", keyArg(k.Key), "run-shell", "-b", tmux.ShellQuote(flok)+" "+k.Cmd)
 	}
 	return args
 }
@@ -340,10 +424,14 @@ func bindLocalArgs(flok string, cmds []KeyCommand) []string {
 // reload if it was not). Any other command is the user's. What was done is recorded in
 // <dir>/keys.json; conflicts lists the keys left alone in mode missing with their current
 // command, stale the keys an older snippet had (key → that command).
-func InstallLocalKeys(c tmux.Client, dir, flok, mode string) (installed []string, conflicts, stale map[string]string) {
+func InstallLocalKeys(c tmux.Client, dir, flok, mode string, extra []KeyCommand) (installed []string, conflicts, stale map[string]string) {
 	conflicts, stale = map[string]string{}, map[string]string{}
 	if mode == "off" || flok == "" {
 		return nil, conflicts, stale
+	}
+	forced := map[string]bool{} // [keys] map: bound whatever the key held, the old binding saved
+	for _, e := range extra {
+		forced[e.Key] = true
 	}
 	current := map[string]prefixBinding{}
 	for _, b := range prefixBindings(c) {
@@ -355,17 +443,17 @@ func InstallLocalKeys(c tmux.Client, dir, flok, mode string) (installed []string
 		have[k] = true
 	}
 	var todo []KeyCommand
-	for _, k := range LocalKeyCommands {
+	for _, k := range LocalKeySet(extra) {
 		b, bound := current[k.Key]
 		switch {
 		case bound && (b.ours || b.sub == cmdWords(k.Cmd)):
 			continue // the snippet, or an earlier sidebar
 		case bound && isLegacy(b.sub): // flok's own, from before this key changed: update it
 			stale[k.Key] = b.sub
-		case bound && mode != "all":
+		case bound && mode != "all" && !forced[k.Key]:
 			conflicts[k.Key] = b.cmd
 			continue
-		case bound: // mode all: remember what it was, once
+		case bound: // mode all, or a mapped key: remember what it was, once
 			if !have[k.Key] {
 				st.Saved = append(st.Saved, b.line)
 			}
@@ -420,16 +508,16 @@ func RestoreLocalKeys(c tmux.Client, dir string) error {
 	return os.Remove(filepath.Join(dir, LocalKeysFile))
 }
 
-// LocalKeyStatus reports, for every key of the snippet, what the local server has: "flok",
-// "flok <cmd>" for an older snippet's flok command on that key, "" (unbound) or the other
-// command bound there.
-func LocalKeyStatus(c tmux.Client) map[string]string {
+// LocalKeyStatus reports, for every key of the snippet and the mapped ones, what the local
+// server has: "flok", "flok <cmd>" for an older snippet's flok command on that key, ""
+// (unbound) or the other command bound there.
+func LocalKeyStatus(c tmux.Client, extra []KeyCommand) map[string]string {
 	status := map[string]string{}
 	current := map[string]prefixBinding{}
 	for _, b := range prefixBindings(c) {
 		current[b.key] = b
 	}
-	for _, k := range LocalKeyCommands {
+	for _, k := range LocalKeySet(extra) {
 		if b, ok := current[k.Key]; ok {
 			if b.ours || b.sub == cmdWords(k.Cmd) {
 				status[k.Key] = "flok"
@@ -456,10 +544,11 @@ func LocalKeyStatus(c tmux.Client) map[string]string {
 type Keys struct {
 	mu     sync.Mutex
 	c      tmux.Client
-	args   []string
-	prefix string   // the local prefix to mirror; "" = leave the host's alone
-	bound  []string // every key this session holds: flok's, then the prefix chords
-	saved  []string // the host's own bindings of those, as list-keys printed them
+	bind   Binder
+	extra  []KeyCommand // the mapped keys ([keys] map) on top of flok's default set
+	prefix string       // the local prefix to mirror; "" = leave the host's alone
+	bound  []string     // every key this session holds: flok's, then the prefix chords
+	saved  []string     // the host's own bindings of those, as list-keys printed them
 	orig   prefixState
 	closed bool
 }
@@ -472,16 +561,18 @@ type prefixState struct {
 	prefix2    string // what prefix2 was
 }
 
-// InstallKeys records the host's bindings of flok's keys and binds flok's; prefix, when not
-// empty, is the local prefix the host's tmux takes while the keys are installed.
-func InstallKeys(c tmux.Client, args []string, prefix string) *Keys {
-	k := &Keys{c: c, args: args, prefix: prefix}
+// InstallKeys records the host's bindings of flok's keys and binds flok's (the default set
+// with the mapped extra keys, through bind); prefix, when not empty, is the local prefix the
+// host's tmux takes while the keys are installed.
+func InstallKeys(c tmux.Client, bind Binder, prefix string, extra []KeyCommand) *Keys {
+	k := &Keys{c: c, bind: bind, prefix: prefix, extra: extra}
 	k.install()
 	return k
 }
 
 func (k *Keys) install() {
-	base := keyNames(KeyCommands)
+	set := withExtra(KeyCommands, k.extra)
+	base := keyNames(set)
 	want := base
 	if k.prefix != "" {
 		want = append(slices.Clone(base), k.prefix)
@@ -510,8 +601,10 @@ func (k *Keys) install() {
 	}
 	var saved []string
 	var cmds [][]string
+	held := make([]string, 0, len(bound))
 	for _, key := range bound {
-		val := key
+		held = append(held, keyToken(key))
+		val := keyToken(key)
 		if orig := sk.original(key); orig != "" {
 			saved = append(saved, orig)
 			val += " " + orig
@@ -524,15 +617,15 @@ func (k *Keys) install() {
 			cmds = append(cmds, []string{"set-option", "-g", recordOption("prefix2"), "prefix2 " + ps.prefix2}, []string{"set-option", "-g", "prefix2", ps.prefix})
 		}
 	}
-	cmds = append(cmds, []string{"set-option", "-g", recordOption(heldRecord), heldRecord + " " + strings.Join(bound, " ")}, k.args)
+	cmds = append(cmds, []string{"set-option", "-g", recordOption(heldRecord), heldRecord + " " + strings.Join(held, " ")}, k.bind(set))
 	for _, ch := range chords {
 		cmds = append(cmds, append([]string{"bind-key", "-T", "prefix", ch.Key}, strings.Fields(ch.Cmd)...))
 	}
 	// what an earlier session held beyond this one's set goes back now: its prefix chords, or
 	// a prefix it took when this one does not
 	var stale, staleSaved []string
-	for _, key := range strings.Fields(sk.record[heldRecord]) {
-		if !slices.Contains(bound, key) {
+	for _, tok := range strings.Fields(sk.record[heldRecord]) {
+		if key := keyFromToken(tok); !slices.Contains(bound, key) {
 			stale = append(stale, key)
 			if orig := sk.original(key); orig != "" {
 				staleSaved = append(staleSaved, orig)
@@ -553,7 +646,7 @@ func (k *Keys) install() {
 func restoreCmds(keys, saved []string, ps prefixState, dropHeld bool) [][]string {
 	var cmds [][]string
 	for _, key := range keys {
-		cmds = append(cmds, []string{"unbind-key", "-T", "prefix", key})
+		cmds = append(cmds, []string{"unbind-key", "-T", "prefix", keyArg(key)})
 	}
 	for _, line := range saved {
 		if b := bindArgs([]string{line}); len(b) > 0 {
@@ -583,13 +676,17 @@ func restoreCmds(keys, saved []string, ps prefixState, dropHeld bool) [][]string
 
 // SetPrefix mirrors another local prefix (full mode learns it after the hello); "" gives the
 // host its own back. A no-op when nothing changes or after Restore.
-func (k *Keys) SetPrefix(prefix string) {
+func (k *Keys) SetPrefix(prefix string) { k.SetKeys(prefix, k.extra) }
+
+// SetKeys is SetPrefix with the mapped keys as well (full mode learns both from the prefix
+// frame): the set is installed again when either changed.
+func (k *Keys) SetKeys(prefix string, extra []KeyCommand) {
 	k.mu.Lock()
 	defer k.mu.Unlock()
-	if k.closed || k.prefix == prefix {
+	if k.closed || (k.prefix == prefix && slices.Equal(k.extra, extra)) {
 		return
 	}
-	k.prefix = prefix
+	k.prefix, k.extra = prefix, extra
 	k.install()
 }
 

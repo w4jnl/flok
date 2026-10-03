@@ -59,13 +59,9 @@ func (m *Model) runRequest(r state.Request) tea.Cmd {
 			m.errText = "no host " + r.Host
 			return nil
 		}
-		outer := m.d.Outer
-		return m.swapCmd(r.Host, func(pane string) error {
-			if outer != nil && pane != "" {
-				_, _ = outer.Run("select-pane", "-t", pane)
-			}
-			return nil
-		})
+		return m.frontCmd(r.Host)
+	case "last": // `flok last session|window|pane|server`: back along the focus history
+		return m.lastCmd(r.Kind)
 	case "reconnect": // `flok host reconnect`, or `flok host install` after an upgrade in place
 		if _, ok := m.hostSet.Get(r.Host); !ok || r.Host == "" {
 			m.errText = "no host " + r.Host
@@ -84,6 +80,17 @@ func (m *Model) runRequest(r state.Request) tea.Cmd {
 		m.debugf("request %q ignored", r.Cmd)
 	}
 	return nil
+}
+
+// frontCmd brings a server's work pane next to the sidebar and the keyboard to it.
+func (m Model) frontCmd(host string) tea.Cmd {
+	outer := m.d.Outer
+	return m.swapCmd(host, func(pane string) error {
+		if outer != nil && pane != "" {
+			_, _ = outer.Run("select-pane", "-t", pane)
+		}
+		return nil
+	})
 }
 
 var errNoSidebar = errors.New("the sidebar is not running (flok up)")
