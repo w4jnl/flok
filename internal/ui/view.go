@@ -244,7 +244,11 @@ func (m Model) viewFull() string {
 	if m.snap.Unseen > 0 {
 		title += " " + lipgloss.NewStyle().Foreground(t.Orange).Render(fmt.Sprintf("· %d", m.snap.Unseen))
 	}
-	lines = append(lines, joinLR(title, dim.Render("priority"), w))
+	order := "" // the stable order needs no word; the priority one says so, rows move
+	if m.d.Cfg.Sidebar.AgentOrder == "priority" {
+		order = "priority"
+	}
+	lines = append(lines, joinLR(title, dim.Render(order), w))
 	for r := 0; r < lay.agentsRows; r++ {
 		if i := m.offset[panelAgents] + r; i < len(m.snap.Agents) {
 			lines = append(lines, m.agentRow(i, w, lay.perAgent)...)
@@ -268,6 +272,9 @@ func (m Model) viewFull() string {
 // rowFrame is a row's background and first cell: while the sidebar has the keyboard, the
 // selected row is a full-width bar with a pink › in front, so the cursor is never in doubt;
 // otherwise the cell is blank and only the current row keeps its quiet background.
+// rowFrame is a row's background and gutter: the keyboard cursor › (pink) when the sidebar has
+// the keyboard and the row is selected, else ▶ on the row of the pane in front (the session
+// and the agent you are on), else a space.
 func (m Model) rowFrame(sel, current bool) (lipgloss.Style, string) {
 	t := m.theme
 	base := lipgloss.NewStyle()
@@ -276,6 +283,9 @@ func (m Model) rowFrame(sel, current bool) (lipgloss.Style, string) {
 	}
 	if sel && m.focused {
 		return base, base.Foreground(t.Pink).Bold(true).Render("›")
+	}
+	if current {
+		return base, base.Foreground(t.Purple).Bold(true).Render("▶")
 	}
 	return base, base.Render(" ")
 }
@@ -398,6 +408,9 @@ func (m Model) agentRow(i, w, per int) []string {
 		gap = 0
 	}
 	nameStyle := base.Foreground(t.FG)
+	if focused { // the agent you are on
+		nameStyle = nameStyle.Bold(true)
+	}
 	if sel && m.focused {
 		nameStyle = nameStyle.Foreground(t.Pink).Bold(true)
 	}
@@ -593,16 +606,22 @@ func (m Model) viewRail() string {
 			continue
 		}
 		base := lipgloss.NewStyle()
-		if a.PaneID != "" && a.PaneID == m.snap.Focus.PaneID && a.Host == m.snap.Focus.Host {
+		cur := a.PaneID != "" && a.PaneID == m.snap.Focus.PaneID && a.Host == m.snap.Focus.Host
+		if cur {
 			base = base.Background(t.CurrentLine)
 		}
 		mark := ""
 		if a.Unseen > 0 {
 			mark = base.Foreground(t.Orange).Render("•")
 		}
-		// like herdr's collapsed rail: cursor, the agent index in its state colour, the status glyph
+		// like herdr's collapsed rail: cursor (or ▶ on the agent you are on), the agent index in
+		// its state colour, the status glyph
+		lead := marker(sel, base) // the rail shows its cursor whenever a row is selected
+		if cur && !sel {
+			lead = base.Foreground(t.Purple).Bold(true).Render("▶")
+		}
 		col := base.Foreground(t.StateColor(a.State)).Bold(sel)
-		lines = append(lines, pad(marker(sel, base)+col.Render(fmt.Sprintf("%2d ", i+1))+col.Render(t.Glyph(a.State, m.frame))+mark, w, base))
+		lines = append(lines, pad(lead+col.Render(fmt.Sprintf("%2d ", i+1))+col.Render(t.Glyph(a.State, m.frame))+mark, w, base))
 	}
 	for len(lines) < m.height {
 		lines = append(lines, strings.Repeat(" ", w))

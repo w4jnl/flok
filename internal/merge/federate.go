@@ -41,6 +41,10 @@ func Federate(local Snapshot, remotes []HostSnapshot, front string) Snapshot {
 	for _, r := range remotes {
 		add(r.Host, r.Snap)
 	}
-	SortAgents(out.Agents)
+	// stable order: local first, then the hosts as registered, each in the order its own merge
+	// gave; priority order re-sorts across hosts
+	if out.AgentOrder = local.AgentOrder; out.AgentOrder == "priority" {
+		SortAgents(out.Agents)
+	}
 	return out
 }

@@ -39,7 +39,7 @@ func navSnapshot(cfg config.Config, tty string) (merge.Snapshot, tmux.Client, er
 	if err != nil {
 		return merge.Snapshot{}, d.Inner, err
 	}
-	in := merge.Inputs{Tmux: snap, ClientTTY: tty, Adapters: d.Adapters, SessionOrder: cfg.Sidebar.SessionOrder}
+	in := merge.Inputs{Tmux: snap, ClientTTY: tty, Adapters: d.Adapters, SessionOrder: cfg.Sidebar.SessionOrder, AgentOrder: cfg.Sidebar.AgentOrder}
 	if d.Store != nil {
 		in.Hook, in.Seen, in.TerminalUnfocused = d.Store.LoadAgents(), d.Store.LoadSeen(), !d.Store.TerminalFocused()
 	}

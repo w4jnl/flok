@@ -210,8 +210,12 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
   `idle` the moment the user looks at the pane; the seen mark is persisted by the caller from
   `Snapshot.NewlySeen`. Change state semantics here and in `machine.go` together, and cover them
   in `merge_test.go` / `machine_test.go`, which construct `Inputs` directly without tmux.
-  `Build` is not idempotent (per-pane counters advance per call), so multi-host views are joined
-  above it by `merge.Federate`, which stamps `Host` on agents, spaces and focus (`""` = local, so
+  Agents come out of `Build` in `Inputs.AgentOrder`: `stable` (the default; `SortAgentsStable`:
+  the sessions' order, then window and pane, so rows never move and `1`-`9` stay put) or
+  `priority` (`SortAgents`: blocked, done, working, idle, newest first); `Rollup` picks a
+  session's state by priority either way, and `Federate` keeps a stable order as local + hosts in
+  registry order (it re-sorts only for `priority`). `Build` is not idempotent (per-pane counters
+  advance per call), so multi-host views are joined above it by `merge.Federate`, which stamps `Host` on agents, spaces and focus (`""` = local, so
   single-host keys, files and JSON stay byte-identical) and re-sorts; `agent.PaneRef` (`%12`,
   `beta:%12`) is the cross-host pane key. Host names keep their case (an ssh alias such as
   `dockerAMS`) but are unique and looked up regardless of case (`hosts.Set.Get`, the per-host

@@ -172,13 +172,16 @@ What flok does about it:
 
 - **Sessions panel**: every tmux session with the git branch of its active pane, the current one
   highlighted, a state dot rolled up from the agents inside it.
-- **Agents panel**: every agent pane across all sessions, sorted by attention (blocked, then done,
-  then working, then idle), two lines per agent: project and state detail, agent kind and its own
-  session title.
+- **Agents panel**: every agent pane across all sessions in a stable order (the sessions as the
+  panel above lists them, then window and pane), so a row keeps its place whatever the agent
+  does and `1`-`9` always mean the same agent; the glyph, colour and detail say who needs you.
+  Two lines per agent: project and state detail, agent kind and its own session title. The pane
+  you are on wears a `▶`. `[sidebar] agent_order = "priority"` sorts by attention instead
+  (blocked, done, working, idle, newest first), the way earlier versions did.
 - **Live states** from hooks: working with the current tool and elapsed time (`Bash 0:42`),
   blocked (`perm:Bash`, `question`, `elicit`), done with an unread count, idle.
 - **Agents across servers**: register the machines you ssh into and their agents join the same
-  panels, tagged with their host, attention-sorted together with the local ones. A servers panel
+  panels, tagged with their host, after the local ones in registry order. A servers panel
   shows each machine's state and agent count; `Enter`, `prefix F1`…`F9`, `prefix @` or the menu
   bar bring its tmux next to the sidebar, and flok's keys work inside that remote session too.
   A host runs `flok serve` over ssh (hooks and all; `flok host install` puts flok there from
@@ -248,7 +251,7 @@ What the sidebar shows next to your tmux (the servers panel appears once a host 
 │  ○ Hugo            main  │                                        │
 │  ● flok            main  │                                        │
 │                          │                                        │
-│ agents · 1     priority  │                                        │
+│ agents · 1               │                                        │
 │  ● flok        perm:Bash │                                        │
 │    claude · feasibility  │                                        │
 │  ◑ trading-jou… Bash 0:42│                                        │
@@ -465,7 +468,7 @@ order they were added, each with its mode (`full` or `plain`) after the name, it
 and agent count (an orange `· 2` for agents waiting there), or its connection state (`connecting`, `retry in 8s`, `needs auth`, `no flok`,
 `busy`, `incompatible`, `off`). `Enter` on a host brings its work pane next to the sidebar; the
 sessions panel then shows that host's sessions (`sessions · beta`). The agents panel shows every
-host, attention-sorted, remote rows tagged with their host (`beta · claude · fix login`).
+host, local first, remote rows tagged with their host (`beta · claude · fix login`).
 
 ```
 local machine                                              host "beta" (mode full)
@@ -700,6 +703,8 @@ rail_threshold = 12         # narrower than this renders the rail
 sessions_max_ratio = 0.4    # at most this share of the height for the sessions list
 session_order = "index"     # same order as tmux's chooser (prefix s): index | name | activity
 agent_rows = 2              # 2: project + "kind · title" line per agent; 1: single line
+agent_order = "stable"      # stable: rows keep their place (session order, then window and pane) |
+                            # priority: blocked, done, working, idle, newest first (rows move)
 show_branch = true
 brand = true                # [flok] wordmark on top (the mark on the rail)
 branch_source = "active_pane"   # or "session_path"

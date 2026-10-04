@@ -28,6 +28,7 @@ type Sidebar struct {
 	SessionsMaxRatio float64 `toml:"sessions_max_ratio"`
 	SessionOrder     string  `toml:"session_order"` // index (tmux's chooser order) | name | activity
 	AgentRows        int     `toml:"agent_rows"`    // lines per agent row: 2 (name + "kind · title") or 1
+	AgentOrder       string  `toml:"agent_order"`   // stable: session order, window, pane (rows never move) | priority: blocked, done, working, idle
 	ShowBranch       bool    `toml:"show_branch"`
 	Brand            bool    `toml:"brand"` // [flok] wordmark on top (the mark on the rail)
 	BranchSource     string  `toml:"branch_source"`
@@ -170,7 +171,7 @@ func Default() Config {
 	return Config{
 		Inner:   Inner{Socket: "default", ReattachOnDetach: false},
 		Outer:   Outer{Socket: "flok", Session: "flok", ExtraConf: "~/.config/flok/outer.extra.conf"},
-		Sidebar: Sidebar{Width: 28, RailWidth: 6, RailThreshold: 12, SessionsMaxRatio: 0.4, AgentRows: 2, SessionOrder: "index", ShowBranch: true, Brand: true, BranchSource: "active_pane", PollMs: 1000, IdlePollMs: 3000, SpinnerMs: 250, FPS: 15, RegistryPollMs: 10000, ScreenPollMs: 2000, CaptureLines: 0, StaleWorkingMin: 30},
+		Sidebar: Sidebar{Width: 28, RailWidth: 6, RailThreshold: 12, SessionsMaxRatio: 0.4, AgentRows: 2, SessionOrder: "index", AgentOrder: "stable", ShowBranch: true, Brand: true, BranchSource: "active_pane", PollMs: 1000, IdlePollMs: 3000, SpinnerMs: 250, FPS: 15, RegistryPollMs: 10000, ScreenPollMs: 2000, CaptureLines: 0, StaleWorkingMin: 30},
 		Agents:  Agents{Enabled: []string{"claude", "copilot"}, ManifestDir: "~/.config/flok/agents", ScreenRules: "auto"},
 		Keys:    Keys{Tables: []string{"prefix", "root", "copy-mode-vi"}, Bind: "missing"},
 		Sounds: Sounds{Enabled: true, Player: "hook", Bell: "auto", Volume: 0.6, MinIntervalMs: 750,

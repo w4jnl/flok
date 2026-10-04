@@ -121,6 +121,35 @@ func TestSortAgents(t *testing.T) {
 	}
 }
 
+// The stable order follows the sessions panel, then window and pane: a state change moves no
+// row. The rollup is the state that needs the user most, wherever it sits.
+func TestSortAgentsStableAndRollup(t *testing.T) {
+	spaces := []agent.Space{{SessionID: "$2", SessionName: "web"}, {SessionID: "$1", SessionName: "api"}} // name order: web first
+	as := []agent.Agent{
+		{PaneID: "a", SessionID: "$1", SessionName: "api", WindowIndex: 2, State: agent.Blocked},
+		{PaneID: "b", SessionID: "$1", SessionName: "api", WindowIndex: 1, PaneIndex: 2, State: agent.Idle},
+		{PaneID: "c", SessionID: "$1", SessionName: "api", WindowIndex: 1, PaneIndex: 1, State: agent.Done},
+		{PaneID: "d", SessionID: "$2", SessionName: "web", WindowIndex: 1, State: agent.Idle},
+		{PaneID: "e", SessionID: "$9", SessionName: "gone", State: agent.Blocked},
+	}
+	SortAgentsStable(as, spaces)
+	got := ""
+	for _, a := range as {
+		got += a.PaneID
+	}
+	if got != "dcbae" {
+		t.Fatalf("stable order %q", got)
+	}
+	as[0].State = agent.Blocked // a state change leaves the order alone
+	SortAgentsStable(as, spaces)
+	if as[0].PaneID != "d" || as[1].PaneID != "c" {
+		t.Fatalf("a state change moved a row: %v", as)
+	}
+	if Rollup(as[1:4]) != agent.Blocked || Rollup(as[1:3]) != agent.Done || Rollup(nil) != agent.Unknown && Rollup(nil) != "" {
+		t.Fatalf("rollup %v %v", Rollup(as[1:4]), Rollup(as[1:3]))
+	}
+}
+
 func TestHookAuthorityAndSeen(t *testing.T) {
 	tr := NewTracker()
 	ads := agent.Enabled([]string{"claude"})

@@ -153,7 +153,7 @@ expect "remove prunes its local store" '^none$' "$([ -d "$CLI_STATE/hosts/gamma"
 wait_for 'servers' 5 || true
 snap=$(capture); echo "--- servers panel ---"; printf '%s\n' "$snap" | grep -v '^ *$' | sed -n '1,12p' | sed 's/^/      | /'
 expect "the sidebar grows a servers panel" '^servers' "$snap"
-expect "local is the first server row" '^ . local' "$snap"
+expect "local is the first server row" '^[ ▶]. local' "$snap"
 expect "the sessions header names the front host" '^sessions · local' "$snap"
 wait_hosts "beta=connected gamma=connected" 25 || true   # beta may sit out a busy retry after part 1's serves
 expect "snapshot.json reports both hosts connected" '^beta=connected gamma=connected$' "$(snap_hosts)"

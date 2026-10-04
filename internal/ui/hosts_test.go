@@ -58,7 +58,7 @@ func TestServersPanelAndFederatedAgents(t *testing.T) {
 		t.Fatalf("multi-host with 3 server rows, got %v %d", m.multiHost(), m.hostRowCount())
 	}
 	lines := render(m, 28, 40)
-	want := []string{"[flok]", "servers", " ○ local", " ● beta full", " ○ gamma plain", "", "sessions · local", " ○ Alpha"}
+	want := []string{"[flok]", "servers", "▶○ local", " ● beta full", " ○ gamma plain", "", "sessions · local", "▶○ Alpha"} // ▶ marks the server in front and the current session
 	for i, w := range want {
 		if !strings.HasPrefix(strings.TrimRight(lines[i], " "), w) {
 			t.Fatalf("line %d: %q, want prefix %q\n%s", i, lines[i], w, strings.Join(lines[:12], "\n"))
@@ -67,12 +67,12 @@ func TestServersPanelAndFederatedAgents(t *testing.T) {
 	if !strings.HasSuffix(strings.TrimRight(lines[2], " "), "1") || !strings.HasSuffix(strings.TrimRight(lines[3], " "), "2 · 1") || !strings.HasSuffix(strings.TrimRight(lines[4], " "), "off") {
 		t.Fatalf("detail columns: %q %q %q", lines[2], lines[3], lines[4])
 	}
-	// agents: beta's blocked one first, then its working one, then the local idle; remote rows name the host
+	// agents in the stable order: the local one first, then beta's as its merge ordered them; remote rows name the host
 	var names []string
 	for _, a := range m.snap.Agents {
 		names = append(names, agent.PaneRef{Host: a.Host, ID: a.PaneID}.String())
 	}
-	if !reflect.DeepEqual(names, []string{"beta:%1", "beta:%2", "%1"}) {
+	if !reflect.DeepEqual(names, []string{"%1", "beta:%1", "beta:%2"}) {
 		t.Fatalf("agent order %v", names)
 	}
 	if m.snap.Unseen != 1 || len(m.snap.Spaces) != 1 || m.snap.Spaces[0].SessionName != "Alpha" || len(m.fed.Spaces) != 2 {
@@ -84,29 +84,30 @@ func TestServersPanelAndFederatedAgents(t *testing.T) {
 			agentsHdr = i
 		}
 	}
-	if !strings.HasPrefix(lines[agentsHdr+1], " ● api") || !strings.Contains(lines[agentsHdr+1], "perm:Bash") || strings.TrimSpace(lines[agentsHdr+2]) != "beta · claude · fix login" {
-		t.Fatalf("remote agent rows: %q %q", lines[agentsHdr+1], lines[agentsHdr+2])
+	// stable order: the local agent (the pane in front, so ▶) first, then beta's rows naming the host
+	if !strings.HasPrefix(lines[agentsHdr+1], "▶○ proj") || strings.TrimSpace(lines[agentsHdr+2]) != "claude" {
+		t.Fatalf("local agent rows: %q %q", lines[agentsHdr+1], lines[agentsHdr+2])
 	}
-	if !strings.HasPrefix(lines[agentsHdr+5], " ○ proj") || strings.TrimSpace(lines[agentsHdr+6]) != "claude" {
-		t.Fatalf("local agent rows unchanged: %q %q", lines[agentsHdr+5], lines[agentsHdr+6])
+	if !strings.HasPrefix(lines[agentsHdr+3], " ● api") || !strings.Contains(lines[agentsHdr+3], "perm:Bash") || strings.TrimSpace(lines[agentsHdr+4]) != "beta · claude · fix login" {
+		t.Fatalf("remote agent rows: %q %q", lines[agentsHdr+3], lines[agentsHdr+4])
 	}
 	// one line per agent: the host prefixes the label
 	m.d.Cfg.Sidebar.AgentRows = 1
 	one := render(m, 28, 40)
-	if !strings.HasPrefix(one[agentsHdr+1], " ● beta/api") || !strings.HasPrefix(one[agentsHdr+3], " ○ proj") {
+	if !strings.HasPrefix(one[agentsHdr+1], "▶○ proj") || !strings.HasPrefix(one[agentsHdr+2], " ● beta/api") {
 		t.Fatalf("agent_rows = 1: %q %q", one[agentsHdr+1], one[agentsHdr+3])
 	}
 	// beta in front: its sessions, its focus, its current space
 	m.front = "beta"
 	m.refederate()
 	lines = render(m, 28, 40)
-	if !strings.HasPrefix(lines[6], "sessions · beta") || !strings.HasPrefix(lines[7], " ● web") || m.snap.Focus.Host != "beta" || m.snap.Focus.PaneID != "%2" {
+	if !strings.HasPrefix(lines[6], "sessions · beta") || !strings.HasPrefix(lines[7], "▶● web") || m.snap.Focus.Host != "beta" || m.snap.Focus.PaneID != "%2" {
 		t.Fatalf("front=beta: %q %q focus=%+v", lines[6], lines[7], m.snap.Focus)
 	}
 	// a lost host takes its agents along and shows why
 	m.onRemote(remote.Msg{Host: "beta", State: remote.Unreachable, Detail: "Connection refused", RetryAt: time.Now().Add(8 * time.Second)})
 	lines = render(m, 28, 40)
-	if len(m.snap.Agents) != 1 || !strings.HasPrefix(lines[3], " ✗ beta") || !strings.Contains(lines[3], "retry in") || !m.retryCountdown() {
+	if len(m.snap.Agents) != 1 || !strings.HasPrefix(lines[3], "▶✗ beta") || !strings.Contains(lines[3], "retry in") || !m.retryCountdown() {
 		t.Fatalf("unreachable: agents=%d row=%q", len(m.snap.Agents), lines[3])
 	}
 	if !reflect.DeepEqual(m.snap.Warnings, []string{"beta: Connection refused"}) || !strings.HasPrefix(lines[len(lines)-3], "beta: Connection refused") ||
@@ -114,7 +115,7 @@ func TestServersPanelAndFederatedAgents(t *testing.T) {
 		t.Fatalf("the footer names the reason, a blank line, the status line: warnings=%v footer=%q", m.snap.Warnings, lines[len(lines)-3:])
 	}
 	m.onRemote(remote.Msg{Host: "beta", State: remote.NoServer, Detail: "no server running on /tmp/tmux-0/default"})
-	if lines = render(m, 28, 40); strings.TrimRight(lines[3], " ") != " ○ beta full  no tmux server" {
+	if lines = render(m, 28, 40); strings.TrimRight(lines[3], " ") != "▶○ beta full  no tmux server" { // beta is in front
 		t.Fatalf("no server row: %q", lines[3])
 	}
 	// a long host name yields to the state, keeping eight cells of itself
@@ -311,12 +312,12 @@ func TestPanelCycleAndKeys(t *testing.T) {
 	if m.activate(panelHosts, 1, false) != nil {
 		t.Fatal("no outer: no swap")
 	}
-	if m.activate(panelAgents, 0, false) != nil {
+	if m.activate(panelAgents, 1, false) != nil { // stable order: the local agent first, then beta's
 		t.Fatal("beta's agent while local is in front: the swap needs the outer")
 	}
 	m.front = "beta"
 	m.refederate()
-	if cmd := m.activate(panelAgents, 0, false); cmd == nil {
+	if cmd := m.activate(panelAgents, 1, false); cmd == nil {
 		t.Fatal("the front host's agent row produces a command")
 	} else if msg, ok := cmd().(switchedMsg); !ok || msg.err == nil {
 		t.Fatalf("a remote goto without a manager reports an error, got %+v", msg)
@@ -336,7 +337,7 @@ func TestPublishedSnapshotCarriesHosts(t *testing.T) {
 	if len(s.Hosts) != 2 || s.Hosts[0].State != "connected" || s.Hosts[0].Agents != 2 || s.Hosts[0].Pending != 1 || s.Hosts[1].State != "disabled" || s.FrontHost != "" {
 		t.Fatalf("hosts block %+v", s.Hosts)
 	}
-	if s.Agents[0].Host != "beta" || s.Agents[2].Host != "" || s.Sessions[1].Host != "beta" {
+	if s.Agents[0].Host != "" || s.Agents[1].Host != "beta" || s.Agents[2].Host != "beta" || s.Sessions[1].Host != "beta" { // stable: local first
 		t.Fatalf("tags: %+v", s.Agents)
 	}
 }
@@ -385,10 +386,10 @@ func TestCursorBarWhenFocused(t *testing.T) {
 		t.Fatalf("unfocused: a blank first cell, %q", lines[3])
 	}
 	m.focused = true
-	if lines := render(m, 28, 40); !strings.HasPrefix(lines[3], "›● beta full") || !strings.HasPrefix(lines[2], " ○ local") {
-		t.Fatalf("focused: the selected row carries the cursor, %q / %q", lines[3], lines[2])
+	if lines := render(m, 28, 40); !strings.HasPrefix(lines[3], "›● beta full") || !strings.HasPrefix(lines[2], "▶○ local") {
+		t.Fatalf("focused: the selected row carries the cursor, the front its ▶, %q / %q", lines[3], lines[2])
 	}
-	m.panel, m.cursor[panelAgents] = panelAgents, 0
+	m.panel, m.cursor[panelAgents] = panelAgents, 1 // stable order: beta's api is the second agent row
 	lines := render(m, 28, 40)
 	agentsHdr := 0
 	for i, l := range lines {
@@ -396,8 +397,8 @@ func TestCursorBarWhenFocused(t *testing.T) {
 			agentsHdr = i
 		}
 	}
-	if !strings.HasPrefix(lines[agentsHdr+1], "›● api") || !strings.HasPrefix(lines[agentsHdr+2], "   beta · claude") {
-		t.Fatalf("agent cursor: %q / %q", lines[agentsHdr+1], lines[agentsHdr+2])
+	if !strings.HasPrefix(lines[agentsHdr+3], "›● api") || !strings.HasPrefix(lines[agentsHdr+4], "   beta · claude") {
+		t.Fatalf("agent cursor: %q / %q", lines[agentsHdr+3], lines[agentsHdr+4])
 	}
 	m.panel = panelSpaces
 	if lines := render(m, 28, 40); !strings.HasPrefix(lines[7], "›○ Alpha") {
