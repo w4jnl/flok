@@ -29,6 +29,9 @@ const Template = `# flok configuration - https://github.com/w4jnl/flok
 # sessions_max_ratio = 0.4    # at most this share of the height for the sessions list
 # session_order = "index"     # index (tmux's chooser order) | name | activity
 # agent_rows = 2              # 2: project + "kind · title"; 1: single line per agent
+# agent_order = "stable"      # stable: rows keep their place (session order, then window and pane; the
+                              # glyph and colour show who needs you) | priority: blocked, done, working,
+                              # idle, newest first, so rows move as states change
 # show_branch = true
 # brand = true                # [flok] wordmark on top (the mark on the rail)
 # branch_source = "active_pane"   # or "session_path"

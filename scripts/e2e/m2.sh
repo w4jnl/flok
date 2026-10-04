@@ -65,7 +65,7 @@ expect "seen mark persisted" 'seen_at' "$(cat "$T"/state/seen/*.json)"
 hook claude '{"hook_event_name":"UserPromptSubmit","session_id":"abc"}'
 hook claude '{"hook_event_name":"Stop","session_id":"abc"}'
 sleep 0.6
-expect "stop while focused -> idle, nothing unseen" '^agents +priority' "$(capture)"
+expect "stop while focused -> idle, nothing unseen" '^agents *$' "$(capture)"
 
 # Background subagents (client is looking at this pane): the main turn ends (Stop) while tasks are
 # in flight -> still active, "N agents"; idle_prompt does not end it; the Stop after the wake-up
@@ -85,7 +85,7 @@ hook claude '{"hook_event_name":"PostToolUse","session_id":"abc","tool_name":"Re
 hook claude '{"hook_event_name":"Stop","session_id":"abc","background_tasks":[]}'
 wait_for "○ $PROJ" 3 || true
 expect "final Stop with nothing in flight ends the turn" "○ $PROJ" "$(capture)"
-expect "nothing unseen after a watched wait" '^agents +priority' "$(capture)"
+expect "nothing unseen after a watched wait" '^agents *$' "$(capture)"
 
 # AskUserQuestion is a block with reason question.
 OUT send-keys -t "$SIDEBAR" '!'   # look at Alpha window 0 again? '!' selects space 1 = Alpha (same session) -> still focused on agent pane

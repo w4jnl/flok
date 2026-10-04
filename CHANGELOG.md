@@ -6,6 +6,14 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+- **Agents keep their place.** The agents panel lists agents in a stable order: the sessions as
+  the panel above orders them, then window and pane. A row no longer moves when an agent
+  finishes, asks, or you look at it, and `1`-`9` always mean the same agent; the glyph, colour and
+  detail still say who needs you, and `prefix o`, the agents menu and the menu bar still pick by
+  priority. `[sidebar] agent_order = "priority"` brings the old attention sort back (the header
+  then reads `priority`). The pane you are on is now obvious: its agent row, its session row and
+  its server row wear a `▶` and the agent's name is bold, in the sidebar and the rail. A
+  session's rollup is the state that needs you most among its agents, as before.
 - **Going back, on any server.** `flok last session`, `last agent` and `last server` return to
   the previously focused session, agent pane or server wherever it was: the sidebar keeps one
   focus history across the local server and every host, so the key that left a session on `beta`

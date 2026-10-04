@@ -46,15 +46,22 @@ func TestFederateTagsSortsAndFocuses(t *testing.T) {
 		Agents: []agent.Agent{{PaneID: "%1", SessionID: "$4", SessionName: "web", State: agent.Working, StateSince: now}},
 		Spaces: []agent.Space{{SessionID: "$4", SessionName: "web", Current: true, Rollup: agent.Working, AgentCount: 1}},
 	}
-	got := Federate(local, []HostSnapshot{{"beta", beta}, {"gamma", gamma}}, "beta")
-
-	// attention order across hosts: blocked first, then the two working ones grouped by host, idle last
-	var order []string
-	for _, a := range got.Agents {
-		order = append(order, agent.PaneRef{Host: a.Host, ID: a.PaneID}.String())
+	refs := func(s Snapshot) []string {
+		var order []string
+		for _, a := range s.Agents {
+			order = append(order, agent.PaneRef{Host: a.Host, ID: a.PaneID}.String())
+		}
+		return order
 	}
-	if want := []string{"beta:%1", "beta:%2", "gamma:%1", "%1"}; !reflect.DeepEqual(order, want) {
-		t.Fatalf("agent order %v, want %v", order, want)
+	// stable order (the default): local first, then the hosts as registered, each as its own merge ordered them
+	if order := refs(Federate(local, []HostSnapshot{{"beta", beta}, {"gamma", gamma}}, "beta")); !reflect.DeepEqual(order, []string{"%1", "beta:%1", "beta:%2", "gamma:%1"}) {
+		t.Fatalf("stable agent order %v", order)
+	}
+	// priority order across hosts: blocked first, then the two working ones grouped by host, idle last
+	local.AgentOrder = "priority"
+	got := Federate(local, []HostSnapshot{{"beta", beta}, {"gamma", gamma}}, "beta")
+	if order := refs(got); !reflect.DeepEqual(order, []string{"beta:%1", "beta:%2", "gamma:%1", "%1"}) || got.AgentOrder != "priority" {
+		t.Fatalf("priority agent order %v (%q)", order, got.AgentOrder)
 	}
 	// only the front host's current space stays current; focus is the front host's
 	var current []string

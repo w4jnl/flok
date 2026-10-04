@@ -40,12 +40,13 @@ type Focus struct {
 }
 
 type Snapshot struct {
-	Spaces    []agent.Space
-	Agents    []agent.Agent
-	Focus     Focus
-	Unseen    int
-	Warnings  []string
-	NewlySeen []string // panes the user is looking at whose seen mark should be persisted
+	Spaces     []agent.Space
+	Agents     []agent.Agent // in AgentOrder: stable (session, window, pane) or priority
+	AgentOrder string        // the order Agents are in; Federate keeps it
+	Focus      Focus
+	Unseen     int
+	Warnings   []string
+	NewlySeen  []string // panes the user is looking at whose seen mark should be persisted
 	// Corrections are hook states the fallbacks overruled (stale working/blocked). The caller
 	// writes them back to the hook record so the correction sticks instead of flapping.
 	Corrections []Correction
@@ -72,6 +73,7 @@ type Inputs struct {
 	TerminalUnfocused     bool                       // the terminal window itself is not focused
 	StaleWorking          time.Duration              // a "waiting" state older than this may be overruled again (0 = 30 min)
 	SessionOrder          string                     // index | name | activity (see sortSpaces)
+	AgentOrder            string                     // stable (the default: session order, window, pane) | priority (blocked, done, working, idle)
 	Now                   time.Time
 }
 
@@ -400,7 +402,9 @@ func (t *Tracker) Build(in Inputs) Snapshot {
 			delete(t.panes, id)
 		}
 	}
-	SortAgents(agents)
+	if in.AgentOrder == "priority" {
+		SortAgents(agents)
+	}
 
 	bySession := map[string][]agent.Agent{}
 	for _, a := range agents {
@@ -420,14 +424,54 @@ func (t *Tracker) Build(in Inputs) Snapshot {
 		}
 		as := bySession[s.ID]
 		sp.AgentCount = len(as)
-		if len(as) > 0 {
-			sp.Rollup = as[0].State // agents are priority-sorted, so the first is the rollup
-		}
+		sp.Rollup = Rollup(as)
 		out.Spaces = append(out.Spaces, sp)
 	}
 	sortSpaces(out.Spaces, in.Tmux.Sessions, in.SessionOrder)
-	out.Agents = agents
+	if in.AgentOrder != "priority" {
+		SortAgentsStable(agents, out.Spaces)
+	}
+	out.Agents, out.AgentOrder = agents, in.AgentOrder
 	return out
+}
+
+// Rollup is the state a session shows for its agents: the one that needs the user most.
+func Rollup(as []agent.Agent) agent.State {
+	var best agent.State
+	for i, a := range as {
+		if i == 0 || agent.Priority(a.State) < agent.Priority(best) {
+			best = a.State
+		}
+	}
+	return best
+}
+
+// SortAgentsStable orders agents the way the sessions panel orders their sessions (spaces, as
+// sorted), then by window and pane index: a row keeps its place whatever the agent does, so
+// the 1-9 keys and the eye find it where it was. Agents of a session not in spaces go last.
+func SortAgentsStable(as []agent.Agent, spaces []agent.Space) {
+	rank := make(map[string]int, len(spaces))
+	for i, sp := range spaces {
+		rank[sp.Host+"\x00"+sp.SessionID] = i
+	}
+	pos := func(a agent.Agent) int {
+		if r, ok := rank[a.Host+"\x00"+a.SessionID]; ok {
+			return r
+		}
+		return len(spaces)
+	}
+	sort.SliceStable(as, func(i, j int) bool {
+		if pi, pj := pos(as[i]), pos(as[j]); pi != pj {
+			return pi < pj
+		}
+		if as[i].SessionName != as[j].SessionName {
+			return as[i].SessionName < as[j].SessionName
+		}
+		if as[i].WindowIndex != as[j].WindowIndex {
+			return as[i].WindowIndex < as[j].WindowIndex
+		}
+		return as[i].PaneIndex < as[j].PaneIndex
+	})
 }
 
 func staleHook(pane string, a agent.Agent) StaleHook {

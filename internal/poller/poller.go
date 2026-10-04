@@ -285,7 +285,7 @@ func (p *Poller) ApplySnapshot(msg SnapshotMsg, force bool) (merged bool) {
 	p.snap = p.tracker.Build(merge.Inputs{Tmux: msg.Snap, ClientTTY: p.d.ClientTTY, Adapters: p.d.Adapters, SessionOrder: p.d.Cfg.Sidebar.SessionOrder,
 		BranchOf: p.d.BranchOf, BranchFromSessionPath: p.d.Cfg.Sidebar.BranchSource == "session_path",
 		Hook: msg.Hook, Seen: msg.Seen, Registry: p.registry, RegistrySeq: p.registrySeq, RegistryAt: p.registryAt,
-		Screen: p.screen, ScreenSeq: p.screenSeq, ScreenAt: p.screenAt, TerminalUnfocused: msg.Unfocused,
+		Screen: p.screen, ScreenSeq: p.screenSeq, ScreenAt: p.screenAt, TerminalUnfocused: msg.Unfocused, AgentOrder: p.d.Cfg.Sidebar.AgentOrder,
 		StaleWorking: time.Duration(p.d.Cfg.Sidebar.StaleWorkingMin) * time.Minute})
 	if p.d.Store != nil {
 		for _, pane := range p.snap.NewlySeen {
