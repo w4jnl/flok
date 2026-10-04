@@ -4,6 +4,24 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
+## Unreleased
+
+- **Going back, on any server.** `flok last session`, `last agent` and `last server` return to
+  the previously focused session, agent pane or server wherever it was: the sidebar keeps one
+  focus history across the local server and every host, so the key that left a session on `beta`
+  for one here brings you back to `beta` (the host comes to the front by itself). `flok last
+  window` and `last pane` go back within the current session and window, as tmux's own do, so
+  one key set behaves the same inside a remote session. They have no default key: `[keys.map]` in
+  config.toml names yours (`Tab = "last session"`, `l = "last window"`, `";" = "last pane"`,
+  `O = "last server"`, `"'" = "last agent"`; any flok key command works there). Mapped keys are
+  bound whatever they held, locally and inside every connected host's tmux (a host's flok must be
+  this version or newer), put back when flok ends, and listed in their own `flok · going back`
+  section of the keybinds help. Without a running sidebar they do what tmux's own `last-*` would.
+- `flok host next|prev` read the server in front from `runtime.json`, which the switch writes
+  at once, instead of the published snapshot, which follows a moment later: two quick presses
+  no longer skip a server. CI no longer runs the suites on tmux 2.7 (Rocky 8); flok still
+  starts there.
+
 ## 0.5.2 (2026-10-02)
 
 - Three tmux menus over the work pane, one key each: `prefix A` the agents (`1`-`9` open one,

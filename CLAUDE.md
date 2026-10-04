@@ -129,8 +129,18 @@ One binary, several roles selected by subcommand (`internal/cli/root.go`):
   the servers panel runs `flok host install <name> --open` detached (a popup via
   `keys.PopupArgsTitled`, a window before 3.2); the footer names the install for a `no flok`/
   `old flok` host. Only ever write `~/.local/bin/flok` there.
-  Locally, `runSidebar` calls `remote.InstallLocalKeys` (mode `[keys] bind`: missing/all/off) so
-  the snippet is optional; a key running flok's command for it is left alone, one running another
+  `flok last session|window|pane|server` (`internal/cli/last.go` → a `last` request with `Kind`;
+  `ui/history.go`: `noteFocus` at the end of `refederate` records the front's focus, newest
+  first, `lastTarget` walks it scoped like tmux: pane within the window, window within the
+  session, session, agent pane and server anywhere, skipping gone sessions; `lastCmd` → `gotoCmd`/`frontCmd`,
+  with tmux's own last-window/last-pane as the local fallback; no sidebar → tmux's own last-*). `[keys] map` (`config.Keys.Map`,
+  `remote.KeyMap` validates against `IsKeyCommand`) adds user keys to both key sets: locally
+  `InstallLocalKeys(…, extra)` binds them whatever they held (saved like `all`), on hosts
+  `remote.Deps.ExtraKeys` rides in the `prefix` frame (`Frame.Keys`, `FeatureKeyMap`) for
+  serve's `Keys.SetKeys` and goes straight into plain mode's `InstallKeys`. A `;` key is `\;`
+  as a tmux argument (`keyArg`) and `semicolon` in the records (`keyToken`): an argument that
+  ends in `;` ends the tmux command. Locally, `runSidebar` calls `remote.InstallLocalKeys` (mode
+  `[keys] bind`: missing/all/off) so the snippet is optional; a key running flok's command for it is left alone, one running another
   legacy flok command (`flokSub`/`isLegacy`: an older snippet's `A` = prev, `S` = the servers
   menu) is rebound in both modes and only unbound at the end (never saved: a restored line would
   raise the footer notice at every start); what it bound is in `$FLOK_STATE/keys.json` and
@@ -310,5 +320,5 @@ main thread. Icons come from `assets/icons/gen` (`make icons`). e2e coverage: `s
   in `list-*` output as vis(3) octal (`\037` for the separator): `tmux.Decode` undoes it when
   the client's `Features.EscapedOutput` says so, so always take snapshots through
   `tmux.TakeSnapshotRaw`/`Decode`, never split raw output. CI runs the e2e suites on macOS
-  (3.7), Ubuntu (3.4), Rocky 9 (3.2a) and Rocky 8 (2.7); keep scripts POSIX/GNU-safe (no BSD
-  `sed -i ''`, use `sed -i.bak … && rm`; python 3.6 on Rocky 8).
+  (3.7), Ubuntu (3.4) and Rocky 9 (3.2a); the 2.7 job (Rocky 8) was dropped on 2026-10-04, the
+  2.7 gates stay; keep scripts POSIX/GNU-safe (no BSD `sed -i ''`, use `sed -i.bak … && rm`).

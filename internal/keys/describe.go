@@ -27,6 +27,9 @@ var flokLabels = map[string]string{
 	"host next":  "next server to the front", "host prev": "previous server to the front",
 	"host last": "the previous server again", "host menu": "servers menu", "host front": "server by position",
 	"menu agents": "agents menu", "menu sessions": "sessions menu", "menu servers": "servers menu",
+	"last session": "back to the previous session (any server)", "last window": "back to the previous window (this session)",
+	"last pane": "back to the previous pane (this window)", "last server": "back to the previous server",
+	"last agent": "back to the previous agent (any server)",
 }
 
 // Label returns a short human description for a binding: the tmux note when present, an
@@ -189,11 +192,20 @@ func Label(b Binding, overrides map[string]string) string {
 }
 
 // FlokSection names the help section of the bindings that run flok; it comes first.
-const FlokSection = "flok"
+// FlokBackSection follows it with the `flok last …` keys, which go back along the focus
+// history (mapped by the user, so their keys vary).
+const (
+	FlokSection     = "flok"
+	FlokBackSection = FlokSection + " · going back"
+)
 
-// SectionOf picks the group for a binding: "flok", "plugin:<name>", or by table.
+// SectionOf picks the group for a binding: "flok", "flok · going back", "plugin:<name>", or by
+// table.
 func SectionOf(b Binding, prefix string) string {
 	if strings.Contains(b.Command, "flok") {
+		if m := flokRe.FindStringSubmatch(b.Command); m != nil && (m[1] == "last" || (m[1] == "relay" && m[2] == "last")) {
+			return FlokBackSection
+		}
 		return FlokSection
 	}
 	if m := pluginRe.FindStringSubmatch(b.Command); m != nil {

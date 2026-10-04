@@ -498,11 +498,17 @@ func (c hostCmd) requestFront(host string) int {
 	return 0
 }
 
-// rotate implements next / prev / last from the published front.
+// rotate implements next / prev / last. The current front comes from runtime.json, which the
+// swap writes before the sidebar publishes its snapshot: right after a switch the snapshot may
+// still name the front before it.
 func (c hostCmd) rotate(dir string) int {
 	snap, f := snapshot.Load(c.dir, c.now())
 	if f != snapshot.Fresh {
 		return c.fail(errors.New("the sidebar is not running (flok up)"))
+	}
+	front := snap.FrontHost
+	if rt, err := launcher.ReadRuntime(); err == nil {
+		front = rt.FrontHost
 	}
 	if dir == "last" {
 		rt, err := launcher.ReadRuntime()
@@ -524,7 +530,7 @@ func (c hostCmd) rotate(dir string) int {
 	}
 	cur := 0
 	for i, h := range order {
-		if h == snap.FrontHost {
+		if h == front {
 			cur = i
 		}
 	}

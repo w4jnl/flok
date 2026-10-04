@@ -53,6 +53,7 @@ type Keys struct {
 	Tables    []string          `toml:"tables"`
 	Labels    map[string]string `toml:"labels"`
 	Bind      string            `toml:"bind"` // missing: bind flok's keys that are unbound at start | all: override | off
+	Map       map[string]string `toml:"map"`  // your keys for flok commands: Tab = "last session" (bound here and on hosts)
 }
 
 type Sounds struct {

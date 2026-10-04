@@ -48,6 +48,37 @@ expect "prev goes back" '^Alpha agent$' "$(IN display -p -t "$CLIENT" '#{session
 "$BIN" goto "$(IN display -p -t Beta '#{session_id}')" --no-focus   # what the sessions menu runs
 expect_soon "goto a session id switches the client to it" '^Beta$' IN display -p -t "$CLIENT" '#{client_session}'
 
+# last session | window | pane walk the focus history the sidebar keeps; the e2e config maps
+# Tab, ; and BTab to them ([keys.map] in lib.sh), which the sidebar bound at start
+keys=$(IN list-keys -T prefix)
+expect "keys.map binds Tab to flok last session" "prefix +Tab +run-shell -b \"$BIN last session\"" "$keys"
+expect "... and ; to flok last pane" "prefix +\\\\; +run-shell -b \"$BIN last pane\"" "$keys"
+help=$("$BIN" keys --print)
+expect "the keys help lists them in their own flok subsection" '^flok · going back$' "$help"
+expect "... with their labels" 'Tab.*back to the previous session' "$help"
+wait_json "$T/state/snapshot.json" "s['focus']['session_name'] == 'Beta'" 5 || true   # the sidebar saw the move
+"$BIN" last session
+expect_soon "last session goes back to Alpha" '^Alpha$' IN display -p -t "$CLIENT" '#{client_session}'
+wait_json "$T/state/snapshot.json" "s['focus']['session_name'] == 'Alpha'" 5 || true
+"$BIN" last session
+expect_soon "... and forth to Beta" '^Beta$' IN display -p -t "$CLIENT" '#{client_session}'
+wait_json "$T/state/snapshot.json" "s['focus']['pane_id'] == '$AGENT2'" 5 || true
+IN select-window -t Beta:0
+wait_json "$T/state/snapshot.json" "s['focus']['pane_id'] != '$AGENT2'" 5 || true
+"$BIN" last window
+expect_soon "last window returns to agent2" '^agent2$' IN display -p -t "$CLIENT" '#{window_name}'
+wait_json "$T/state/snapshot.json" "s['focus']['pane_id'] == '$AGENT2'" 5 || true
+NEWP=$(IN split-window -t "$AGENT2" -P -F '#{pane_id}' -c "$T")
+wait_json "$T/state/snapshot.json" "s['focus']['pane_id'] == '$NEWP'" 5 || true
+"$BIN" last pane
+expect_soon "last pane returns to the agent pane" "^$AGENT2\$" IN display -p -t "$CLIENT" '#{pane_id}'
+IN kill-pane -t "$NEWP"
+wait_json "$T/state/snapshot.json" "s['focus']['pane_id'] == '$AGENT2'" 5 || true
+"$BIN" goto "$AGENT" --no-focus   # the Alpha agent
+wait_json "$T/state/snapshot.json" "s['focus']['pane_id'] == '$AGENT'" 5 || true
+"$BIN" last agent
+expect_soon "last agent returns to the previous agent pane, in the other session" "^$AGENT2\$" IN display -p -t "$CLIENT" '#{pane_id}'
+
 # toggle: full -> rail -> full; hide: zoom right pane and back
 "$BIN" toggle; sleep 0.3
 expect "toggle shrinks to rail width" '^6$' "$(OUT display -p -t "$SIDEBAR" '#{pane_width}')"

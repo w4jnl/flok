@@ -60,8 +60,9 @@ func sidebarDeps(cfg config.Config) ui.Deps {
 		if os.Getenv("FLOK_DEBUG") != "" {
 			debugf = func(format string, args ...any) { appendLog("remote.log", format, args...) }
 		}
+		extra, _ := remote.KeyMap(cfg.Keys.Map)
 		return remote.New(remote.Deps{Cfg: cfg, StateDir: config.StateDir(), Sink: sink, Rules: rules, Adapters: adapters, Debugf: debugf,
-			LocalPrefix: localPrefix(cfg, d.Inner)})
+			LocalPrefix: localPrefix(cfg, d.Inner), ExtraKeys: extra})
 	}
 	return d
 }
@@ -84,8 +85,13 @@ func runSidebar(cfg config.Config) int {
 		}
 	}
 	deps := sidebarDeps(cfg)
-	// flok's keys in the inner server for this session (the snippet makes them permanent)
-	installed, conflicts, stale := remote.InstallLocalKeys(deps.Inner, config.StateDir(), deps.Bin, cfg.Keys.Bind)
+	// flok's keys in the inner server for this session (the snippet makes them permanent), and
+	// the keys of [keys] map, which take whatever they held
+	extra, badMap := remote.KeyMap(cfg.Keys.Map)
+	installed, conflicts, stale := remote.InstallLocalKeys(deps.Inner, config.StateDir(), deps.Bin, cfg.Keys.Bind, extra)
+	if len(badMap) > 0 {
+		deps.Notices = append(deps.Notices, "[keys] map: not a flok command: "+strings.Join(badMap, ", "))
+	}
 	if os.Getenv("FLOK_DEBUG") != "" {
 		appendLog("sidebar.log", "keys bound: %v; left alone: %v; older snippet: %v", installed, conflicts, stale)
 	}

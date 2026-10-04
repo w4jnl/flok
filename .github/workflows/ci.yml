@@ -69,8 +69,9 @@ jobs:
           path: /tmp/flok-e2e-logs
           if-no-files-found: ignore
 
-  # The tmux versions RHEL ships: Rocky 8 = 2.7 (flok's floor, degraded mode), Rocky 9 = 3.2a.
-  # tar/gzip/git go in first because checkout and setup-go need them inside the container.
+  # The tmux RHEL 9 ships (3.2a). tmux 2.7 (RHEL 8) is flok's floor but no longer exercised here
+  # (2026-10-04). tar/gzip/git go in first because checkout and setup-go need them inside the
+  # container.
   e2e-el:
     name: e2e (${{ matrix.name }}, tmux ${{ matrix.tmux }})
     runs-on: ubuntu-latest
@@ -79,7 +80,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: rocky8, image: "rockylinux:8", tmux: "2.7" }
           - { name: rocky9, image: "rockylinux:9", tmux: "3.2a" }
     env:
       LANG: en_US.UTF-8

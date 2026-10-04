@@ -551,7 +551,7 @@ Nothing is hand-maintained: what the popup shows is what your server has bound r
 | 2.7 | RHEL 8 | degraded: keybinds help opens in a new window instead of a popup, no extended keys (shift+enter-style bindings inside agents) through the outer server, a crashed sidebar's pane closes instead of staying respawnable |
 
 Below 2.7 `flok up` refuses to start. The gates live in `internal/tmux/version.go`; CI runs the
-end-to-end suites on macOS (3.7), Ubuntu (3.4), Rocky 9 (3.2a) and Rocky 8 (2.7).
+end-to-end suites on macOS (3.7), Ubuntu (3.4) and Rocky 9 (3.2a); 2.7 is no longer part of CI.
 
 ## Keys
 
@@ -585,6 +585,29 @@ it); the sidebar then leaves them alone. A key still running an older snippet's 
 session, the footer says so, and the current snippet replaces the old one. `flok doctor` lists
 which keys flok has, which are unbound, which tmux or you bound to something else and which an
 older snippet still holds.
+
+**Going back, on any server.** `flok last session` and `last server` return to the previously
+focused session or server, wherever that was: the sidebar keeps one focus history across every
+server, so the key that left a session on `beta` for one here brings you back to `beta`, host
+swap included. `last window` and `last pane` go back within the current session and the current
+window, as tmux's own `last-window` and `last-pane` do, so the same keys behave the same inside
+a remote session. `last agent` returns to the previous agent pane, on any server. They have no
+default key; name yours in `config.toml`:
+
+```toml
+[keys.map]
+Tab = "last session"
+l = "last window"
+";" = "last pane"
+O = "last server"
+"'" = "last agent"
+```
+
+Any flok key command works there (`Tab = "menu sessions"`). A mapped key is bound whatever it
+held, locally and inside every connected host's tmux (the host's flok must be as new as this
+one; the footer says so otherwise), and put back when flok ends; the keybinds help lists them
+in their own `flok · going back` section. Without a running sidebar they fall back to tmux's own
+`last-*`.
 
 Menu bar (when enabled): click an agent row to return to it (remote agents read `project ·
 claude @beta`; under them a `servers` block lists local and every host, the front one marked, and a
@@ -630,6 +653,7 @@ flok keep-awake [on|off|toggle|status] [--notify]   keep the Mac awake, display 
 flok status [--json]        one-shot dump of sessions and agents
 flok jump | next | prev     navigation, used by the bindings           [--client <tty>]
 flok menu agents|sessions|servers   a tmux menu over the work pane (prefix A / S / @), 1-9 picks
+flok last session|window|pane|agent|server   back to the previous one ([keys.map] binds your keys)
 flok toggle | hide | focus  sidebar layout and keyboard focus
 flok goto [pane] [--no-focus]   switch to an agent pane (%12 here, beta:%12 on a host) and bring the
                             terminal window to the front
@@ -699,6 +723,12 @@ bind = "missing"            # at start, bind flok's keys in your tmux for the se
                             # keys nothing else uses | all = override tmux's own o and ? too | off
 show_mouse = false
 tables = ["prefix", "root", "copy-mode-vi"]
+[keys.map]                  # your own keys for flok commands, bound here and in every connected host's
+# Tab = "last session"      # tmux while flok runs (the old binding comes back after): the last … commands
+# l = "last window"         # go back to the previous session, window, pane or server on any server;
+# ";" = "last pane"         # any flok key command works (menu sessions, host next, jump, …)
+# O = "last server"
+# "'" = "last agent"        # the previous agent pane, on any server
 [keys.labels]               # command prefix -> label overrides for the help popup
 # "select-pane -L" = "west"
 

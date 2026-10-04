@@ -54,6 +54,13 @@ type Frame struct {
 	Cmd   string    `json:"cmd,omitempty"`  // request: toggle | hide | focus | jump | next | prev | keep-awake | host …
 	Text  string    `json:"text,omitempty"` // notify
 	Key   string    `json:"key,omitempty"`  // prefix: a tmux key name such as C-a
+	Keys  []KeyBind `json:"keys,omitempty"` // prefix: the mapped keys ([keys] map) the host's tmux binds as well
+}
+
+// KeyBind is one mapped key: a tmux key name and the flok key command it runs.
+type KeyBind struct {
+	Key string `json:"key"`
+	Cmd string `json:"cmd"`
 }
 
 // Hello opens the stream.
@@ -74,10 +81,11 @@ const (
 	FeatureKeys   = "keys"   // binds flok's keys in the host's tmux and relays them (request frames)
 	FeaturePrefix = "prefix" // takes the local prefix on a prefix frame
 	FeatureNotify = "notify" // shows notify frames on the status line
+	FeatureKeyMap = "keymap" // binds the mapped keys of a prefix frame and relays `last …`
 )
 
 // ServeFeatures is what this flok's serve advertises.
-var ServeFeatures = []string{FeatureKeys, FeaturePrefix, FeatureNotify}
+var ServeFeatures = []string{FeatureKeys, FeaturePrefix, FeatureNotify, FeatureKeyMap}
 
 // Has says whether the hello advertised a feature.
 func (h *Hello) Has(feature string) bool {

@@ -54,6 +54,12 @@ const Template = `# flok configuration - https://github.com/w4jnl/flok
                               # snippet from flok install --tmux makes them permanent instead
 # show_mouse = false
 # tables = ["prefix", "root", "copy-mode-vi"]
+# [keys.map]                  # your own keys for flok commands, bound here and inside every connected
+# Tab = "last session"        # host's tmux while flok runs (the old binding comes back after); the
+# l = "last window"           # last … commands go back to the previously focused session, window,
+# ";" = "last pane"           # pane or server across every server; any flok key command works
+# O = "last server"           # (menu sessions, host next, jump, …); "last agent" goes back to the
+#                             # previous agent pane on any server
 # [keys.labels]               # command prefix -> label in the help popup
 # "select-pane -L" = "west"
 

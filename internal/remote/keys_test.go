@@ -119,7 +119,7 @@ func TestLocalKeys(t *testing.T) {
 		"bind-key    -T prefix       b                 run-shell -b \"/opt/homebrew/bin/flok toggle\"\n" +
 		"bind-key    -T prefix       c                 new-window\n"
 	c := &keysClient{keys: table}
-	installed, conflicts, stale := InstallLocalKeys(c, dir, "/x/flok", "missing")
+	installed, conflicts, stale := InstallLocalKeys(c, dir, "/x/flok", "missing", nil)
 	if got := strings.Join(installed, ""); !strings.HasPrefix(got, "aBguAS@NPOF1") || len(installed) != 19 || len(stale) != 0 {
 		t.Fatalf("installed %v", installed)
 	}
@@ -135,10 +135,10 @@ func TestLocalKeys(t *testing.T) {
 	}
 	// a second sidebar (reload) with the keys now present: nothing new, the record stays
 	c.keys = table + "bind-key    -T prefix       a                 run-shell -b \"/x/flok next --client '#{client_tty}'\"\n"
-	if again, _, _ := InstallLocalKeys(c, dir, "/x/flok", "missing"); !strings.HasPrefix(strings.Join(again, ""), "BguAS@") || len(again) != 18 {
+	if again, _, _ := InstallLocalKeys(c, dir, "/x/flok", "missing", nil); !strings.HasPrefix(strings.Join(again, ""), "BguAS@") || len(again) != 18 {
 		t.Fatalf("second install %v", again)
 	}
-	status := LocalKeyStatus(c)
+	status := LocalKeyStatus(c, nil)
 	if status["a"] != "flok" || status["o"] != "select-pane -t :.+" || status["g"] != "" {
 		t.Fatalf("status %v", status)
 	}
@@ -157,7 +157,7 @@ func TestLocalKeys(t *testing.T) {
 	}
 	// mode all replaces tmux's own and puts them back
 	c = &keysClient{keys: table}
-	installed, conflicts, _ = InstallLocalKeys(c, dir, "/x/flok", "all")
+	installed, conflicts, _ = InstallLocalKeys(c, dir, "/x/flok", "all", nil)
 	if len(conflicts) != 0 || !strings.Contains(strings.Join(installed, ""), "o") {
 		t.Fatalf("all: %v %v", installed, conflicts)
 	}
@@ -173,7 +173,7 @@ func TestLocalKeys(t *testing.T) {
 	if !strings.Contains(joined, "bind-key -T prefix o select-pane -t :.+") || !strings.Contains(joined, "bind-key -T prefix ? list-keys -N") {
 		t.Fatalf("restore after all: %s", joined)
 	}
-	if got, _, _ := InstallLocalKeys(c, dir, "/x/flok", "off"); got != nil {
+	if got, _, _ := InstallLocalKeys(c, dir, "/x/flok", "off", nil); got != nil {
 		t.Fatal("off binds nothing")
 	}
 }
@@ -182,7 +182,7 @@ const allKeys = "b B g o a u A S @ N P O F1 F2 F3 F4 F5 F6 F7 F8 F9"
 
 func TestInstallRebindRestore(t *testing.T) {
 	c := &keysClient{}
-	k := InstallKeys(c, BindOptionArgs(), "")
+	k := InstallKeys(c, OptionBinder(), "", nil)
 	read, write := joined(c, 0), joined(c, 1)
 	if len(c.calls) != 2 || !strings.HasPrefix(read, "show-options -gv prefix ; show-options -gv prefix2 ; list-keys -T prefix ; show-options -gqv @flok-orig-keys ; show-options -gqv @flok-orig-prefix ; show-options -gqv @flok-orig-prefix2 ; show-options -gqv @flok-orig-b ;") ||
 		!strings.HasSuffix(read, "; show-options -gqv @flok-orig-F9") {
@@ -223,7 +223,7 @@ func TestInstallRecoversRecordedOriginals(t *testing.T) {
 		"bind-key    -T prefix       c                 new-window\n" +
 		"bind-key    -T prefix       g                 set-option -g @flok-request focus\n",
 		records: map[string]string{"keys": "keys " + allKeys, "o": "o bind-key -T prefix o select-pane -t :.+", "b": "b", "g": "g bind-key -T prefix g new-window", "a": "a bind-key -T prefix a display hi"}}
-	k := InstallKeys(c, BindOptionArgs(), "")
+	k := InstallKeys(c, OptionBinder(), "", nil)
 	if !reflect.DeepEqual(k.saved, []string{"bind-key -T prefix g new-window", "bind-key -T prefix o select-pane -t :.+", "bind-key -T prefix a display hi"}) { // binding order
 		t.Fatalf("saved %q", k.saved)
 	}
@@ -238,7 +238,7 @@ func TestInstallRecoversRecordedOriginals(t *testing.T) {
 
 func TestPrefixMirror(t *testing.T) {
 	c := &keysClient{keys: "bind-key    -T prefix       o                 select-pane -t :.+\nbind-key    -T prefix       C-b               send-prefix\n"}
-	k := InstallKeys(c, BindOptionArgs(), "C-a")
+	k := InstallKeys(c, OptionBinder(), "C-a", nil)
 	write := joined(c, 1)
 	for _, want := range []string{
 		"set-option -g @flok-orig-C-a C-a ; set-option -g @flok-orig-C-b C-b bind-key    -T prefix       C-b               send-prefix ; " +
@@ -262,19 +262,19 @@ func TestPrefixMirror(t *testing.T) {
 
 	// the host already uses the same prefix: nothing to mirror
 	same := &keysClient{prefix: "C-a"}
-	InstallKeys(same, BindOptionArgs(), "C-a")
+	InstallKeys(same, OptionBinder(), "C-a", nil)
 	if w := joined(same, 1); strings.Contains(w, "set-option -g prefix") || strings.Contains(w, "send-prefix") || !strings.HasSuffix(w, " "+allKeys+" ; "+strings.Join(BindOptionArgs(), " ")) {
 		t.Fatalf("same prefix: %s", w)
 	}
 	// the host has a prefix2 of its own: it is left alone, only the local chord is added
 	two := &keysClient{prefix2: "C-Space"}
-	InstallKeys(two, BindOptionArgs(), "C-a")
+	InstallKeys(two, OptionBinder(), "C-a", nil)
 	if w := joined(two, 1); !strings.Contains(w, "set-option -g prefix C-a ;") || strings.Contains(w, "prefix2") || strings.Contains(w, "send-prefix -2") || !strings.HasSuffix(w, "bind-key -T prefix C-a send-prefix") {
 		t.Fatalf("own prefix2: %s", w)
 	}
 	// full mode learns the prefix after the hello: a second install adds it; repeating it is free
 	late := &keysClient{}
-	kl := InstallKeys(late, BindOptionArgs(), "")
+	kl := InstallKeys(late, OptionBinder(), "", nil)
 	kl.SetPrefix("C-a")
 	if len(late.calls) != 4 || !strings.Contains(joined(late, 3), "set-option -g prefix C-a ;") {
 		t.Fatalf("late prefix: %v", late.calls)
@@ -294,7 +294,7 @@ func TestPrefixMirror(t *testing.T) {
 		keys: "bind-key    -T prefix       o                 set-option -g @flok-request jump\nbind-key    -T prefix       C-a               send-prefix\nbind-key    -T prefix       C-b               send-prefix -2\n",
 		records: map[string]string{"keys": "keys " + allKeys + " C-a C-b", "prefix": "prefix C-b", "prefix2": "prefix2 None",
 			"o": "o bind-key -T prefix o select-pane -t :.+", "C-a": "C-a", "C-b": "C-b bind-key -T prefix C-b send-prefix"}}
-	kd := InstallKeys(dead, BindOptionArgs(), "C-a")
+	kd := InstallKeys(dead, OptionBinder(), "C-a", nil)
 	if kd.orig != (prefixState{mirrored: true, prefix: "C-b", setPrefix2: true, prefix2: "None"}) || !reflect.DeepEqual(kd.saved, []string{"bind-key -T prefix o select-pane -t :.+", "bind-key -T prefix C-b send-prefix"}) {
 		t.Fatalf("recovered: %+v %q", kd.orig, kd.saved)
 	}
@@ -304,7 +304,7 @@ func TestPrefixMirror(t *testing.T) {
 	}
 	// the local prefix changed since that session: its old chord goes back with this install
 	moved := &keysClient{prefix: "C-a", prefix2: "C-b", keys: dead.keys, records: dead.records}
-	InstallKeys(moved, BindOptionArgs(), "C-Space")
+	InstallKeys(moved, OptionBinder(), "C-Space", nil)
 	if w := joined(moved, len(moved.calls)-1); !strings.Contains(w, "set-option -g prefix C-Space ;") || !strings.Contains(w, "; bind-key -T prefix C-Space send-prefix ;") ||
 		!strings.Contains(w, "; unbind-key -T prefix C-a ; set-option -gqu @flok-orig-C-a") {
 		t.Fatalf("moved prefix: %s", w)
@@ -324,7 +324,7 @@ func TestLocalKeysUpdateStaleFlokBindings(t *testing.T) {
 		"bind-key    -T prefix       @                 join-pane -s !\n" +
 		"bind-key    -T prefix       o                 run-shell -b \"flok toggle\"\n"
 	c := &keysClient{keys: table}
-	installed, conflicts, stale := InstallLocalKeys(c, dir, "/x/flok", "missing")
+	installed, conflicts, stale := InstallLocalKeys(c, dir, "/x/flok", "missing", nil)
 	if len(stale) != 2 || stale["A"] != "prev" || stale["S"] != "host menu" {
 		t.Fatalf("stale %v", stale)
 	}
@@ -343,7 +343,7 @@ func TestLocalKeysUpdateStaleFlokBindings(t *testing.T) {
 	if len(st.Saved) != 0 || strings.Join(st.Installed, "") != strings.Join(installed, "") {
 		t.Fatalf("record %+v", st)
 	}
-	status := LocalKeyStatus(c) // the fake server still shows the old table: the stale ones read as such
+	status := LocalKeyStatus(c, nil) // the fake server still shows the old table: the stale ones read as such
 	if status["A"] != "flok prev" || status["S"] != "flok host menu" || status["a"] != "flok" || status["u"] != "flok" || status["@"] != "join-pane -s !" || !strings.Contains(status["o"], "flok toggle") {
 		t.Fatalf("status %v", status)
 	}
