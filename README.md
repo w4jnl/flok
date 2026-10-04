@@ -551,7 +551,7 @@ Nothing is hand-maintained: what the popup shows is what your server has bound r
 | 2.7 | RHEL 8 | degraded: keybinds help opens in a new window instead of a popup, no extended keys (shift+enter-style bindings inside agents) through the outer server, a crashed sidebar's pane closes instead of staying respawnable |
 
 Below 2.7 `flok up` refuses to start. The gates live in `internal/tmux/version.go`; CI runs the
-end-to-end suites on macOS (3.7), Ubuntu (3.4), Rocky 9 (3.2a) and Rocky 8 (2.7).
+end-to-end suites on macOS (3.7), Ubuntu (3.4) and Rocky 9 (3.2a); 2.7 is no longer part of CI.
 
 ## Keys
 

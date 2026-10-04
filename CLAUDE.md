@@ -320,5 +320,5 @@ main thread. Icons come from `assets/icons/gen` (`make icons`). e2e coverage: `s
   in `list-*` output as vis(3) octal (`\037` for the separator): `tmux.Decode` undoes it when
   the client's `Features.EscapedOutput` says so, so always take snapshots through
   `tmux.TakeSnapshotRaw`/`Decode`, never split raw output. CI runs the e2e suites on macOS
-  (3.7), Ubuntu (3.4), Rocky 9 (3.2a) and Rocky 8 (2.7); keep scripts POSIX/GNU-safe (no BSD
-  `sed -i ''`, use `sed -i.bak … && rm`; python 3.6 on Rocky 8).
+  (3.7), Ubuntu (3.4) and Rocky 9 (3.2a); the 2.7 job (Rocky 8) was dropped on 2026-10-04, the
+  2.7 gates stay; keep scripts POSIX/GNU-safe (no BSD `sed -i ''`, use `sed -i.bak … && rm`).
