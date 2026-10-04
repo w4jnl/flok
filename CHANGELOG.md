@@ -17,6 +17,10 @@ updates this file first. Dates are the tag dates.
   bound whatever they held, locally and inside every connected host's tmux (a host's flok must be
   this version or newer), put back when flok ends, and listed in their own `flok · going back`
   section of the keybinds help. Without a running sidebar they do what tmux's own `last-*` would.
+- `flok host next|prev` read the server in front from `runtime.json`, which the switch writes
+  at once, instead of the published snapshot, which follows a moment later: two quick presses
+  no longer skip a server. CI no longer runs the suites on tmux 2.7 (Rocky 8); flok still
+  starts there.
 
 ## 0.5.2 (2026-10-02)
 
