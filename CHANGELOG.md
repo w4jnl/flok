@@ -6,6 +6,8 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+## 0.5.3 (2026-10-05)
+
 - **Agents keep their place.** The agents panel lists agents in a stable order: the sessions as
   the panel above orders them, then window and pane. A row no longer moves when an agent
   finishes, asks, or you look at it, and `1`-`9` always mean the same agent; the glyph, colour and
