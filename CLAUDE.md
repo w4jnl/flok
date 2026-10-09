@@ -191,8 +191,10 @@ merge.Tracker.Build(merge.Inputs) ──► merge.Snapshot{Spaces, Agents, Focus
 ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
 ```
 
-- `internal/agent` is the shared model: `Agent`, `Space`, `State` (working/blocked/done/idle/
-  unknown), `Event`/`EventKind` (agent-neutral hook events), and the `Adapter` interface
+- `internal/agent` is the shared model: `Agent`, `Space`, `State` (working/blocked/paused/done/
+  idle/unknown; `paused` = a Stop with `background_tasks` in flight, reason `waiting`, detail
+  the task list, cleared by the next tool start, prompt or Stop, or by the merge's stale rule
+  after `StaleWorking`; older hosts send it as working+waiting and `proto.ToMerge` maps it), `Event`/`EventKind` (agent-neutral hook events), and the `Adapter` interface
   (process names, title parsing) plus optional `HookMapper`. Adapters self-register in `init()`;
   `claude.go` and `copilot.go` are the two implementations.
 - `internal/state/machine.go` is the pure hook state machine: `Apply(agent, event, focused, now)`

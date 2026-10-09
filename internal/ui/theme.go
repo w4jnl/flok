@@ -64,7 +64,7 @@ func (t Theme) StateColor(s agent.State) lipgloss.Color {
 	case agent.Idle:
 		return t.Idle
 	}
-	return t.Comment
+	return t.Comment // unknown, and paused: answered, waiting on background work, nothing to watch
 }
 
 func (t Theme) Glyph(s agent.State, frame int) string {
@@ -77,6 +77,8 @@ func (t Theme) Glyph(s agent.State, frame int) string {
 		return "✓"
 	case agent.Idle:
 		return "○"
+	case agent.Paused:
+		return "◍" // still: the agent answered and waits for background work to wake it
 	}
 	return "◌"
 }

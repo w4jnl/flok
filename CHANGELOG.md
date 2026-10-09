@@ -6,6 +6,16 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+- **Paused, not working.** An agent that answered while background shells, subagents or
+  workflows still run (Claude Code lists them on its Stop hook) was shown as working, spinner
+  and all, until the work woke it. It is now `paused`: a still grey `◍`, the detail `bg shell`
+  or `bg 2 agents`, no spinner in the menu bar, the session's dot grey too; sounds and the
+  unread badge still wait for the real end of the work, and a tool start or the next Stop moves
+  it on as before. `agent_order = "priority"` ranks it between working and idle.
+- The idle prompt box is recognised again on Claude Code 2.1.29x, which writes the session title
+  into the box's top rule: the rule that clears a stale working or blocked row after a few polls
+  (an Esc-interrupted turn, a dismissed dialog) had gone blind there.
+
 ## 0.5.3 (2026-10-05)
 
 - **Agents keep their place.** The agents panel lists agents in a stable order: the sessions as

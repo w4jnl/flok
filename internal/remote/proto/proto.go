@@ -156,9 +156,16 @@ func FromMerge(s merge.Snapshot) Snapshot {
 	return out
 }
 
-// ToMerge is the local side's view of a host, ready for merge.Federate.
+// ToMerge is the local side's view of a host, ready for merge.Federate. A flok from before the
+// paused state sends a paused agent as working with the reason waiting: it is paused here.
 func (s Snapshot) ToMerge() merge.Snapshot {
-	out := merge.Snapshot{Agents: s.Agents, Unseen: s.Unseen, Warnings: s.Warnings, TakenAt: s.TakenAt,
+	agents := append([]agent.Agent(nil), s.Agents...)
+	for i := range agents {
+		if agents[i].State == agent.Working && agents[i].Reason == "waiting" {
+			agents[i].State = agent.Paused
+		}
+	}
+	out := merge.Snapshot{Agents: agents, Unseen: s.Unseen, Warnings: s.Warnings, TakenAt: s.TakenAt,
 		Focus: merge.Focus{ClientTTY: s.Focus.ClientTTY, SessionID: s.Focus.SessionID, SessionName: s.Focus.SessionName,
 			WindowID: s.Focus.WindowID, PaneID: s.Focus.PaneID, Found: s.Focus.Found}}
 	for _, sp := range s.Spaces {

@@ -68,18 +68,18 @@ sleep 0.6
 expect "stop while focused -> idle, nothing unseen" '^agents *$' "$(capture)"
 
 # Background subagents (client is looking at this pane): the main turn ends (Stop) while tasks are
-# in flight -> still active, "N agents"; idle_prompt does not end it; the Stop after the wake-up
-# turn does. Focused, so it ends idle with nothing unseen, leaving the state as it was.
+# in flight -> paused, a still ◍ with "bg N agents"; idle_prompt does not end it; the Stop after
+# the wake-up turn does. Focused, so it ends idle with nothing unseen, leaving the state as it was.
 hook claude '{"hook_event_name":"UserPromptSubmit","session_id":"abc"}'
 hook claude '{"hook_event_name":"PreToolUse","session_id":"abc","tool_name":"Agent","tool_input":{"description":"explore","run_in_background":true},"tool_use_id":"a1"}'
 hook claude '{"hook_event_name":"PostToolUse","session_id":"abc","tool_name":"Agent","tool_use_id":"a1"}'
 hook claude '{"hook_event_name":"Stop","session_id":"abc","background_tasks":[{"id":"t1","type":"subagent","status":"running","agent_type":"Explore"},{"id":"t2","type":"subagent","status":"running","agent_type":"Plan"}]}'
 wait_for '2 agents' 3 || true
 snap=$(capture); echo "--- waiting for subagents ---"; printf '%s\n' "$snap" | grep -v '^ *$' | sed -n '4,6p'
-expect "waiting for subagents shows as working with the count" "[◐◓◑◒] $PROJ +2 agents" "$snap"
+expect "waiting for subagents shows as paused with the count" "◍ $PROJ +bg 2 agents" "$snap"
 hook claude '{"hook_event_name":"Notification","session_id":"abc","notification_type":"idle_prompt"}'
 sleep 0.6
-expect "idle_prompt does not end the paused turn" "[◐◓◑◒] $PROJ +2 agents" "$(capture)"
+expect "idle_prompt does not end the paused turn" "◍ $PROJ +bg 2 agents" "$(capture)"
 hook claude '{"hook_event_name":"PreToolUse","session_id":"abc","tool_name":"Read","tool_input":{"file_path":"/x/y.go"},"tool_use_id":"r1"}'
 hook claude '{"hook_event_name":"PostToolUse","session_id":"abc","tool_name":"Read","tool_use_id":"r1"}'
 hook claude '{"hook_event_name":"Stop","session_id":"abc","background_tasks":[]}'

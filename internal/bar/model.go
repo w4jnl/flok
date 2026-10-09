@@ -197,10 +197,12 @@ func priority(a snapshot.Agent) int {
 		return 1
 	case a.State == agent.Working:
 		return 2
-	case a.State == agent.Idle:
+	case a.State == agent.Paused:
 		return 3
+	case a.State == agent.Idle:
+		return 4
 	}
-	return 4
+	return 5
 }
 
 // Rows lists agents in attention order, at most max (0 = all).
@@ -260,6 +262,8 @@ func detail(a snapshot.Agent, now time.Time) string {
 			return fmt.Sprintf("idle · %d", a.Unseen)
 		}
 		return "idle"
+	case agent.Paused:
+		return "bg " + a.Tool
 	}
 	return "?"
 }

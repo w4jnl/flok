@@ -281,7 +281,7 @@ func (t *Tracker) Build(in Inputs) Snapshot {
 					out.Corrections = append(out.Corrections, Correction{PaneID: p.ID, From: a.State, Since: a.StateSince, Reason: "prompt gone"})
 					a.State, a.Reason = agent.Idle, ""
 				}
-			case agent.Working:
+			case agent.Working, agent.Paused:
 				// An interrupted turn (Esc), a usage-limit cut-off or an errored turn emits no hook.
 				// The title is NOT a signal: Claude Code keeps the idle "✳" title while busy inside
 				// tmux. Trust Claude's own registry (idle in two consecutive samples, ~10-20 s at

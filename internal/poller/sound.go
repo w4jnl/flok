@@ -56,7 +56,7 @@ func (p *Poller) soundTransitions() {
 		case agent.Done:
 			p.playIfAllowed(key, "done")
 		case agent.Idle:
-			if watched && prev == agent.Working { // a watched turn ends idle, never done
+			if watched && (prev == agent.Working || prev == agent.Paused) { // a watched turn ends idle, never done
 				p.playIfAllowed(key, "done")
 			}
 		}
