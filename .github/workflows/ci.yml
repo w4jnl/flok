@@ -80,7 +80,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: rocky9, image: "rockylinux:9", tmux: "3.2a" }
+          - { name: rocky9, image: "quay.io/rockylinux/rockylinux:9", tmux: "3.2a" }   # Rocky's own registry: no Docker Hub pull limits or outages
     env:
       LANG: en_US.UTF-8
       LC_ALL: en_US.UTF-8
