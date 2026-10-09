@@ -75,7 +75,10 @@ jobs:
   e2e-el:
     name: e2e (${{ matrix.name }}, tmux ${{ matrix.tmux }})
     runs-on: ubuntu-latest
-    container: ${{ matrix.image }}
+    container:
+      image: ${{ matrix.image }}
+      env: # the quay.io image declares no PATH; without one, setup-go's PATH leaves the steps with only the Go directory ("sh: not found")
+        PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
     strategy:
       fail-fast: false
       matrix:
