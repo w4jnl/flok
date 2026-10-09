@@ -39,7 +39,10 @@ var (
 	topRe    = regexp.MustCompile(`^top_non_empty_lines\((\d+)\)$`)
 	ruleRe   = regexp.MustCompile(`^[\s─━═╌┄┈╍┅┉]{3,}$`)
 	asciiHR  = regexp.MustCompile(`^\s*-{10,}\s*$`)
-	promptRe = regexp.MustCompile(`^\s*[›❯❭>]\s?`)
+	// Claude Code 2.1.29x writes the session title into the top rule of its prompt box:
+	// "──── fix-login ────────". Rule characters, a space, the label, a space, rule characters.
+	labelRule = regexp.MustCompile(`^\s*[─━═╌┄┈╍┅┉]{3,} \S.* [─━═╌┄┈╍┅┉]{3,}\s*$`)
+	promptRe  = regexp.MustCompile(`^\s*[›❯❭>]\s?`)
 )
 
 // SupportedRegion reports whether the engine can produce the region.
@@ -57,7 +60,7 @@ func SupportedRegion(r string) bool {
 
 func isRule(line string) bool {
 	t := strings.TrimSpace(line)
-	return t != "" && (ruleRe.MatchString(t) || asciiHR.MatchString(t))
+	return t != "" && (ruleRe.MatchString(t) || asciiHR.MatchString(t) || labelRule.MatchString(t))
 }
 
 // NewScreen trims trailing blank lines from a capture.
