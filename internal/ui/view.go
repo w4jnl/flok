@@ -360,6 +360,8 @@ func (m Model) agentRight(a agent.Agent) (string, lipgloss.Color) {
 		return s, t.Done
 	case agent.Idle:
 		return a.Kind, t.Comment
+	case agent.Paused: // the background work it waits for, as Claude listed it: "shell", "2 agents"
+		return "bg " + a.CurrentTool, t.Comment // short: the column is narrow
 	}
 	return a.Kind + " ?", t.Comment
 }

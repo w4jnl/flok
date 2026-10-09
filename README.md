@@ -27,7 +27,7 @@ agent works.
 
 ## Setup
 
-Current version: 0.5.2 · [release notes](CHANGELOG.md). Needs tmux 2.7 or newer (everything
+Current version: 0.5.3 · [release notes](CHANGELOG.md). Needs tmux 2.7 or newer (everything
 from 3.3) and Claude Code or Copilot CLI; details under [Requirements](#requirements).
 
 1. Install the binary. Homebrew, on macOS or Linux:
@@ -37,7 +37,7 @@ from 3.3) and Claude Code or Copilot CLI; details under [Requirements](#requirem
    Or a prebuilt static binary from the [releases page](https://github.com/w4jnl/flok/releases)
    (Linux and macOS, `amd64` and `arm64`, no Go, no root):
    ```sh
-   ver=0.5.2; os=$(uname -s | tr A-Z a-z); arch=$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')
+   ver=0.5.3; os=$(uname -s | tr A-Z a-z); arch=$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')
    curl -fsSLO "https://github.com/w4jnl/flok/releases/download/v$ver/flok_${ver}_${os}_${arch}.tar.gz"
    curl -fsSLO "https://github.com/w4jnl/flok/releases/download/v$ver/sha256sums.txt"
    shasum -a 256 -c --ignore-missing sha256sums.txt
@@ -179,7 +179,8 @@ What flok does about it:
   you are on wears a `▶`. `[sidebar] agent_order = "priority"` sorts by attention instead
   (blocked, done, working, idle, newest first), the way earlier versions did.
 - **Live states** from hooks: working with the current tool and elapsed time (`Bash 0:42`),
-  blocked (`perm:Bash`, `question`, `elicit`), done with an unread count, idle.
+  blocked (`perm:Bash`, `question`, `elicit`), paused while background shells or subagents still
+  run after the answer (`bg shell`), done with an unread count, idle.
 - **Agents across servers**: register the machines you ssh into and their agents join the same
   panels, tagged with their host, after the local ones in registry order. A servers panel
   shows each machine's state and agent count; `Enter`, `prefix F1`…`F9`, `prefix @` or the menu
@@ -232,7 +233,7 @@ What that means in practice:
   `brew upgrade`.
 - Bug reports with a reproduction are welcome; support is best effort.
 
-flok is at 0.5.2 (2026-10-02). [`CHANGELOG.md`](CHANGELOG.md) lists what changed in every
+flok is at 0.5.3 (2026-10-05). [`CHANGELOG.md`](CHANGELOG.md) lists what changed in every
 release, newest first; the same text is on each GitHub release.
 
 ## How it works
@@ -332,7 +333,8 @@ agent's name means no hook data has arrived for that pane (restart the agent aft
 
 | state | glyph | colour | entered by | left by |
 |---|---|---|---|---|
-| working | `◐◓◑◒` | cyan | prompt submitted, tool start/end; a Stop while background subagents or shells are in flight keeps it working ("2 agents") | stop with nothing in flight, block, interrupted turn |
+| working | `◐◓◑◒` | cyan | prompt submitted, tool start/end | stop, block, interrupted turn |
+| paused | `◍` | grey | stop while background subagents, shells or workflows are still running (`bg 2 agents`): answered, but the work will wake the agent again | the task wakes it (working), a stop with nothing in flight (done or idle) |
 | blocked | `●` | orange | permission request, `AskUserQuestion`, elicitation dialog, a visible prompt the hooks missed | tool end, next prompt, stop, dialog gone |
 | done | `●` | green | stop while the pane is not the one you look at | looking at it (or jumping there) |
 | idle | `○` | grey | session start, stop while you watch, done once seen | prompt |

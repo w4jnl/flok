@@ -140,15 +140,15 @@ func TestWaitingForBackgroundTasks(t *testing.T) {
 	now := time.Now()
 	a := agent.Agent{State: agent.Working, TurnStarted: now, HasHooks: true}
 	fx := Apply(&a, agent.Event{Kind: agent.EvWaiting, Name: "Stop", Reason: "waiting", Detail: "2 agents"}, unfocused, now.Add(time.Second))
-	if fx.Sound != "" || a.State != agent.Working || a.Reason != "waiting" || a.CurrentTool != "2 agents" || len(a.Notifications) != 0 {
+	if fx.Sound != "" || a.State != agent.Paused || a.Reason != "waiting" || a.CurrentTool != "2 agents" || len(a.Notifications) != 0 {
 		t.Fatalf("waiting: %+v %+v", a, fx)
 	}
-	if fx := Apply(&a, agent.Event{Kind: agent.EvNudge}, unfocused, now.Add(70*time.Second)); fx.Sound != "" || a.State != agent.Working {
+	if fx := Apply(&a, agent.Event{Kind: agent.EvNudge}, unfocused, now.Add(70*time.Second)); fx.Sound != "" || a.State != agent.Paused {
 		t.Fatalf("idle_prompt must not end a paused turn: %+v %+v", a, fx)
 	}
-	// a subagent reports back: the wake-up turn runs a tool, then ends for good
+	// a subagent reports back: the wake-up turn runs a tool (working again), then ends for good
 	Apply(&a, agent.Event{Kind: agent.EvToolStart, Tool: "Read", Detail: "x.go"}, unfocused, now.Add(80*time.Second))
-	if a.Reason != "" || a.CurrentTool != "Read" {
+	if a.State != agent.Working || a.Reason != "" || a.CurrentTool != "Read" {
 		t.Fatalf("tool start clears waiting: %+v", a)
 	}
 	fx = Apply(&a, agent.Event{Kind: agent.EvStop, Name: "Stop"}, unfocused, now.Add(90*time.Second))

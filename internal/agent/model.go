@@ -12,6 +12,9 @@ const (
 	Done    State = "done"
 	Idle    State = "idle"
 	Unknown State = "unknown"
+	// Paused: the turn ended but background work (subagents, shells, workflows) will wake the
+	// agent; answered from the user's side, not finished from the agent's.
+	Paused State = "paused"
 )
 
 type Notification struct {
@@ -71,8 +74,10 @@ func Priority(s State) int {
 		return 1
 	case Working:
 		return 2
-	case Idle:
+	case Paused:
 		return 3
+	case Idle:
+		return 4
 	}
-	return 4
+	return 5
 }

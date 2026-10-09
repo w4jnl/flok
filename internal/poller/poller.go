@@ -380,7 +380,7 @@ func (p *Poller) registryNeeded() bool {
 		if a.Kind != "claude" {
 			continue
 		}
-		if a.Source != "hook" || a.State == agent.Working || a.State == agent.Blocked {
+		if a.Source != "hook" || a.State == agent.Working || a.State == agent.Blocked || a.State == agent.Paused {
 			return true
 		}
 	}
@@ -417,7 +417,7 @@ func (p *Poller) needsScreen(a agent.Agent) bool {
 	}
 	// hook-less agents always; hook agents while a turn or prompt is open, so an interrupted
 	// turn or a dismissed prompt (neither emits a hook) is noticed from the screen
-	return a.Source != "hook" || a.State == agent.Working || a.State == agent.Blocked
+	return a.Source != "hook" || a.State == agent.Working || a.State == agent.Blocked || a.State == agent.Paused
 }
 
 // PollScreen captures the relevant panes and evaluates their manifests; the returned function

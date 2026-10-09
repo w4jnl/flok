@@ -1,0 +1,11 @@
+⏺ Checking why the 16:30 row was not replaced
+  ⎿  $ ls data/raw/cycles | head -3
+
+✻ Nesting… (49s · ↓ 3.2k tokens · thinking with xhigh effort)
+  ⎿  Tip: Use git worktrees to run multiple Claude sessions in parallel.
+
+──── review-engine-fixes ───────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────
+  Fable 5.1 | 🧠 47% | 5h █████████░ 92% resets 1:10AM |📁 gamma-exposure-app | main ~2 | effort:xhigh
+  ⏵⏵ auto mode on · 1 shell · ← 1 agent

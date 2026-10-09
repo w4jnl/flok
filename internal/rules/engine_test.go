@@ -60,6 +60,11 @@ func TestClaudeFixtures(t *testing.T) {
 		{"claude_working_star.txt", "✳ proj", agent.Working, false, "live_turn_working"},
 		{"claude_working_star.txt", "plain title", agent.Working, false, "live_turn_working"},
 		{"claude_model_picker.txt", "✳ proj", agent.Unknown, true, "model_picker_menu"},
+		// Claude Code 2.1.29x: the session title sits inside the box's top rule and two status
+		// lines follow the box; the idle box must still be found there, and a spinner above it
+		// must still win
+		{"claude_prompt_box_titled.txt", "✳ proj", agent.Idle, false, "live_prompt_box"},
+		{"claude_working_titled.txt", "✳ proj", agent.Working, false, "live_turn_working"},
 	}
 	for _, tc := range cases {
 		data, err := os.ReadFile(filepath.Join("testdata", tc.file))

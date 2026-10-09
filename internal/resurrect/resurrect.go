@@ -119,7 +119,7 @@ func agentKind(pane tmux.Pane, rec agent.Agent, registryID string, adapters []ag
 	if validSessionID(registryID) {
 		return "claude", true
 	}
-	if rec.HasHooks && (rec.State == agent.Working || rec.State == agent.Blocked) && supported(rec.Kind) {
+	if rec.HasHooks && (rec.State == agent.Working || rec.State == agent.Blocked || rec.State == agent.Paused) && supported(rec.Kind) {
 		return rec.Kind, true
 	}
 	return "", false

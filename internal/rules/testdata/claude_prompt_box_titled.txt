@@ -1,0 +1,9 @@
+⏺ Done. The fixture repair ran; the row is replaced.
+
+✻ Brewed for 1m 7s · done 10:44 PM · 1 shell still running
+
+──── review-engine-fixes ───────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────
+  Fable 5.1 | 🧠 47% | 5h █████████░ 92% resets 1:10AM |📁 gamma-exposure-app | main ~2 | effort:xhigh
+  ⏵⏵ auto mode on · 1 shell · ← 1 agent

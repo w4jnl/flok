@@ -117,7 +117,7 @@ func hostLabel(host string) string {
 	return host
 }
 
-var rollupGlyph = map[agent.State]string{agent.Working: "◐", agent.Blocked: "●", agent.Done: "✓", agent.Idle: "○"}
+var rollupGlyph = map[agent.State]string{agent.Working: "◐", agent.Blocked: "●", agent.Done: "✓", agent.Idle: "○", agent.Paused: "◍"}
 
 // agentMenuItems lists the agents as the sidebar and the menu bar do: attention first, remote
 // ones tagged with their host; an entry opens the pane.
