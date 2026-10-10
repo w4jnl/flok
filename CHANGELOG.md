@@ -4,7 +4,7 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
-## Unreleased
+## 0.6.0 (2026-10-10)
 
 - **flok on your phone, the link and the relay.** `flok-relay` is a small service you run
   (one static binary; a container image `ghcr.io/w4jnl/flok-relay` and a Portainer stack behind
