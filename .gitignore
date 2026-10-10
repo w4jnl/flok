@@ -3,3 +3,5 @@
 *.test
 *.out
 /tmux-*.log
+/flok
+/flok-relay
