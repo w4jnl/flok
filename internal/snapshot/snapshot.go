@@ -76,6 +76,15 @@ type Snapshot struct {
 	KeepAwakePresence string `json:"keep_awake_presence,omitempty"`
 	Hosts             []Host `json:"hosts,omitempty"` // remote hosts, in registry order
 	FrontHost         string `json:"front_host,omitempty"`
+	Link              *Link  `json:"link,omitempty"` // the phone link ([link] url), absent without one
+}
+
+// Link is the state of the instance's connection to its relay (flok on the phone).
+type Link struct {
+	State  string    `json:"state"` // connecting, connected, unreachable, refused
+	Detail string    `json:"detail,omitempty"`
+	Since  time.Time `json:"since"`
+	URL    string    `json:"url,omitempty"`
 }
 
 // Freshness tells a reader how much to trust a loaded snapshot.

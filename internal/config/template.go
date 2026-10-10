@@ -144,8 +144,11 @@ const Template = `# flok configuration - https://github.com/w4jnl/flok
                               # agent, pane, kind, reason, at}
 # events = ["blocked", "done", "error"]
 
-[link]                        # this flok's name on the phone and in notifications
+[link]                        # flok on your phone: this flok's name, and the relay it dials out to
 # name = ""                   # "" = the machine's short hostname (home, office, …)
+# url = ""                    # your flok-relay: wss://flok.example.net/link (or https://flok.example.net);
+                              # "" = off. Outbound only, HTTPS_PROXY is honoured.
+# token = ""                  # one of the relay's instance_tokens
 `
 
 // WriteTemplate creates the config file with Template when it does not exist yet.

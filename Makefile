@@ -5,13 +5,22 @@ LDFLAGS := -s -w -X github.com/w4jnl/flok/internal/cli.Version=$(VERSION)
 
 UNAME := $(shell uname -s)
 
-.PHONY: build build-bar bundle-bar icons install test vet e2e run-status
+.PHONY: build build-bar bundle-bar relay relay-image icons install test vet e2e run-status
 
 build:
 	CGO_ENABLED=0 go build -ldflags '$(LDFLAGS)' -o bin/$(BIN) ./cmd/$(BIN)
 ifeq ($(UNAME),Darwin)
 	$(MAKE) build-bar
 endif
+
+# flok-relay: the service between flok instances and the phone (cgo-free, runs anywhere).
+relay:
+	CGO_ENABLED=0 go build -ldflags '-s -w -X main.version=$(VERSION)' -o bin/$(BIN)-relay ./cmd/$(BIN)-relay
+
+# A local image of the relay for this machine's architecture (the release publishes
+# ghcr.io/w4jnl/flok-relay for amd64 and arm64).
+relay-image:
+	docker build -f deploy/relay/Dockerfile -t $(BIN)-relay:$(VERSION) .
 
 # The menu bar companion is the only cgo binary (fyne.io/systray), macOS only.
 build-bar:

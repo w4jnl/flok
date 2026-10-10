@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/w4jnl/flok/internal/awake"
+	"github.com/w4jnl/flok/internal/snapshot"
 )
 
 // Releaser is a held power assertion (awake.Assertion in production).
@@ -78,10 +79,17 @@ func (m Model) publish() {
 	if m.keep != nil {
 		m.keep.shown = presence
 	}
-	if m.publisher == nil {
+	if m.publisher == nil && m.linker == nil {
 		return
 	}
 	s := m.publishedSnapshot()
 	s.KeepAwake, s.KeepAwakePresence = m.keep.on(), string(presence)
-	_, _ = m.publisher.Publish(s, time.Now())
+	if m.linker != nil { // the relay gets the same view flok-bar reads, and the link's own state rides in the file
+		m.linker.Publish(s)
+		st := m.linkStatus
+		s.Link = &snapshot.Link{State: string(st.State), Detail: st.Detail, Since: st.Since, URL: st.URL}
+	}
+	if m.publisher != nil {
+		_, _ = m.publisher.Publish(s, time.Now())
+	}
 }

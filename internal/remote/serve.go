@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"sync"
 	"time"
 
+	"github.com/w4jnl/flok/internal/answer"
 	"github.com/w4jnl/flok/internal/merge"
 	"github.com/w4jnl/flok/internal/nav"
 	"github.com/w4jnl/flok/internal/poller"
@@ -125,6 +127,12 @@ func Serve(ctx context.Context, d ServeDeps) error {
 	}
 	tick := time.NewTicker(hb)
 	defer tick.Stop()
+	// panes whose screen the local side streams to the phone: captured once a second on the
+	// poller's goroutine (one tmux call), sent when the text changed; lastScreen lives there too
+	captured := map[string]bool{}
+	lastScreen := map[string]string{}
+	capTick := time.NewTicker(time.Second)
+	defer capTick.Stop()
 	var lastBody []byte
 	var last proto.Snapshot
 	var lastSent time.Time
@@ -149,6 +157,23 @@ func Serve(ctx context.Context, d ServeDeps) error {
 			if err := sendSnap(ps); err != nil {
 				return err
 			}
+		case <-capTick.C:
+			if len(captured) == 0 {
+				continue
+			}
+			panes := make([]string, 0, len(captured))
+			for pane := range captured {
+				panes = append(panes, pane)
+			}
+			enqueue(func() {
+				for pane, text := range poller.CaptureAll(d.Inner, panes, 0) {
+					if lastScreen[pane] == text {
+						continue
+					}
+					lastScreen[pane] = text
+					_ = write(proto.Frame{Type: proto.TypeScreen, Screen: &proto.Screen{Pane: pane, Text: text}})
+				}
+			})
 		case <-tick.C:
 			if lastBody != nil && time.Since(lastSent) >= hb {
 				if err := sendSnap(last); err != nil {
@@ -199,6 +224,32 @@ func Serve(ctx context.Context, d ServeDeps) error {
 						_, _ = d.Inner.Run(append(args, text)...)
 					})
 				}
+			case proto.TypeAnswer: // the phone types into an agent pane here
+				if f.Answer == nil {
+					continue
+				}
+				a, id := *f.Answer, f.ID
+				enqueue(func() {
+					err := TypeAnswer(d.Inner, p.Snap(), a)
+					ack := proto.Frame{Type: proto.TypeAck, ID: id}
+					if err != nil {
+						ack.Error = err.Error()
+					} else {
+						p.MarkSeen(a.Pane)
+					}
+					_ = write(ack)
+				})
+			case proto.TypeCapture:
+				pane := f.Pane
+				if pane == "" {
+					continue
+				}
+				if f.On {
+					captured[pane] = true
+				} else {
+					delete(captured, pane)
+					enqueue(func() { delete(lastScreen, pane) }) // a later subscription gets the screen again
+				}
 			case proto.TypeGoto:
 				if f.Goto == nil {
 					continue
@@ -227,4 +278,26 @@ func Serve(ctx context.Context, d ServeDeps) error {
 			return nil
 		}
 	}
+}
+
+// TypeAnswer types an answer into an agent pane of the server c shows in snap: the answer is
+// checked (answer.Normalize) and the pane must be one of the agents', nothing else is ever
+// typed. The sidebar uses it for local panes, serve and the plain-mode connection for a host's.
+func TypeAnswer(c tmux.Client, snap merge.Snapshot, a answer.Answer) error {
+	a, err := answer.Normalize(a)
+	if err != nil {
+		return err
+	}
+	found := false
+	for _, ag := range snap.Agents {
+		if ag.PaneID == a.Pane {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return errors.New("no agent in pane " + a.Pane)
+	}
+	_, err = c.Run(answer.Args(a.Pane, a)...)
+	return err
 }

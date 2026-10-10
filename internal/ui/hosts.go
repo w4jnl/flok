@@ -281,6 +281,9 @@ func (m *Model) refederate() {
 			}
 		}
 	}
+	if w := m.linkWarning(); w != "" { // the phone link is down: say so, after the hosts
+		m.snap.Warnings = append(append([]string(nil), m.snap.Warnings...), w)
+	}
 	if len(m.d.Notices) > 0 { // after the hosts' warnings; a fresh slice, m.fed is what gets published
 		m.snap.Warnings = append(append([]string(nil), m.snap.Warnings...), m.d.Notices...)
 	}
@@ -289,17 +292,28 @@ func (m *Model) refederate() {
 	m.vc.valid = false
 }
 
-// onRemote applies one manager message: a sound to play here, a host's new view, or a
-// connection state.
-func (m *Model) onRemote(msg remote.Msg) {
+// onRemote applies one manager message: a sound to play here, a host's new view, a captured
+// screen for the phone, or a connection state (a host that just connected gets the phone's
+// subscriptions again).
+func (m *Model) onRemote(msg remote.Msg) tea.Cmd {
 	v := m.remotes[msg.Host]
 	if msg.Gen < v.gen { // a replaced connection's last words
-		return
+		return nil
 	}
 	v.gen = msg.Gen
 	changed := false
 	if msg.Event != nil {
 		m.p.PlaySound(agent.PaneRef{Host: msg.Host, ID: msg.Event.Pane}.String(), msg.Event.Kind)
+	}
+	if msg.Screen != nil {
+		if m.linker != nil {
+			m.linker.Screen(agent.PaneRef{Host: msg.Host, ID: msg.Screen.Pane}.String(), msg.Screen.Text)
+		}
+		return nil
+	}
+	var cmd tea.Cmd
+	if msg.Hello != nil {
+		cmd = m.resubscribeHost(msg.Host)
 	}
 	if msg.Request != "" { // a flok key pressed inside that host's tmux
 		m.debugf("%s: key %s", msg.Host, msg.Request)
@@ -324,6 +338,7 @@ func (m *Model) onRemote(msg remote.Msg) {
 		m.publish()
 		m.clamp()
 	}
+	return cmd
 }
 
 // retryCountdown reports whether a host row shows a countdown, which the 1 s tick must redraw.
@@ -986,10 +1001,13 @@ func (m Model) publishedSnapshot() snapshot.Snapshot {
 	return s
 }
 
-// Close ends the remote connections (their serve sessions end on EOF).
+// Close ends the remote connections (their serve sessions end on EOF) and the phone link.
 func (m Model) Close() {
 	if m.remote != nil {
 		m.remote.Close()
+	}
+	if m.linker != nil {
+		m.linker.Close()
 	}
 }
 

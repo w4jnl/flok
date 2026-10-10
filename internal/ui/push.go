@@ -4,17 +4,19 @@ import (
 	"time"
 
 	"github.com/w4jnl/flok/internal/agent"
+	"github.com/w4jnl/flok/internal/link/wire"
 	"github.com/w4jnl/flok/internal/push"
 )
 
 // pushMinGap drops a repeat of the same kind for the same pane that follows within it.
 const pushMinGap = 2 * time.Second
 
-// notePush sends a notification for every agent that just turned blocked, done or failed, on
-// any server in the federated view. refederate calls it; the first call only primes the
-// previous states, so a start does not announce what is already waiting.
+// notePush announces every agent that just turned blocked, done or failed, on any server in
+// the federated view: to [notify] url (the kinds it wants) and to the relay (every kind; the
+// phone decides). refederate calls it; the first call only primes the previous states, so a
+// start does not announce what is already waiting.
 func (m *Model) notePush() {
-	if m.pusher == nil {
+	if m.pusher == nil && m.linker == nil {
 		return
 	}
 	now := time.Now()
@@ -37,7 +39,7 @@ func (m *Model) notePush() {
 				kind = "error"
 			}
 		}
-		if kind == "" || !m.d.Cfg.Notify.Wants(kind) {
+		if kind == "" {
 			continue
 		}
 		if last, ok := m.pushLast[key+" "+kind]; ok && now.Sub(last) < pushMinGap {
@@ -45,7 +47,12 @@ func (m *Model) notePush() {
 		}
 		m.pushLast[key+" "+kind] = now
 		m.debugf("push %s %s (%s)", kind, key, a.Reason)
-		m.pusher.Send(push.Event{Instance: m.d.Cfg.InstanceName(), Host: a.Host, Agent: a.Name, Pane: key, Kind: kind, Reason: a.Reason, At: now})
+		if m.linker != nil {
+			m.linker.Event(wire.Event{Pane: key, Host: a.Host, Agent: a.Name, Kind: kind, Reason: a.Reason, At: now})
+		}
+		if m.pusher != nil && m.d.Cfg.Notify.Wants(kind) {
+			m.pusher.Send(push.Event{Instance: m.d.Cfg.InstanceName(), Host: a.Host, Agent: a.Name, Pane: key, Kind: kind, Reason: a.Reason, At: now})
+		}
 	}
 	for key := range m.pushPrev {
 		if !seen[key] {

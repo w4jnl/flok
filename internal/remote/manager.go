@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/w4jnl/flok/internal/agent"
+	"github.com/w4jnl/flok/internal/answer"
 	"github.com/w4jnl/flok/internal/config"
 	"github.com/w4jnl/flok/internal/hosts"
 	"github.com/w4jnl/flok/internal/merge"
@@ -33,6 +34,7 @@ type Msg struct {
 	Snap    *proto.Snapshot // a new merged view of the host
 	Event   *proto.Event    // a sound to play here
 	Request string          // a flok key pressed inside the host's tmux: toggle, hide, jump, …
+	Screen  *proto.Screen   // a captured pane's screen (Capture), for the phone
 	// Gen is the generation of the connection that sent the message: it grows at every
 	// (re)start of a host, and a consumer drops a message older than the last one it applied,
 	// so a replaced connection's last words never overwrite its successor's.
@@ -250,6 +252,32 @@ func (m *Manager) Notify(host, text string) {
 	}
 }
 
+// Answer types an answer into an agent pane on the host and reports the outcome: an answer
+// frame and its ack in full mode, send-keys over ssh in plain mode. It waits for the host,
+// bounded; a host that is not connected refuses at once.
+func (m *Manager) Answer(host string, a answer.Answer) error {
+	c := m.get(host)
+	if c == nil {
+		return fmt.Errorf("host %s is not connected", host)
+	}
+	return c.answer(a)
+}
+
+// Capture starts (on) or stops streaming a pane's screen from a full-mode host, which arrives
+// as Msg.Screen; a plain-mode host has no serve to do it, the caller captures over its Client.
+func (m *Manager) Capture(host, pane string, on bool) {
+	c := m.get(host)
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	send := c.send
+	c.mu.Unlock()
+	if send != nil {
+		_ = send(proto.Frame{Type: proto.TypeCapture, Pane: pane, On: on})
+	}
+}
+
 // Client is the plain-mode tmux client of a connected host, nil otherwise.
 func (m *Manager) Client(host string) tmux.Client {
 	c := m.get(host)
@@ -329,6 +357,8 @@ type conn struct {
 	client  PlainClient             // plain mode, while connected
 	cmds    chan func()             // plain mode poller loop
 	poller  *poller.Poller
+	pending map[string]chan error // full mode: answers waiting for their ack, by id
+	nextID  uint64
 }
 
 // emit tags a message with this connection's generation and drops it once the connection is
@@ -619,12 +649,18 @@ func (c *conn) attemptFull(ctx context.Context) (State, string) {
 	}
 	c.mu.Lock()
 	c.send, c.sent = send, nil
+	c.pending = map[string]chan error{}
 	visible := c.visible
 	c.mu.Unlock()
 	defer func() {
 		c.mu.Lock()
 		c.send = nil
+		pending := c.pending
+		c.pending = nil
 		c.mu.Unlock()
+		for _, ch := range pending { // an answer in flight when the link dropped
+			ch <- errors.New("host " + c.host.Name + " went away")
+		}
 	}()
 	c.set(actx, Connected, "", time.Time{}, hello)
 	now := c.m.d.Now()
@@ -668,6 +704,22 @@ func (c *conn) attemptFull(ctx context.Context) (State, string) {
 			case proto.TypeRequest:
 				if IsKeyCommand(f.Cmd) {
 					c.emit(actx, Msg{Host: c.host.Name, State: Connected, Request: f.Cmd})
+				}
+			case proto.TypeScreen:
+				if f.Screen != nil {
+					c.emit(actx, Msg{Host: c.host.Name, State: Connected, Screen: f.Screen})
+				}
+			case proto.TypeAck:
+				c.mu.Lock()
+				ch := c.pending[f.ID]
+				delete(c.pending, f.ID)
+				c.mu.Unlock()
+				if ch != nil {
+					var err error
+					if f.Error != "" {
+						err = errors.New(f.Error)
+					}
+					ch <- err
 				}
 			case proto.TypeError:
 				switch st, detail := classifyRemoteError(f.Error); st {
@@ -841,6 +893,52 @@ func (c *conn) goTo(session, window, pane string) error {
 		})
 	}
 	return errors.New("host " + c.host.Name + " is not connected")
+}
+
+// answerWait bounds how long an answer waits for the host to type it.
+const answerWait = 5 * time.Second
+
+func (c *conn) answer(a answer.Answer) error {
+	c.mu.Lock()
+	send, cmds, client, p := c.send, c.cmds, c.client, c.poller
+	ch := make(chan error, 1)
+	id := ""
+	if send != nil {
+		c.nextID++
+		id = fmt.Sprintf("%d-%d", c.gen, c.nextID)
+		c.pending[id] = ch
+	}
+	c.mu.Unlock()
+	switch {
+	case send != nil:
+		if err := send(proto.Frame{Type: proto.TypeAnswer, ID: id, Answer: &a}); err != nil {
+			c.mu.Lock()
+			delete(c.pending, id)
+			c.mu.Unlock()
+			return err
+		}
+	case cmds != nil:
+		if err := c.enqueue(cmds, func() {
+			err := TypeAnswer(client, p.Snap(), a)
+			if err == nil {
+				p.MarkSeen(a.Pane)
+			}
+			ch <- err
+		}); err != nil {
+			return err
+		}
+	default:
+		return errors.New("host " + c.host.Name + " is not connected")
+	}
+	select {
+	case err := <-ch:
+		return err
+	case <-time.After(answerWait):
+		c.mu.Lock()
+		delete(c.pending, id)
+		c.mu.Unlock()
+		return errors.New("host " + c.host.Name + " did not answer in time")
+	}
 }
 
 func (c *conn) markSeen(pane string) {

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/w4jnl/flok/internal/agent"
+	"github.com/w4jnl/flok/internal/answer"
 	"github.com/w4jnl/flok/internal/merge"
 )
 
@@ -39,6 +40,10 @@ const (
 	TypeRequest = "request" // remote to local: a flok key pressed inside the host's tmux
 	TypeNotify  = "notify"  // local to remote: show a short message on the host's status line
 	TypePrefix  = "prefix"  // local to remote: the local tmux prefix, for the host's tmux to take while served
+	TypeAnswer  = "answer"  // local to remote: type into an agent pane (an answer from the phone)
+	TypeCapture = "capture" // local to remote: stream a pane's visible screen (On), or stop (the phone looks at it)
+	TypeScreen  = "screen"  // remote to local: a captured pane's screen, whenever it changed
+	TypeAck     = "ack"     // remote to local: the outcome of an answer (ID, Error)
 )
 
 // Frame is one line; Type says which payload field is set.
@@ -55,6 +60,17 @@ type Frame struct {
 	Text  string    `json:"text,omitempty"` // notify
 	Key   string    `json:"key,omitempty"`  // prefix: a tmux key name such as C-a
 	Keys  []KeyBind `json:"keys,omitempty"` // prefix: the mapped keys ([keys] map) the host's tmux binds as well
+	// answer / ack: what to type into which pane, the request id and its outcome; capture /
+	// screen: the pane (Pane, On) and its text
+	ID     string         `json:"id,omitempty"`
+	Answer *answer.Answer `json:"answer,omitempty"`
+	Screen *Screen        `json:"screen,omitempty"`
+}
+
+// Screen is a pane's visible text, sent while captured (the phone is looking at it).
+type Screen struct {
+	Pane string `json:"pane"`
+	Text string `json:"text"`
 }
 
 // KeyBind is one mapped key: a tmux key name and the flok key command it runs.
@@ -82,10 +98,11 @@ const (
 	FeaturePrefix = "prefix" // takes the local prefix on a prefix frame
 	FeatureNotify = "notify" // shows notify frames on the status line
 	FeatureKeyMap = "keymap" // binds the mapped keys of a prefix frame and relays `last …`
+	FeatureAnswer = "answer" // types answer frames into agent panes and streams captured screens (the phone)
 )
 
 // ServeFeatures is what this flok's serve advertises.
-var ServeFeatures = []string{FeatureKeys, FeaturePrefix, FeatureNotify, FeatureKeyMap}
+var ServeFeatures = []string{FeatureKeys, FeaturePrefix, FeatureNotify, FeatureKeyMap, FeatureAnswer}
 
 // Has says whether the hello advertised a feature.
 func (h *Hello) Has(feature string) bool {

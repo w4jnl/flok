@@ -17,6 +17,7 @@ on:
 
 permissions:
   contents: write
+  packages: write
 
 jobs:
   tarballs:
@@ -59,3 +60,34 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "$TAG" dist/*.tar.gz dist/sha256sums.txt --clobber
+
+  # flok-relay as a container image: ghcr.io/<owner>/flok-relay:<tag> and :latest, for amd64 and
+  # arm64. The binaries are cross-compiled here and copied into a scratch image per platform (no
+  # emulation), then joined under one tag; plain docker, no third-party actions.
+  relay-image:
+    name: relay image
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: build and push
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/flok-relay
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          mkdir -p dist
+          for arch in amd64 arm64; do
+            CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath -ldflags "-s -w -X main.version=$TAG" -o "dist/flok-relay_linux_$arch" ./cmd/flok-relay
+            docker buildx build --platform "linux/$arch" -f deploy/relay/Dockerfile --build-arg "BIN=dist/flok-relay_linux_$arch" \
+              -t "$image:$TAG-$arch" --push .
+          done
+          docker buildx imagetools create -t "$image:$TAG" -t "$image:latest" "$image:$TAG-amd64" "$image:$TAG-arm64"
+          docker buildx imagetools inspect "$image:$TAG"

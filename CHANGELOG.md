@@ -6,6 +6,18 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+- **flok on your phone, the link and the relay.** `flok-relay` is a small service you run
+  (one static binary; a container image `ghcr.io/w4jnl/flok-relay` and a Portainer stack behind
+  Traefik in `deploy/relay`). With `[link] url` and `token` the sidebar keeps an outbound
+  WebSocket to it (through `HTTPS_PROXY`, reconnecting with backoff) and streams its view,
+  the blocked / done / error transitions and the screen of a pane while the phone looks at it;
+  back come answers (allowlisted keys and a short line, typed into agent panes only, logged in
+  `events.log`), seen marks and subscriptions, for agents on the instance's remote hosts too.
+  The relay's API (`/api/instances`, `/api/answer`, `/api/seen`, `/api/devices`, `/api/ws`)
+  is what the app will speak; `flok-relay tail` shows the stream from a shell; pushes go
+  through APNs with your provider key, with categories for lock-screen actions. `flok doctor`
+  reports the link, the footer says when the relay is out of reach, `snapshot.json` has a
+  `link` block. New e2e suite m11 runs the real relay.
 - **A message on your phone.** `[notify] url` posts to an ntfy topic (or any endpoint taking
   the JSON form, `format = "json"`) whenever an agent turns blocked, done or fails, on this
   machine or on any connected host, titled with the instance and the agent (`home · beta/docs`)

@@ -3,7 +3,7 @@
 # watchdog, and ends with a table of results (also published to the GitHub Actions step summary
 # when there is one). Exit 1 when any suite did not pass. No retries: a flake is a bug.
 #
-#   scripts/e2e/run-all.sh            all suites, m1 … m10
+#   scripts/e2e/run-all.sh            all suites, m1 … m11
 #   scripts/e2e/run-all.sh m4 m7      a subset
 #   E2E_SUITE_TIMEOUT=300             seconds a suite may take before it is killed (TERM, then KILL)
 #   E2E_LOG_DIR=/tmp/flok-e2e-logs    where lib.sh keeps a debug run's logs (FLOK_DEBUG=1)
@@ -12,7 +12,7 @@
 # bash 3.2 (macOS /bin/bash) is enough: no mapfile, no associative arrays, no coreutils timeout.
 set -uo pipefail
 cd "$(dirname "$0")/../.." || exit 1
-SUITES=${*:-m1 m2 m3 m4 m5 m6 m7 m8 m9 m10}
+SUITES=${*:-m1 m2 m3 m4 m5 m6 m7 m8 m9 m10 m11}
 TIMEOUT=${E2E_SUITE_TIMEOUT:-300}
 LOGS=${E2E_LOG_DIR:-/tmp/flok-e2e-logs}
 mkdir -p "$LOGS"

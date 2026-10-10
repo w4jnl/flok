@@ -20,7 +20,8 @@ make test                  # go test ./...
 make vet                   # go vet ./...
 go test ./internal/merge -run TestHookAuthorityAndSeen -v   # one test
 go test ./internal/rules -run TestClaudeFixtures -v         # screen-rule fixtures
-make e2e                   # headless end-to-end suites m1..m10 in order (scripts/e2e/run-all.sh); SUITES="m4 m7" for a subset
+make e2e                   # headless end-to-end suites m1..m11 in order (scripts/e2e/run-all.sh); SUITES="m4 m7" for a subset
+make relay                 # go build -o bin/flok-relay ./cmd/flok-relay (the phone relay, cgo-free)
 scripts/e2e/m1.sh          # one suite (see below); never run two at once, they share the isolated servers
 scripts/spike/m0-outer.sh check   # nested-outer passthrough checks on isolated servers
 ```
@@ -50,7 +51,12 @@ observes the BEL), m8 `flok resurrect save`, m9 keep-awake (`pmset -g assertions
 sidebar pid on macOS, the macOS-only message elsewhere), m10 remote hosts: `fake_ssh_setup` /
 `fake_host` in lib.sh put a fake `ssh` on PATH that runs the remote command locally against
 isolated servers `e2e-<host>` with per-host state and config (`$T/down-<host>` / `$T/auth-<host>`
-simulate failures) and `rhook` replays a hook on a host. They need a real `tmux` on PATH and `python3` (to read `runtime.json`).
+simulate failures) and `rhook` replays a hook on a host, m11 flok on the phone: it builds and runs
+the real `flok-relay` on 127.0.0.1 with a stand-in APNs (`scripts/e2e/fakehttp`, the Go HTTP
+stand-in m2 also uses for ntfy: it listens before it reports its port, because on macOS a connect to
+a bound-but-unlistened port is dropped, not refused) and a generated P-256 key (openssl), links the sidebar to it through `E2E_EXTRA_CONFIG`, drives the relay's API with curl
+and `flok-relay tail`, answers a local and a remote (beta, full mode) agent, and restarts the
+relay. They need a real `tmux` on PATH and `python3` (to read `runtime.json`).
 `lib.sh` exports `TMUX_VER`/`tmux_at_least MAJ MIN` for checks older servers cannot pass.
 Timing rules, learned from a month of CI: assert a transition with `expect_soon NAME PATTERN
 CMD…` (polls until it holds; `expect_soon … capture` for the sidebar), never `sleep; expect`;
@@ -242,7 +248,31 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
   its own goroutine, `ProxyFromEnvironment`); `ui/push.go` `notePush` runs at the end of
   `refederate` and diffs the federated agents' states against the last view (primed, not
   announced, at start; blocked / done / error only; 2 s gap per pane and kind), so local and
-  remote agents are covered alike; `config.InstanceName` is `[link] name` or the short hostname.
+  remote agents are covered alike, and hands the same transitions to the link;
+  `config.InstanceName` is `[link] name` or the short hostname.
+- flok on the phone: `internal/link` is the sidebar's outbound WebSocket to the relay
+  (`[link] url`/`token`, `github.com/coder/websocket`, `ProxyFromEnvironment`, backoff, a
+  `hello` then `snap`/`event`/`screen`/`ack` frames out and `answer`/`seen`/`subscribe` in;
+  `internal/link/wire` is the frame set shared with the relay and the app; the snapshot is
+  deduped and always precedes the events announced with it, so the relay's badge is right).
+  `ui/link.go` feeds it from `publish` and `notePush`, acts on commands (`agentByRef` against
+  `m.fed`, local answers through `remote.TypeAnswer` on the inner server, remote ones through
+  `Manager.Answer`: an `answer` frame and its `ack` in full mode, `send-keys` over ssh in plain
+  mode; screens: local and plain-mode panes captured every second from the sidebar, full-mode
+  ones by serve on a `capture` frame → `screen` frames, resent after a host reconnects), logs
+  every command to `events.log` and puts the link's state in the footer (after 30 s down) and
+  `snapshot.json` (`link`). `internal/answer` is the allowlist (named keys, ≤ 200 printable
+  chars, `Args` = one `send-keys` invocation, a trailing `;` escaped) every path goes through.
+  `internal/relay` is `flok-relay` (`cmd/flok-relay`: serve, tail, token, health): `/link` for
+  instances (bearer instance token; the newest connection under a name replaces the older),
+  `/api/*` for the app (bearer device token; `/api/ws` live stream, `/api/answer` waits for the
+  instance's ack), subscriptions refcounted per instance and pane, the last snapshot kept while
+  offline, pushes through `internal/relay/apns` (HTTP/2, ES256 provider token cached 50 min,
+  categories `FLOK_PERMISSION`/`FLOK_QUESTION`/`FLOK_DONE`, badge = unseen over all instances,
+  410 forgets the device) to the devices in `devices.json`. `deploy/relay` has the Dockerfile
+  (scratch + CA bundle), the Portainer compose with Traefik labels and the example configs; the
+  release workflow publishes `ghcr.io/w4jnl/flok-relay` for amd64 and arm64 with plain docker
+  (no third-party actions). The iOS app is not written yet; `flok-relay tail` stands in.
 - `internal/ui/model.go` drives three independent poll cadences from config (`poll_ms` for the
   tmux snapshot, `registry_poll_ms`, `screen_poll_ms`) plus an fsnotify watch on the store so
   hook writes re-render immediately. CPU rules that are easy to undo by accident: an unchanged

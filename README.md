@@ -388,6 +388,8 @@ sidebar ──federated view, every merge──► blocked / done / error transi
                                                                                  (ntfy headers, or JSON)
 ```
 
+The simplest form: a message, no app. The next section is the full one, with answers.
+
 With `[notify] url` set, the sidebar posts a short message whenever an agent turns blocked,
 done or fails, on this machine or on any connected host: the title names the instance and the
 agent (`home · api`, `home · beta/docs`), the line says what happened (`needs you: perm:Bash`,
@@ -400,6 +402,52 @@ start announces nothing, a repeat within two seconds is dropped. The instance na
 `[link] name`, else the machine's short hostname. The post runs on its own goroutine with a
 ten-second timeout and a bounded queue, so a dead endpoint costs nothing but a line in
 `sidebar.log` (`FLOK_DEBUG=1`). `flok doctor` shows the endpoint.
+
+### flok on your phone
+
+```
+ home  flok ──┐                                   ┌── the app (iOS): every instance, answer, screen
+              ├── wss (outbound, via HTTPS_PROXY) ──► flok-relay ◄── HTTPS / wss (device token)
+office flok ──┘      [link] url, token            │  behind your reverse proxy
+                                                  └── APNs ──► pushes with Approve / Deny
+```
+
+`flok-relay` is a small service you run (one static binary, a container behind Traefik, Caddy
+or nginx; see [`deploy/relay`](deploy/relay)). Every flok instance you want on the phone dials
+out to it over a WebSocket with `[link] url` and `token`, so a Mac behind the office firewall
+or a home NAT needs nothing opened: outbound HTTPS is enough, and `HTTPS_PROXY` is honoured.
+The instance streams what the sidebar publishes anyway (the same view the menu bar reads,
+remote hosts included), the user-facing transitions, and the screen of a pane while the phone
+looks at it. Back come three things, nothing else: an **answer** (a short line of text and a
+few named keys, typed into an agent pane with one `send-keys`; the keys are an allowlist, text
+is at most 200 printable characters, only agent panes qualify, every command lands in
+`events.log`), a **seen** mark, and a **subscription** to a pane's screen. Agents on the
+instance's remote hosts are answered the same way, through the main instance (full mode: the
+host's `flok serve` types it, with its own check; plain mode: `send-keys` over ssh).
+
+The relay keeps the last snapshot of every instance for an instant first paint, tells the app
+when an instance goes offline, and sends pushes through APNs with the provider key of your
+developer account: the title names the instance and the agent, the category carries the
+actions (`FLOK_PERMISSION`: Approve / Deny from the lock screen), the badge counts what waits.
+It never originates a command. Its API (bearer device token) is what the app speaks and what
+you can drive from a shell:
+
+```
+GET  /healthz                                       is it up (no token)
+GET  /api/instances                                 every instance with its last snapshot
+POST /api/answer   {"instance","pane","text","keys"}   type into an agent pane; waits for the instance's ack
+POST /api/seen     {"instance","pane"}
+POST /api/devices  {"token","name","sandbox"}       register a phone for pushes (DELETE /api/devices/<token>)
+GET  /api/ws                                        the live stream: instances, instance, event, screen; subscribe / answer / seen in
+```
+
+`flok-relay tail -url https://flok.example.net -token … [-subscribe home:%12]` prints that
+stream as JSON lines, which is the quickest way to see what the phone would. Tokens come from
+`flok-relay token`; the instance's goes into its `[link] token`, the phone's into the app.
+`flok doctor` reports the link as the sidebar sees it (or probes the relay's `/healthz` when
+the sidebar is not running), the footer says when the relay has been out of reach for half a
+minute, and `snapshot.json` carries the link's state. The app itself is the next step; until
+it exists the relay, `tail` and the API already work, and `[notify]` above gives the pushes.
 
 ### Keep awake (macOS)
 
@@ -703,6 +751,10 @@ flok host remove | connect | disconnect <name>
 flok host list [--json|--names]  |  flok host status [--json]  |  flok host front <name>|local|<N> [--focus]
 flok host next | prev | last | menu     rotate the server in front, or pick one from a tmux menu
 flok serve --stdio | --hello      run headless on this host for a flok elsewhere (started over ssh by it)
+
+flok-relay serve [-config relay.toml] [-listen :8080] [-data /data]   the relay for the phone (deploy/relay)
+flok-relay tail -url <relay> -token <device token> [-subscribe inst:%12] [-answer inst:%12 -text y -keys Enter]
+flok-relay token | health [-url …] | version
 ```
 
 ## Configuration
@@ -823,8 +875,10 @@ token = ""                  # sent as Authorization: Bearer <token>
 format = "ntfy"             # ntfy: Title/Priority/Tags headers and a text line | json
 events = ["blocked", "done", "error"]
 
-[link]                      # this flok's name on the phone and in notifications
+[link]                      # flok on your phone: this flok's name, and the relay it dials out to
 name = ""                   # "" = the machine's short hostname
+url = ""                    # your flok-relay: wss://flok.example.net/link (https://flok.example.net works too); "" = off
+token = ""                  # one of the relay's instance_tokens (flok-relay token prints one)
 
 [theme]                     # Dracula by default; state tokens may name a colour or a hex value
 mode = "auto"               # auto: follow the terminal's background, asked at `flok up` | dark | light
@@ -847,7 +901,7 @@ brand = "#12999D"
 | `~/.local/state/flok/agents/` | one JSON record per agent pane, written by the hook |
 | `~/.local/state/flok/seen/` | when you last looked at each agent pane |
 | `~/.local/state/flok/names.json` | row names chosen with `n`, by pane (`%12`, `beta:%12`) |
-| `~/.local/state/flok/events.log` | every hook event with the resulting state (JSON lines) |
+| `~/.local/state/flok/events.log` | every hook event with the resulting state, and every command from the phone (JSON lines) |
 | `~/.local/state/flok/runtime.json` | the running outer session: panes, sockets, client tty, terminal app |
 | `~/.local/state/flok/snapshot.json` | the sidebar's merged view, read by flok-bar |
 | `~/.local/state/flok/flok-bar.pid` | the menu bar process started by `flok up` |

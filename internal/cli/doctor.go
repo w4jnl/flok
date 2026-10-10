@@ -205,6 +205,7 @@ func runDoctor(cfg config.Config) int {
 	} else {
 		add("ok", "notify: off ([notify] url posts blocked/done/error to your phone, e.g. an ntfy topic)")
 	}
+	doctorLink(cfg, add)
 
 	// state dir + manifests
 	dir := config.StateDir()
