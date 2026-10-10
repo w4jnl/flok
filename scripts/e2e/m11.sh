@@ -91,7 +91,7 @@ expect_soon "a push for the remote agent names the host" '[|]e2e · beta/'"$PROJ
 kill "$TAIL_PID" 2>/dev/null || true
 "$RELAY" tail -url "http://127.0.0.1:$RELAY_PORT" -token "$DEV_TOK" -subscribe "e2e:beta:$BPANE" > "$T/tail.out" 2>&1 &
 TAIL_PID=$!
-expect_soon -t 10 "beta's screen streams through serve, the sidebar and the relay" '"type":"screen","instance":"e2e","screen":."pane":"beta:'"$BPANE"'","text":".*\\nn\\n' cat "$T/tail.out"
+expect_soon -t 10 "beta's screen streams through serve, the sidebar and the relay" '"type":"screen","instance":"e2e","screen":."pane":"beta:'"$BPANE"'","text":".*\\nn *\\n' cat "$T/tail.out"   # 3.2a pads captured lines with blanks
 kill "$TAIL_PID" 2>/dev/null || true
 
 # --- the relay goes away and comes back --------------------------------------------------------
