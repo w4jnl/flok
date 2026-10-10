@@ -1,28 +1,15 @@
 #!/usr/bin/env bash
 # M2: hook-driven states. The inner client looks at Alpha:0, so the agent pane is unfocused.
-# A tiny HTTP server stands in for an ntfy topic: [notify] posts land in $NTFY_LOG as
-# "<Title>|<Priority>|<Authorization>|<body>" lines.
-NTFY_LOG=$(mktemp)
-NTFY_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()')
-python3 - "$NTFY_PORT" "$NTFY_LOG" <<'PYSRV' &
-import sys, time
-from email.header import decode_header, make_header
-from http.server import BaseHTTPRequestHandler, HTTPServer
-port, log = int(sys.argv[1]), sys.argv[2]
-class H(BaseHTTPRequestHandler):
-    def do_POST(self):
-        body = self.rfile.read(int(self.headers.get("Content-Length", "0"))).decode()
-        title = str(make_header(decode_header(self.headers.get("Title", ""))))   # RFC 2047, as ntfy reads it
-        with open(log, "a", encoding="utf-8") as f:
-            f.write("%s|%s|%s|%s\n" % (title, self.headers.get("Priority", ""), self.headers.get("Authorization", ""), body))
-        self.send_response(200); self.end_headers()
-    def log_message(self, *a): pass
-srv = HTTPServer(("127.0.0.1", port), H); srv.timeout = 1
-end = time.time() + 240
-while time.time() < end:
-    srv.handle_request()
-PYSRV
+# fakehttp (scripts/e2e/fakehttp) stands in for an ntfy topic: [notify] posts land in $NTFY_LOG
+# as "<Title>|<Priority>|<Authorization>|<body>" lines; it reports its port once it listens.
+R0=$(cd "$(dirname "$0")/../.." && pwd)
+FH=$(mktemp -d)
+go build -C "$R0" -o "$FH/fakehttp" ./scripts/e2e/fakehttp
+NTFY_LOG=$FH/ntfy.log
+"$FH/fakehttp" -mode ntfy -log "$NTFY_LOG" -portfile "$FH/port" &
 NTFY_PID=$!
+for _ in $(seq 1 100); do [ -s "$FH/port" ] && break; sleep 0.1; done
+NTFY_PORT=$(cat "$FH/port")
 E2E_EXTRA_CONFIG=$(printf '[notify]\nurl = "http://127.0.0.1:%s/flok"\ntoken = "t0k"\n[link]\nname = "e2e"\n' "$NTFY_PORT")
 export E2E_EXTRA_CONFIG
 source "$(dirname "$0")/lib.sh"
@@ -153,5 +140,5 @@ hook claude '{"hook_event_name":"SessionEnd","session_id":"abc","reason":"prompt
 wait_for "~$PROJ" 3 || true
 expect "session end deletes the record (back to title-only ~)" "~$PROJ" "$(capture)"
 expect "record file removed" '^0$' "$(ls "$T/state/agents" | grep -c '\.json$' || true)"
-kill "$NTFY_PID" 2>/dev/null || true; rm -f "$NTFY_LOG"
+kill "$NTFY_PID" 2>/dev/null || true; rm -rf "$FH"
 finish
