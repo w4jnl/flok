@@ -1,0 +1,3 @@
+// Copy to Local.xcconfig (gitignored). Your Apple team id, for signing device and TestFlight
+// builds; the simulator needs none. Found under Membership in the developer account.
+FLOK_TEAM_ID = ABCDE12345
