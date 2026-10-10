@@ -285,6 +285,7 @@ func (m *Model) refederate() {
 		m.snap.Warnings = append(append([]string(nil), m.snap.Warnings...), m.d.Notices...)
 	}
 	m.noteFocus()
+	m.notePush()
 	m.vc.valid = false
 }
 

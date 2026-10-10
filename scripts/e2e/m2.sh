@@ -1,5 +1,17 @@
 #!/usr/bin/env bash
 # M2: hook-driven states. The inner client looks at Alpha:0, so the agent pane is unfocused.
+# fakehttp (scripts/e2e/fakehttp) stands in for an ntfy topic: [notify] posts land in $NTFY_LOG
+# as "<Title>|<Priority>|<Authorization>|<body>" lines; it reports its port once it listens.
+R0=$(cd "$(dirname "$0")/../.." && pwd)
+FH=$(mktemp -d)
+go build -C "$R0" -o "$FH/fakehttp" ./scripts/e2e/fakehttp
+NTFY_LOG=$FH/ntfy.log
+"$FH/fakehttp" -mode ntfy -log "$NTFY_LOG" -portfile "$FH/port" &
+NTFY_PID=$!
+for _ in $(seq 1 100); do [ -s "$FH/port" ] && break; sleep 0.1; done
+NTFY_PORT=$(cat "$FH/port")
+E2E_EXTRA_CONFIG=$(printf '[notify]\nurl = "http://127.0.0.1:%s/flok"\ntoken = "t0k"\n[link]\nname = "e2e"\n' "$NTFY_PORT")
+export E2E_EXTRA_CONFIG
 source "$(dirname "$0")/lib.sh"
 
 # Hooks outside tmux are ignored and write nothing.
@@ -34,6 +46,7 @@ expect "working shows tool + elapsed" "[◐◓◑◒] $PROJ +Bash 0:0[0-9]" "$sn
 
 IN select-pane -t "$AGENT" -T "✳ fake-agent"     # permission prompt: title goes idle, block must stick
 hook claude '{"hook_event_name":"PermissionRequest","session_id":"abc","tool_name":"Bash","tool_input":{"command":"npm test"},"tool_use_id":"t1"}'
+expect_soon "the permission request is pushed to the phone (ntfy form)" "^e2e · $PROJ[|]high[|]Bearer t0k[|]needs you: perm:Bash\$" cat "$NTFY_LOG"
 hook claude '{"hook_event_name":"Notification","session_id":"abc","notification_type":"permission_prompt","message":"Claude wants to run: Bash"}'
 wait_for 'perm:Bash' 3 || true
 sleep 1.5   # long enough for any title-based fallback to have fired
@@ -53,6 +66,8 @@ hook claude '{"hook_event_name":"Notification","session_id":"abc","notification_
 wait_for 'done · 2' 3 || true
 snap=$(capture); echo "--- done ---"; printf '%s\n' "$snap" | grep -v '^ *$' | sed -n '4,6p'
 expect "stop while unfocused -> done · 2 (blocked + done)" "✓ $PROJ +done · 2" "$snap"
+expect_soon "... and the finish is pushed too" "^e2e · $PROJ[|]default[|]Bearer t0k[|]finished\$" cat "$NTFY_LOG"
+expect "two pushes so far, nothing for the working turn" '^2$' "$(wc -l < "$NTFY_LOG" | tr -d ' ')"
 expect "events logged" 'PermissionRequest' "$(cat "$T/state/events.log")"
 expect "state file has hooks" '"has_hooks": true' "$(cat "$T"/state/agents/*.json)"
 
@@ -125,4 +140,5 @@ hook claude '{"hook_event_name":"SessionEnd","session_id":"abc","reason":"prompt
 wait_for "~$PROJ" 3 || true
 expect "session end deletes the record (back to title-only ~)" "~$PROJ" "$(capture)"
 expect "record file removed" '^0$' "$(ls "$T/state/agents" | grep -c '\.json$' || true)"
+kill "$NTFY_PID" 2>/dev/null || true; rm -rf "$FH"
 finish

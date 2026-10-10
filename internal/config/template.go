@@ -135,6 +135,17 @@ const Template = `# flok configuration - https://github.com/w4jnl/flok
 
 # [theme.light]               # palette for light terminals (Dracula's Alucard); same keys as [theme]
 # brand = "#12999D"
+
+[notify]                      # a message on your phone when an agent needs you or finishes
+# url = ""                    # an ntfy topic (https://ntfy.sh/<your-topic>, or your own ntfy), or any
+                              # endpoint that takes the JSON form (format = "json"); "" = off
+# token = ""                  # sent as Authorization: Bearer <token>
+# format = "ntfy"             # ntfy: Title/Priority/Tags headers and a text line | json: {instance, host,
+                              # agent, pane, kind, reason, at}
+# events = ["blocked", "done", "error"]
+
+[link]                        # this flok's name on the phone and in notifications
+# name = ""                   # "" = the machine's short hostname (home, office, …)
 `
 
 // WriteTemplate creates the config file with Template when it does not exist yet.

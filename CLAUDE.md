@@ -238,6 +238,11 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
   `poller.Run` drives the same pipeline headless for `flok serve` and plain-mode remote hosts.
   The sequencing rules below live there now; `internal/tmux/tmuxtest.Fake` is the tmux stand-in
   both packages' tests use.
+- `internal/push` posts `[notify]` events (ntfy headers or JSON, bearer token, bounded queue on
+  its own goroutine, `ProxyFromEnvironment`); `ui/push.go` `notePush` runs at the end of
+  `refederate` and diffs the federated agents' states against the last view (primed, not
+  announced, at start; blocked / done / error only; 2 s gap per pane and kind), so local and
+  remote agents are covered alike; `config.InstanceName` is `[link] name` or the short hostname.
 - `internal/ui/model.go` drives three independent poll cadences from config (`poll_ms` for the
   tmux snapshot, `registry_poll_ms`, `screen_poll_ms`) plus an fsnotify watch on the store so
   hook writes re-render immediately. CPU rules that are easy to undo by accident: an unchanged

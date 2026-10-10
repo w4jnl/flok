@@ -6,6 +6,13 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+- **A message on your phone.** `[notify] url` posts to an ntfy topic (or any endpoint taking
+  the JSON form, `format = "json"`) whenever an agent turns blocked, done or fails, on this
+  machine or on any connected host, titled with the instance and the agent (`home · beta/docs`)
+  and saying what happened (`needs you: perm:Bash`, `finished`); nothing for the pane in front
+  of you, nothing at start, repeats within two seconds dropped. `[link] name` names the
+  instance (default: the hostname). `flok doctor` shows the endpoint. The first step of flok on
+  the phone; the relay and the app follow.
 - **Paused, not working.** An agent that answered while background shells, subagents or
   workflows still run (Claude Code lists them on its Stop hook) was shown as working, spinner
   and all, until the work woke it. It is now `paused`: a still grey `◍`, the detail `bg shell`

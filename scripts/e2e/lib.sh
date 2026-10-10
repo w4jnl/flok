@@ -48,7 +48,7 @@ cleanup() { [ -n "${summary_done:-}" ] || echo "== ${pass:-0} passed, ${fail:-0}
   if [ -n "${FLOK_DEBUG:-}" ]; then # keep the sidebar/remote/serve logs of a debug run
     d=/tmp/flok-e2e-logs/$(basename "$0" .sh); rm -rf "$d"; mkdir -p "$d"
     cp "$T"/state/*.log "$d"/ 2>/dev/null || true
-    for h in ${FAKE_HOSTS:-}; do cp "$T/hosts/$h/state/serve.log" "$d/serve-$h.log" 2>/dev/null || true; done
+    for h in ${FAKE_HOSTS:-}; do cp "$T/hosts/$h/state/serve.log" "$d/serve-$h.log" 2>/dev/null || true; cp "$T/hosts/$h/ssh.log" "$d/ssh-$h.log" 2>/dev/null || true; done
     mv "$T"/tmux-*.log "$R"/tmux-*.log "$d"/ 2>/dev/null || true   # tmux -vv's server/client/out logs
   fi
   rm -rf "$T"; }
@@ -168,6 +168,7 @@ unset TMUX TMUX_PANE FLOK_OUTER FLOK_RIGHT_PANE
 export PATH="$FAKE/hosts/\$host/bin:\$PATH" FLOK_STATE="$T/hosts/\$host/state" FLOK_CONFIG="$T/hosts/\$host/config.toml" \\
   HOME="$T/hosts/\$host/home" FLOK_E2E_REGISTRY="$T/hosts/\$host/registry.json" SSH_CONNECTION="127.0.0.1 1 127.0.0.1 22"
 [ \$# -gt 0 ] || exit 0
+[ -z "\${FLOK_DEBUG:-}" ] || printf '%s\n' "\$*" >> "$T/hosts/\$host/ssh.log"   # what flok ran there (debug runs)
 exec sh -c "\$*"
 SSH
   chmod +x "$FAKE/ssh"

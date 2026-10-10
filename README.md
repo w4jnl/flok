@@ -206,6 +206,10 @@ What flok does about it:
   work, a badge for agents waiting for you, and a dropdown of agents (and of servers, once a
   remote host is registered); a click brings the terminal window to the front and puts you on
   that agent's pane.
+- **A message on your phone** when an agent needs you or finishes: `[notify] url` posts to an
+  ntfy topic (or any endpoint taking the JSON form) on blocked, done and error, for agents on
+  every server, named after the instance it came from. Works from behind any firewall that lets
+  HTTPS out; `HTTPS_PROXY` is honoured.
 - **Keep awake** (macOS, off by default): `flok keep-awake` or the menu bar's "Keep awake" row stops
   the Mac from idle-sleeping and keeps the display on while agents run unattended, until you
   turn it off or flok stops; a ⚡ in the menu bar shows it is on. With
@@ -376,6 +380,26 @@ app that ran `flok up` (recorded from `TERM_PROGRAM`: Ghostty, iTerm2, Terminal,
 best effort, raises the `TMUX…` window. Raising a specific window goes through System Events and
 needs Accessibility permission for `osascript`; without it the app comes to the front with its
 last-used window, which is usually the right one anyway.
+
+### A message on your phone
+
+```
+sidebar ──federated view, every merge──► blocked / done / error transitions ──► POST [notify] url
+                                                                                 (ntfy headers, or JSON)
+```
+
+With `[notify] url` set, the sidebar posts a short message whenever an agent turns blocked,
+done or fails, on this machine or on any connected host: the title names the instance and the
+agent (`home · api`, `home · beta/docs`), the line says what happened (`needs you: perm:Bash`,
+`finished`, `failed`). The default format is [ntfy](https://ntfy.sh)'s (`Title`, `Priority`,
+`Tags` headers and a text body), so a topic on ntfy.sh or on your own ntfy server, with the
+ntfy app on the phone, is all it takes; `format = "json"` posts `{instance, host, agent, pane,
+kind, reason, at}` for anything else. A `token` goes out as a bearer token. The same rules as
+for sounds apply: nothing for the pane in front of you (a watched turn ends idle, not done), a
+start announces nothing, a repeat within two seconds is dropped. The instance name is
+`[link] name`, else the machine's short hostname. The post runs on its own goroutine with a
+ten-second timeout and a bounded queue, so a dead endpoint costs nothing but a line in
+`sidebar.log` (`FLOK_DEBUG=1`). `flok doctor` shows the endpoint.
 
 ### Keep awake (macOS)
 
@@ -791,6 +815,16 @@ remote_path = "/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:/opt/local/bin"
                             # ssh shell sees only the system PATH (Homebrew's tmux would be invisible)
 serve_command = "flok serve --stdio"   # what mode full runs on the host; flok host add --flok <path>
                             # names the binary per host when it is not on the non-interactive PATH
+
+[notify]                    # a message on your phone when an agent needs you or finishes
+url = ""                    # an ntfy topic (https://ntfy.sh/<your-topic> or your own ntfy), or any endpoint
+                            # taking the JSON form; "" = off
+token = ""                  # sent as Authorization: Bearer <token>
+format = "ntfy"             # ntfy: Title/Priority/Tags headers and a text line | json
+events = ["blocked", "done", "error"]
+
+[link]                      # this flok's name on the phone and in notifications
+name = ""                   # "" = the machine's short hostname
 
 [theme]                     # Dracula by default; state tokens may name a colour or a hex value
 mode = "auto"               # auto: follow the terminal's background, asked at `flok up` | dark | light

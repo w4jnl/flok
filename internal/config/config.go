@@ -5,6 +5,7 @@ package config
 import (
 	"errors"
 	"os"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 )
@@ -68,6 +69,21 @@ type Sounds struct {
 	Done          string  `toml:"done"`
 	Blocked       string  `toml:"blocked"`
 	Error         string  `toml:"error"`
+}
+
+// Notify posts a short message to an HTTP endpoint (an ntfy topic, or anything taking the JSON
+// form) when an agent needs the user or finishes: the phone side of flok.
+type Notify struct {
+	URL    string   `toml:"url"`    // "" = off
+	Token  string   `toml:"token"`  // Authorization: Bearer <token>
+	Format string   `toml:"format"` // ntfy (title/priority/tags headers, text body) | json
+	Events []string `toml:"events"` // blocked, done, error
+}
+
+// Link names this flok instance to the outside (notifications, the phone); the relay link of
+// the phone app grows here.
+type Link struct {
+	Name string `toml:"name"` // "" = the machine's short hostname
 }
 
 // KeepAwake tunes `flok keep-awake` (macOS).
@@ -164,11 +180,40 @@ type Config struct {
 	KeepAwake KeepAwake `toml:"keep_awake"`
 	Theme     Theme     `toml:"theme"`
 	Hosts     Hosts     `toml:"hosts"`
+	Notify    Notify    `toml:"notify"`
+	Link      Link      `toml:"link"`
+}
+
+// InstanceName is what this flok calls itself in notifications: [link] name, else the short
+// hostname.
+func (c Config) InstanceName() string {
+	if n := strings.TrimSpace(c.Link.Name); n != "" {
+		return n
+	}
+	h, _ := os.Hostname()
+	if i := strings.IndexByte(h, '.'); i > 0 {
+		h = h[:i]
+	}
+	if h == "" {
+		return "flok"
+	}
+	return h
+}
+
+// Wants says whether [notify] events includes kind (blocked, done, error).
+func (n Notify) Wants(kind string) bool {
+	for _, e := range n.Events {
+		if e == kind {
+			return true
+		}
+	}
+	return false
 }
 
 // Default is the configuration used when no file exists; every key in the file overrides one field.
 func Default() Config {
 	return Config{
+		Notify:  Notify{Format: "ntfy", Events: []string{"blocked", "done", "error"}},
 		Inner:   Inner{Socket: "default", ReattachOnDetach: false},
 		Outer:   Outer{Socket: "flok", Session: "flok", ExtraConf: "~/.config/flok/outer.extra.conf"},
 		Sidebar: Sidebar{Width: 28, RailWidth: 6, RailThreshold: 12, SessionsMaxRatio: 0.4, AgentRows: 2, SessionOrder: "index", AgentOrder: "stable", ShowBranch: true, Brand: true, BranchSource: "active_pane", PollMs: 1000, IdlePollMs: 3000, SpinnerMs: 250, FPS: 15, RegistryPollMs: 10000, ScreenPollMs: 2000, CaptureLines: 0, StaleWorkingMin: 30},

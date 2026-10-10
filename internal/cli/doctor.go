@@ -200,6 +200,11 @@ func runDoctor(cfg config.Config) int {
 	} else {
 		add("ok", "sounds disabled")
 	}
+	if u := cfg.Notify.URL; u != "" {
+		add("ok", "notify: %s posts to %s (%s) as %q", strings.Join(cfg.Notify.Events, "/"), u, cfg.Notify.Format, cfg.InstanceName())
+	} else {
+		add("ok", "notify: off ([notify] url posts blocked/done/error to your phone, e.g. an ntfy topic)")
+	}
 
 	// state dir + manifests
 	dir := config.StateDir()
