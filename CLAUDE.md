@@ -146,7 +146,7 @@ One binary, several roles selected by subcommand (`internal/cli/root.go`):
   serve's `Keys.SetKeys` and goes straight into plain mode's `InstallKeys`. A `;` key is `\;`
   as a tmux argument (`keyArg`) and `semicolon` in the records (`keyToken`): an argument that
   ends in `;` ends the tmux command. Locally, `runSidebar` calls `remote.InstallLocalKeys` (mode
-  `[keys] bind`: missing/all/off) so the snippet is optional; a key running flok's command for it is left alone, one running another
+  `[keys] bind`: missing/all/off) so the snippet is optional; a key running flok's command for it through this binary (or bare `flok`, `sameFlok`) is left alone, one running it through another path is rebound (`binPath` resolves symlinks, Cellar → the stable brew link), one running another
   legacy flok command (`flokSub`/`isLegacy`: an older snippet's `A` = prev, `S` = the servers
   menu) is rebound in both modes and only unbound at the end (never saved: a restored line would
   raise the footer notice at every start); what it bound is in `$FLOK_STATE/keys.json` and

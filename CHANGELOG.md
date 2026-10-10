@@ -4,6 +4,15 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
+## Unreleased
+
+- **Keys that outlive the binary they were bound with.** A sidebar started through a symlink
+  (`~/.local/bin/flok`) bound every key to that path; when the link went away, each key
+  answered `returned 127` and later sidebars left the bindings alone because they ran flok. The
+  sidebar now resolves its own path (a Homebrew install keeps the stable `/opt/homebrew/bin`
+  link) and rebinds a flok key that runs another binary than itself; the snippet's bare `flok`
+  is still left to PATH.
+
 ## 0.6.0 (2026-10-10)
 
 - **flok on your phone, the link and the relay.** `flok-relay` is a small service you run

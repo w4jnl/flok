@@ -152,6 +152,10 @@ func report(err error) int {
 // Symlinks are kept on purpose: /opt/homebrew/bin/flok stays valid across `brew upgrade`,
 // the Cellar path behind it does not. On Linux os.Executable is already resolved, so a Cellar
 // path is mapped back to <prefix>/bin/flok when that link exists.
+// binPath is this executable for bindings, hooks and the outer panes: symlinks resolved, so a
+// start through ~/.local/bin/flok or another link binds the real binary (a link that goes away
+// later would leave every key answering "returned 127"), except that a Homebrew Cellar path is
+// mapped back to the stable /opt/homebrew/bin link, which outlives upgrades.
 func binPath() string {
 	p, err := os.Executable()
 	if err != nil {
@@ -161,6 +165,9 @@ func binPath() string {
 		if a, err := filepath.Abs(p); err == nil {
 			p = a
 		}
+	}
+	if r, err := filepath.EvalSymlinks(p); err == nil {
+		p = r
 	}
 	if i := strings.Index(p, "/Cellar/"); i >= 0 {
 		if link := filepath.Join(p[:i], "bin", filepath.Base(p)); fileExists(link) {
