@@ -358,6 +358,35 @@ func flokSub(cmd string) string {
 	return best
 }
 
+// flokBin is the binary a flok binding runs: "flok" (the snippet, found on PATH) or a path
+// ("/opt/homebrew/bin/flok"); "" when the command is not flok's.
+func flokBin(cmd string) string {
+	for _, lead := range []string{"flok' ", "flok "} {
+		i := strings.Index(cmd, lead)
+		if i < 0 {
+			continue
+		}
+		end := i + len("flok")
+		start := strings.LastIndexAny(cmd[:end], " '\"(=;|&") + 1 // a wrapper's msg=$(flok … is bare flok
+		return cmd[start:end]
+	}
+	return ""
+}
+
+// flokUsable says whether a flok binding still works: it runs this flok, bare `flok` (the
+// snippet leaves the lookup to PATH), or another flok that exists (the snippet's path while a
+// development build runs the sidebar). A binding whose binary is gone (a symlink removed, a
+// build directory moved) is an earlier sidebar's and is rebound, or every key answers
+// "returned 127".
+func flokUsable(cmd, flok string) bool {
+	bin := flokBin(cmd)
+	if bin == "" || bin == flok || !filepath.IsAbs(bin) { // bare flok, ~/…: the shell decides
+		return true
+	}
+	_, err := os.Stat(bin)
+	return err == nil
+}
+
 // cmdWords is a key command without its flags: "next --client '#{client_tty}'" → "next".
 func cmdWords(cmd string) string {
 	var words []string
@@ -418,12 +447,14 @@ func bindLocalArgs(flok string, cmds []KeyCommand) []string {
 // that are not bound at all (tmux's own `o` and `?` stay), "all" binds every key and saves what
 // was there, "off" does nothing. Keys already running flok's command for that key (the snippet)
 // are left as they are; a key running a flok command flok no longer binds there (an older
-// snippet's `A` = prev or `S` = the servers menu, an earlier sidebar) is brought up to date in
-// both modes and only unbound by the restore: putting the old line back would make the next
-// start find it again, long after the snippet was fixed (the snippet re-creates it on the next
-// reload if it was not). Any other command is the user's. What was done is recorded in
-// <dir>/keys.json; conflicts lists the keys left alone in mode missing with their current
-// command, stale the keys an older snippet had (key → that command).
+// snippet's `A` = prev or `S` = the servers menu, an earlier sidebar), or running flok through
+// a binary that no longer exists (an earlier sidebar started from a path that is gone), is
+// brought up to date in both modes and only unbound by the restore: putting the
+// old line back would make the next start find it again, long after the snippet was fixed
+// (the snippet re-creates it on the next reload if it was not). Any other command is the
+// user's. What was done is recorded in <dir>/keys.json; conflicts lists the keys left alone in
+// mode missing with their current command, stale the keys an older snippet had (key → that
+// command).
 func InstallLocalKeys(c tmux.Client, dir, flok, mode string, extra []KeyCommand) (installed []string, conflicts, stale map[string]string) {
 	conflicts, stale = map[string]string{}, map[string]string{}
 	if mode == "off" || flok == "" {
@@ -446,10 +477,11 @@ func InstallLocalKeys(c tmux.Client, dir, flok, mode string, extra []KeyCommand)
 	for _, k := range LocalKeySet(extra) {
 		b, bound := current[k.Key]
 		switch {
-		case bound && (b.ours || b.sub == cmdWords(k.Cmd)):
+		case bound && (b.ours || b.sub == cmdWords(k.Cmd)) && flokUsable(b.cmd, flok):
 			continue // the snippet, or an earlier sidebar
 		case bound && isLegacy(b.sub): // flok's own, from before this key changed: update it
 			stale[k.Key] = b.sub
+		case bound && b.flok && !flokUsable(b.cmd, flok): // flok's own, through a binary that is gone: rebind
 		case bound && mode != "all" && !forced[k.Key]:
 			conflicts[k.Key] = b.cmd
 			continue

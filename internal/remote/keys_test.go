@@ -113,10 +113,14 @@ func joined(c *keysClient, i int) string { return strings.Join(c.calls[i], " ") 
 
 func TestLocalKeys(t *testing.T) {
 	dir := t.TempDir()
-	// tmux's own o and ?, the snippet's b already there
+	// tmux's own o and ?, the snippet's b already there (its flok is another binary that exists)
+	other := filepath.Join(t.TempDir(), "flok")
+	if err := os.WriteFile(other, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	table := "bind-key    -T prefix       o                 select-pane -t :.+\n" +
 		"bind-key    -T prefix       ?                 list-keys -N\n" +
-		"bind-key    -T prefix       b                 run-shell -b \"/opt/homebrew/bin/flok toggle\"\n" +
+		"bind-key    -T prefix       b                 run-shell -b \"" + other + " toggle\"\n" +
 		"bind-key    -T prefix       c                 new-window\n"
 	c := &keysClient{keys: table}
 	installed, conflicts, stale := InstallLocalKeys(c, dir, "/x/flok", "missing", nil)
@@ -175,6 +179,37 @@ func TestLocalKeys(t *testing.T) {
 	}
 	if got, _, _ := InstallLocalKeys(c, dir, "/x/flok", "off", nil); got != nil {
 		t.Fatal("off binds nothing")
+	}
+}
+
+// Keys bound by an earlier sidebar through a binary that is gone (a removed symlink) are
+// rebound to this one in both modes, without saving them; bare `flok` and another flok that
+// exists are left alone.
+func TestLocalKeysReboundWhenTheirFlokIsGone(t *testing.T) {
+	dir := t.TempDir()
+	other := filepath.Join(t.TempDir(), "flok")
+	if err := os.WriteFile(other, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	table := "bind-key    -T prefix       Tab               run-shell -b \"/Users/x/.local/bin/flok last session\"\n" +
+		"bind-key    -T prefix       @                 run-shell -b \"'/Users/x/.local/bin/flok' menu servers\"\n" +
+		"bind-key    -T prefix       b                 run-shell -b \"flok toggle\"\n" +
+		"bind-key    -T prefix       B                 run-shell -b \"" + other + " hide\"\n"
+	if flokBin("run-shell -b '/Users/x/.local/bin/flok' menu servers") != "/Users/x/.local/bin/flok" || flokBin("run-shell -b flok toggle") != "flok" || flokBin("new-window") != "" {
+		t.Fatalf("flokBin: %q %q %q", flokBin("run-shell -b '/Users/x/.local/bin/flok' menu servers"), flokBin("run-shell -b flok toggle"), flokBin("new-window"))
+	}
+	c := &keysClient{keys: table}
+	installed, _, stale := InstallLocalKeys(c, dir, "/x/flok", "missing", []KeyCommand{{"Tab", "last session"}})
+	got := strings.Join(installed, " ")
+	if !strings.Contains(got, "Tab") || !strings.Contains(got, "@") || strings.Contains(got, " b ") || strings.Contains(got, " B ") || len(stale) != 0 {
+		t.Fatalf("installed %v stale %v", installed, stale)
+	}
+	bind := strings.Join(c.calls[len(c.calls)-1], " ")
+	if !strings.Contains(bind, "bind-key -T prefix Tab run-shell -b /x/flok last session") || !strings.Contains(bind, "bind-key -T prefix @ run-shell -b /x/flok menu servers") {
+		t.Fatalf("bind call %q", bind)
+	}
+	if st := loadLocalKeys(dir); len(st.Saved) != 0 {
+		t.Fatalf("a dead flok binding is ours, never saved: %+v", st)
 	}
 }
 
