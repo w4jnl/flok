@@ -20,6 +20,7 @@ import (
 	"github.com/w4jnl/flok/internal/merge"
 	"github.com/w4jnl/flok/internal/notify"
 	"github.com/w4jnl/flok/internal/poller"
+	"github.com/w4jnl/flok/internal/push"
 	"github.com/w4jnl/flok/internal/remote"
 	"github.com/w4jnl/flok/internal/rules"
 	"github.com/w4jnl/flok/internal/snapshot"
@@ -68,9 +69,13 @@ type Model struct {
 	hostSet       hosts.Set           // the registry as last applied
 	hostList      []hosts.Host
 	hostsApplied  bool
-	restartPanes  []string          // hosts whose parked pane must be rebuilt (attach target changed)
-	front         string            // host whose work pane is next to the sidebar; "" = local
-	history       []merge.Focus     // where the keyboard has been, newest first, across servers (flok last …)
+	restartPanes  []string      // hosts whose parked pane must be rebuilt (attach target changed)
+	front         string        // host whose work pane is next to the sidebar; "" = local
+	history       []merge.Focus // where the keyboard has been, newest first, across servers (flok last …)
+	pusher        push.Sender   // [notify]: a message to the phone on blocked / done / error; nil = off
+	pushPrev      map[string]agent.State
+	pushLast      map[string]time.Time
+	pushPrimed    bool
 	confirmRemove string            // host `x` asked to remove; the next key answers (y removes)
 	names         map[string]string // row names chosen with n, by pane ref (state.NamesFile)
 	renaming      bool              // the "name:" prompt is open for renameKey
@@ -168,6 +173,10 @@ func New(d Deps) Model {
 		sounder = notify.Compose(player, notify.Bell{Resolve: func() string { return tty }}, d.Cfg.Sounds.Bell)
 	}
 	m.debug = os.Getenv("FLOK_DEBUG") != ""
+	m.pushPrev, m.pushLast = map[string]agent.State{}, map[string]time.Time{}
+	if c := push.New(d.Cfg.Notify.URL, d.Cfg.Notify.Token, d.Cfg.Notify.Format, m.debugf); c != nil {
+		m.pusher = c
+	}
 	m.p = poller.New(poller.Deps{Cfg: d.Cfg, Tmux: d.Inner, Store: d.Store, Registry: d.Registry, Rules: d.Rules,
 		Adapters: d.Adapters, BranchOf: d.BranchOf, ClientTTY: m.clientTTY,
 		Sound:                  func(_, kind string) { _ = sounder.Play(kind) },
