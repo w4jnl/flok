@@ -54,6 +54,7 @@ func sidebarDeps(cfg config.Config) ui.Deps {
 		}
 	}
 	d.Bin = binPath()
+	d.Version = Version
 	rules, adapters := d.Rules, d.Adapters
 	d.NewRemote = func(sink chan<- remote.Msg) *remote.Manager {
 		var debugf func(string, ...any)

@@ -17,6 +17,7 @@ import (
 	"github.com/w4jnl/flok/internal/hosts"
 	"github.com/w4jnl/flok/internal/keys"
 	"github.com/w4jnl/flok/internal/launcher"
+	"github.com/w4jnl/flok/internal/link"
 	"github.com/w4jnl/flok/internal/merge"
 	"github.com/w4jnl/flok/internal/notify"
 	"github.com/w4jnl/flok/internal/poller"
@@ -49,6 +50,7 @@ type Deps struct {
 	NewRemote func(sink chan<- remote.Msg) *remote.Manager
 	Bin       string   // this executable, for the parked host panes
 	Notices   []string // what the start found worth a footer line (an older tmux snippet)
+	Version   string   // flok's version, for the relay's hello
 }
 
 const (
@@ -76,6 +78,11 @@ type Model struct {
 	pushPrev      map[string]agent.State
 	pushLast      map[string]time.Time
 	pushPrimed    bool
+	linker        *link.Client      // [link] url: the WebSocket to the relay (flok on the phone); nil = off
+	linkStatus    link.Status       // its last reported state
+	linkSubs      map[string]bool   // pane refs whose screen the phone is looking at
+	linkTicking   bool              // a 1 s capture tick for them is scheduled
+	linkWarned    bool              // the footer already says the link is down
 	confirmRemove string            // host `x` asked to remove; the next key answers (y removes)
 	names         map[string]string // row names chosen with n, by pane ref (state.NamesFile)
 	renaming      bool              // the "name:" prompt is open for renameKey
@@ -176,6 +183,15 @@ func New(d Deps) Model {
 	m.pushPrev, m.pushLast = map[string]agent.State{}, map[string]time.Time{}
 	if c := push.New(d.Cfg.Notify.URL, d.Cfg.Notify.Token, d.Cfg.Notify.Format, m.debugf); c != nil {
 		m.pusher = c
+	}
+	m.linkSubs = map[string]bool{}
+	if d.Cfg.Link.URL != "" {
+		hostname, _ := os.Hostname()
+		m.linker = link.New(link.Config{URL: d.Cfg.Link.URL, Token: d.Cfg.Link.Token, Name: d.Cfg.InstanceName(), Version: d.Version,
+			Hostname: hostname, Logf: m.debugf})
+		if m.linker != nil {
+			m.linkStatus = m.linker.Status()
+		}
 	}
 	m.p = poller.New(poller.Deps{Cfg: d.Cfg, Tmux: d.Inner, Store: d.Store, Registry: d.Registry, Rules: d.Rules,
 		Adapters: d.Adapters, BranchOf: d.BranchOf, ClientTTY: m.clientTTY,
@@ -301,7 +317,7 @@ func (m Model) pollRegistryIfDue() tea.Cmd { return registryCmd(m.p.PollRegistry
 func (m Model) ClientTTY() string { return m.clientTTY }
 
 func (m Model) Init() tea.Cmd {
-	return batch(m.poll(), m.tick(), m.waitChange(), m.pollRegistryIfEnabled(), m.registryTick(), m.screenTick(), m.loadHosts(), m.waitRemote())
+	return batch(m.poll(), m.tick(), m.waitChange(), m.pollRegistryIfEnabled(), m.registryTick(), m.screenTick(), m.loadHosts(), m.waitRemote(), m.startLink())
 }
 
 func (m Model) screenTick() tea.Cmd {
@@ -450,6 +466,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.retryCountdown() { // a host row counts down to its next attempt
 			m.vc.valid = false
 		}
+		if m.linkWarnDue() { // the relay has been out of reach for a while: the footer says so now
+			m.refederate()
+			m.publish()
+		}
 		return m, tea.Batch(m.poll(), m.tick())
 	case registryTickMsg:
 		return m, tea.Batch(m.pollRegistryIfDue(), m.registryTick())
@@ -586,8 +606,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.applyHosts(msg.set)
 	case remoteMsg:
-		m.onRemote(msg.Msg)
-		return m, m.waitRemote()
+		cmd := m.onRemote(msg.Msg)
+		return m, batch(cmd, m.waitRemote())
+	case linkMsg: // the relay: a state change, or a command from the phone
+		return m, batch(m.onLink(msg.Msg), m.waitLink())
+	case linkAnswerMsg:
+		m.answerDone(msg)
+		return m, nil
+	case linkScreenTickMsg:
+		if len(m.linkSubs) == 0 {
+			m.linkTicking = false
+			return m, nil
+		}
+		return m, tea.Batch(m.captureSubs(), m.linkTick())
+	case linkScreensMsg:
+		for ref, text := range msg.screens {
+			m.linker.Screen(ref, text)
+		}
+		return m, nil
 	case hostPanesMsg, hostToggleMsg:
 		var err error
 		switch v := msg.(type) {

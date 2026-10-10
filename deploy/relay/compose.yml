@@ -1,0 +1,59 @@
+# flok-relay behind an existing Traefik, as a Portainer stack. Secrets come from the stack's
+# environment (stack.env, or Portainer's environment variables), never from this file.
+#
+#   FLOK_RELAY_INSTANCE_TOKENS   comma-separated; one per flok instance ([link] token)
+#   FLOK_RELAY_DEVICE_TOKENS     comma-separated; what the app signs in with
+#   FLOK_RELAY_APNS_KEY_B64      the .p8 as one base64 line (base64 -i AuthKey_XXXX.p8 | tr -d '\n'), else empty
+#   FLOK_RELAY_APNS_KEY_ID       10-character key id of the .p8
+#   FLOK_RELAY_APNS_TEAM_ID      Apple team id
+#   FLOK_RELAY_APNS_TOPIC        the app's bundle id
+#   FLOK_RELAY_APNS_SANDBOX      "1" for development builds installed from Xcode
+#   FLOK_HOST                    the public name, flok.example.net
+#   TRAEFIK_NETWORK              the Docker network Traefik watches (default traefik)
+#   TRAEFIK_ENTRYPOINT           Traefik's HTTPS entrypoint (default websecure)
+#   TRAEFIK_RESOLVER             Traefik's certificate resolver (default letsencrypt)
+#
+# `flok-relay token` prints a fresh token. Leave FLOK_RELAY_APNS_KEY_B64 empty for a relay
+# without pushes (the app still works while open); nothing is mounted from the stack directory.
+services:
+  flok-relay:
+    image: ${FLOK_RELAY_IMAGE:-ghcr.io/w4jnl/flok-relay:latest}
+    container_name: flok-relay
+    restart: unless-stopped
+    environment:
+      FLOK_RELAY_INSTANCE_TOKENS: ${FLOK_RELAY_INSTANCE_TOKENS:?set the instance tokens}
+      FLOK_RELAY_DEVICE_TOKENS: ${FLOK_RELAY_DEVICE_TOKENS:?set the device tokens}
+      FLOK_RELAY_APNS_KEY_B64: ${FLOK_RELAY_APNS_KEY_B64:-}
+      FLOK_RELAY_APNS_KEY_ID: ${FLOK_RELAY_APNS_KEY_ID:-}
+      FLOK_RELAY_APNS_TEAM_ID: ${FLOK_RELAY_APNS_TEAM_ID:-}
+      FLOK_RELAY_APNS_TOPIC: ${FLOK_RELAY_APNS_TOPIC:-}
+      FLOK_RELAY_APNS_SANDBOX: ${FLOK_RELAY_APNS_SANDBOX:-}
+    volumes:
+      - flok-relay-data:/data
+    networks:
+      - traefik
+    healthcheck:
+      test: ["CMD", "/flok-relay", "health", "-url", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: ${TRAEFIK_NETWORK:-traefik}
+      traefik.http.routers.flok-relay.rule: Host(`${FLOK_HOST:?set FLOK_HOST}`)
+      traefik.http.routers.flok-relay.entrypoints: ${TRAEFIK_ENTRYPOINT:-websecure}
+      traefik.http.routers.flok-relay.tls: "true"
+      traefik.http.routers.flok-relay.tls.certresolver: ${TRAEFIK_RESOLVER:-letsencrypt}
+      traefik.http.services.flok-relay.loadbalancer.server.port: "8080"
+      # WebSockets need no extra Traefik configuration; these keep the link's idle time out of
+      # Traefik's hands (the link pings every 20 s anyway)
+      traefik.http.routers.flok-relay.middlewares: flok-relay-headers
+      traefik.http.middlewares.flok-relay-headers.headers.customResponseHeaders.X-Content-Type-Options: nosniff
+
+volumes:
+  flok-relay-data:
+
+networks:
+  traefik:
+    external: true
+    name: ${TRAEFIK_NETWORK:-traefik}

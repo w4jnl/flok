@@ -80,10 +80,12 @@ type Notify struct {
 	Events []string `toml:"events"` // blocked, done, error
 }
 
-// Link names this flok instance to the outside (notifications, the phone); the relay link of
-// the phone app grows here.
+// Link is this flok instance on the phone: its name, and the relay it dials out to (flok-relay,
+// the small service you run; the app talks to the relay).
 type Link struct {
-	Name string `toml:"name"` // "" = the machine's short hostname
+	Name  string `toml:"name"`  // "" = the machine's short hostname
+	URL   string `toml:"url"`   // wss://flok.example.net/link (https://flok.example.net works too); "" = off
+	Token string `toml:"token"` // one of the relay's instance_tokens
 }
 
 // KeepAwake tunes `flok keep-awake` (macOS).
