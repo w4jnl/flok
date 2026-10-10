@@ -750,6 +750,16 @@ func SplitTmuxWords(line string) []string {
 			in = true
 		case ch == ' ' || ch == '\t':
 			flush()
+		case ch == '{' && !in:
+			// a brace group, as tmux 3.7 prints command arguments ({ join-pane }): one word,
+			// braces included, up to the matching close; tmux takes it back only in that form
+			if j := braceEnd(line, i); j > i {
+				words = append(words, line[i:j+1])
+				i = j
+				continue
+			}
+			cur.WriteByte(ch)
+			in = true
 		default:
 			cur.WriteByte(ch)
 			in = true
@@ -757,4 +767,32 @@ func SplitTmuxWords(line string) []string {
 	}
 	flush()
 	return words
+}
+
+// braceEnd returns the index of the } closing the group that opens at line[i], or -1; braces
+// inside quotes do not count.
+func braceEnd(line string, i int) int {
+	depth := 0
+	var quote byte
+	for j := i; j < len(line); j++ {
+		ch := line[j]
+		switch {
+		case quote != 0:
+			if ch == '\\' && quote == '"' && j+1 < len(line) {
+				j++
+			} else if ch == quote {
+				quote = 0
+			}
+		case ch == '"' || ch == '\'':
+			quote = ch
+		case ch == '{':
+			depth++
+		case ch == '}':
+			depth--
+			if depth == 0 {
+				return j
+			}
+		}
+	}
+	return -1
 }
