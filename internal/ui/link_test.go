@@ -11,8 +11,11 @@ import (
 
 	"github.com/w4jnl/flok/internal/agent"
 	"github.com/w4jnl/flok/internal/answer"
+	"github.com/w4jnl/flok/internal/hosts"
 	"github.com/w4jnl/flok/internal/link"
 	"github.com/w4jnl/flok/internal/merge"
+	"github.com/w4jnl/flok/internal/remote"
+	"github.com/w4jnl/flok/internal/remote/proto"
 )
 
 // An answer from the phone lands in the agent's pane as one send-keys invocation, is logged,
@@ -97,5 +100,37 @@ func TestLinkCommands(t *testing.T) {
 	m.refederate()
 	if len(m.snap.Warnings) == 0 || !strings.Contains(m.snap.Warnings[len(m.snap.Warnings)-1], "phone link: connection refused") {
 		t.Fatalf("footer: %v", m.snap.Warnings)
+	}
+}
+
+// A full-mode host whose flok predates the phone cannot stream screens or take answers: the
+// phone is told which upgrade it needs instead of waiting, and an answer is refused at once.
+func TestLinkHostPredatingThePhone(t *testing.T) {
+	m, _ := newTestModel(t)
+	m.linker = link.New(link.Config{URL: "ws://127.0.0.1:1/link"})
+	m.hostSet = hosts.Set{Hosts: []hosts.Host{{Name: "beta", Target: "beta", Mode: hosts.ModeFull, Enabled: true}, {Name: "gamma", Target: "gamma", Mode: hosts.ModePlain, Enabled: true}}}
+	m.hostList = m.hostSet.Hosts
+	old := &proto.Hello{Proto: 1, Version: "0.5.2", Features: []string{proto.FeatureKeys, proto.FeaturePrefix}}
+	m.remotes = map[string]hostView{
+		"beta":  {state: remote.Connected, hello: old, hasSnap: true, snap: merge.Snapshot{Agents: []agent.Agent{{PaneID: "%1", Name: "docs", State: agent.Blocked}}}},
+		"gamma": {state: remote.Connected, hello: &proto.Hello{Version: "plain"}, hasSnap: true, snap: merge.Snapshot{Agents: []agent.Agent{{PaneID: "%2", Name: "web", State: agent.Idle}}}},
+	}
+	m.refederate()
+	if n := m.phoneUpgradeNotice("beta"); !strings.Contains(n, "flok 0.5.2 on beta predates the phone") || !strings.Contains(n, "flok host install beta") {
+		t.Fatalf("notice: %q", n)
+	}
+	if m.phoneUpgradeNotice("gamma") != "" || m.phoneUpgradeNotice("") != "" {
+		t.Fatal("plain-mode and local panes need no upgrade")
+	}
+	if c := m.linkCommand(link.Command{ID: "a1", Kind: "answer", Pane: "beta:%1", Answer: answer.Answer{Keys: []string{"Enter"}}}); c != nil {
+		t.Fatal("an answer for an old host is refused without a round trip")
+	}
+	log, _ := os.ReadFile(filepath.Join(m.d.Store.Dir, "events.log"))
+	if !strings.Contains(string(log), "predates the phone") {
+		t.Fatalf("refusal not logged: %s", log)
+	}
+	m.remotes["beta"] = hostView{state: remote.Connected, hello: &proto.Hello{Version: "0.6.0", Features: proto.ServeFeatures}, hasSnap: true, snap: m.remotes["beta"].snap}
+	if m.phoneUpgradeNotice("beta") != "" {
+		t.Fatal("a current flok needs none")
 	}
 }

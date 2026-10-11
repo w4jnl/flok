@@ -17,6 +17,7 @@ struct AgentView: View {
             header
             Divider()
             ScreenView(text: relay.screens[target], fontSize: settings.fontSize)
+                .onTapGesture { typing = false } // a tap on the screen puts the keyboard away
             Divider()
             KeyBar { key in Task { await send(text: key.text, keys: key.keys) } }
             HStack(spacing: 8) {
@@ -39,6 +40,10 @@ struct AgentView: View {
         .navigationTitle(found?.1.name ?? target.pane)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button { typing = false } label: { Label("Hide keyboard", systemImage: "keyboard.chevron.compact.down") }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button { Task { await send(keys: ["Enter"]) } } label: { Label("Approve (Enter)", systemImage: "checkmark") }
@@ -115,6 +120,7 @@ struct AgentView: View {
 struct ScreenView: View {
     let text: String?
     let fontSize: Double
+    @State private var waitedLong = false
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -128,10 +134,21 @@ struct ScreenView: View {
                 Color.clear.frame(width: 1, height: 1).id("bottom").frame(maxWidth: .infinity, alignment: .leading)
             }
             .background(Color(UIColor.secondarySystemBackground))
+            .scrollDismissesKeyboard(.immediately)
             .onChange(of: text) { _, _ in withAnimation(.linear(duration: 0.1)) { proxy.scrollTo("bottom", anchor: UnitPoint(x: 0, y: 1)) } } // follow the bottom, keep the left edge
             .overlay {
                 if text == nil {
-                    ProgressView("waiting for the screen…").font(.footnote)
+                    VStack(spacing: 8) {
+                        ProgressView("waiting for the screen…").font(.footnote)
+                        if waitedLong {
+                            Text("Nothing yet. The instance may be offline, or this agent sits on a host whose flok needs an upgrade (`flok host install <host>`).")
+                                .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center).padding(.horizontal, 24)
+                        }
+                    }
+                    .task {
+                        try? await Task.sleep(for: .seconds(6))
+                        waitedLong = true
+                    }
                 }
             }
         }
