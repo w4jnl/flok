@@ -142,7 +142,7 @@ final class Relay {
             }
         } catch {
             if let code = (ws.response as? HTTPURLResponse)?.statusCode, code == 401 || code == 403 {
-                failure = "the relay refused the device token"
+                failure = "the relay refused the token: it needs one of its device_tokens (an instance's [link] token is a different one)"
             } else if let code = (ws.response as? HTTPURLResponse)?.statusCode, code != 101 {
                 failure = "relay answered \(code)"
             } else {

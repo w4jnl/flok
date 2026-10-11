@@ -27,7 +27,7 @@ struct SettingsView: View {
             } header: {
                 Text("Relay")
             } footer: {
-                Text("One of the relay's device tokens (flok-relay token). Instances link in with their own.")
+                Text("One of the relay's device_tokens (FLOK_RELAY_DEVICE_TOKENS in the stack). Not an instance's [link] token: that one logs a flok in, this one logs the phone in.")
             }
             Section {
                 LabeledContent("Permission", value: permissionLabel)
