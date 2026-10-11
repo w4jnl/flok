@@ -446,8 +446,14 @@ stream as JSON lines, which is the quickest way to see what the phone would. Tok
 `flok-relay token`; the instance's goes into its `[link] token`, the phone's into the app.
 `flok doctor` reports the link as the sidebar sees it (or probes the relay's `/healthz` when
 the sidebar is not running), the footer says when the relay has been out of reach for half a
-minute, and `snapshot.json` carries the link's state. The app itself is the next step; until
-it exists the relay, `tail` and the API already work, and `[notify]` above gives the pushes.
+minute, and `snapshot.json` carries the link's state.
+
+The app is [`app/ios`](app/ios): SwiftUI, iOS 17 and later, every instance in one list, the
+agents that need you, the live screen of an agent with a key bar and a reply field, Approve and
+Deny from the lock screen, the badge counting what waits. It is built from `project.yml` with
+XcodeGen (`make ios-project`, `ios-build`, `ios-test`; the simulator needs no signing) and
+distributed through TestFlight with your own team id and APNs key. [`app/API.md`](app/API.md)
+is the contract it speaks, written for the Android app to follow.
 
 ### Keep awake (macOS)
 

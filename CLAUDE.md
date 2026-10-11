@@ -272,7 +272,19 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
   410 forgets the device) to the devices in `devices.json`. `deploy/relay` has the Dockerfile
   (scratch + CA bundle), the Portainer compose with Traefik labels and the example configs; the
   release workflow publishes `ghcr.io/w4jnl/flok-relay` for amd64 and arm64 with plain docker
-  (no third-party actions). The iOS app is not written yet; `flok-relay tail` stands in.
+  (no third-party actions). The iOS app lives in `app/ios` (SwiftUI, iOS 17+, Swift 6 strict
+  concurrency; XcodeGen `project.yml` → `Flok.xcodeproj`, not committed; `make ios-project`,
+  `ios-build`, `ios-test` against the iPhone 15 simulator, no signing; `Local.xcconfig` holds
+  the team id): `Model/Wire.swift` mirrors the relay JSON (snake_case, Go's RFC 3339 dates),
+  `Model/Relay.swift` is the `@MainActor @Observable` client (URLSessionWebSocketTask to
+  `/api/ws`, backoff, subscriptions resent on reconnect, HTTP for answer/seen/devices so a
+  lock-screen action works without the socket), `Notifications.swift` the categories
+  (`APPROVE` = Enter, `DENY` = Escape, `SEEN`) and the APNs token → `/api/devices` once per
+  relay+token. The simulator takes `-relayURL`, `-deviceToken` and `-open inst:%N` launch
+  arguments; `simctl push` delivers a payload file for the notification path. `app/API.md` is
+  the platform-neutral contract an Android app would implement; a Debug build registers with
+  `sandbox: true`, so the relay needs `FLOK_RELAY_APNS_SANDBOX=1` while an Xcode build is on the
+  phone.
 - `internal/ui/model.go` drives three independent poll cadences from config (`poll_ms` for the
   tmux snapshot, `registry_poll_ms`, `screen_poll_ms`) plus an fsnotify watch on the store so
   hook writes re-render immediately. CPU rules that are easy to undo by accident: an unchanged

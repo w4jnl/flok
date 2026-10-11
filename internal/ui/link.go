@@ -11,6 +11,7 @@ import (
 	"github.com/w4jnl/flok/internal/link"
 	"github.com/w4jnl/flok/internal/poller"
 	"github.com/w4jnl/flok/internal/remote"
+	"github.com/w4jnl/flok/internal/remote/proto"
 	"github.com/w4jnl/flok/internal/tmux"
 )
 
@@ -173,6 +174,11 @@ func (m *Model) linkCommand(c link.Command) tea.Cmd {
 			return nil
 		}
 		ref := agent.PaneRef{Host: a.Host, ID: a.PaneID}.String()
+		if notice := m.phoneUpgradeNotice(a.Host); notice != "" { // the host's serve would ignore the frame
+			m.linker.Ack(c.ID, notice)
+			m.logLink("answer", ref, answer.Describe(c.Answer), errorString(notice))
+			return nil
+		}
 		ans := c.Answer
 		if n, err := answer.Normalize(ans); err == nil { // the log and the host see tmux's spelling
 			ans = n
@@ -226,15 +232,40 @@ func (m Model) logLink(cmd, ref, what string, err error) {
 }
 
 // setCapture tells a full-mode host to start or stop streaming a pane's screen; local and
-// plain-mode panes are captured from here (captureSubs).
+// plain-mode panes are captured from here (captureSubs). A host whose flok predates the phone
+// would never answer: the phone gets a line saying so instead of waiting.
 func (m Model) setCapture(ref string, on bool) {
 	pr, err := agent.ParsePaneRef(ref)
 	if err != nil || pr.Host == "" || m.remote == nil {
 		return
 	}
 	if h, ok := m.hostSet.Get(pr.Host); ok && h.Mode != hosts.ModePlain {
+		if notice := m.phoneUpgradeNotice(h.Name); notice != "" {
+			if on && m.linker != nil {
+				m.linker.Screen(ref, notice+"\n")
+			}
+			return
+		}
 		m.remote.Capture(h.Name, pr.ID, on)
 	}
+}
+
+// phoneUpgradeNotice names the upgrade a full-mode host needs before the phone can look at or
+// answer its agents (its serve advertises no answer feature); "" when it can, or for local and
+// plain-mode panes.
+func (m Model) phoneUpgradeNotice(host string) string {
+	if host == "" {
+		return ""
+	}
+	h, ok := m.hostSet.Get(host)
+	if !ok || h.Mode == hosts.ModePlain {
+		return ""
+	}
+	v, ok := m.remotes[host]
+	if !ok || v.hello == nil || v.hello.Has(proto.FeatureAnswer) {
+		return ""
+	}
+	return "flok" + versionWord(v.hello.Version) + " on " + host + " predates the phone: screens and answers from it need an upgrade (flok host install " + host + ")"
 }
 
 // resubscribeHost asks a host that just (re)connected for the screens the phone is looking at

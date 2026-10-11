@@ -1,0 +1,7 @@
+// Copy to Local.xcconfig (gitignored; make ios-project writes a default one). Your Apple team
+// id signs device and TestFlight builds (the simulator needs none): Xcode → Settings → Accounts,
+// or Membership in the developer account.
+FLOK_TEAM_ID = ABCDE12345
+// The push entitlement. Keep it for a paid developer account; a free Apple ID's personal team
+// cannot sign it: make it empty (the app then works while open, without pushes).
+FLOK_ENTITLEMENTS = Flok/Flok.entitlements

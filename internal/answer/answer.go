@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 	"unicode"
 )
 
@@ -21,6 +22,10 @@ type Answer struct {
 const (
 	MaxText = 200 // runes of Text
 	MaxKeys = 8   // named keys per answer
+	// KeyGap separates the text from the keys that follow it. Written in one burst, an Enter
+	// right behind the text reaches the agent inside what it takes for a paste, and Claude Code
+	// then inserts a newline instead of sending the line; a pause makes it a keypress.
+	KeyGap = 150 * time.Millisecond
 )
 
 // Keys are the named keys an answer may send, as tmux spells them. Letters and digits travel
@@ -87,6 +92,21 @@ func Args(pane string, a Answer) []string {
 		args = append(append(args, "send-keys", "-t", pane), a.Keys...)
 	}
 	return args
+}
+
+// Type sends a normalized answer to a pane: the text, then after KeyGap the keys, each in its
+// own tmux invocation when both are present. run is the tmux client's Run.
+func Type(run func(args ...string) (string, error), pane string, a Answer) error {
+	if a.Text != "" && len(a.Keys) > 0 {
+		if _, err := run(Args(pane, Answer{Text: a.Text})...); err != nil {
+			return err
+		}
+		time.Sleep(KeyGap)
+		_, err := run(Args(pane, Answer{Keys: a.Keys})...)
+		return err
+	}
+	_, err := run(Args(pane, a)...)
+	return err
 }
 
 // Describe is the answer for a log line: the keys and how much text, never the text itself.

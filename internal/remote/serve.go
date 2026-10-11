@@ -298,6 +298,5 @@ func TypeAnswer(c tmux.Client, snap merge.Snapshot, a answer.Answer) error {
 	if !found {
 		return errors.New("no agent in pane " + a.Pane)
 	}
-	_, err = c.Run(answer.Args(a.Pane, a)...)
-	return err
+	return answer.Type(c.Run, a.Pane, a)
 }

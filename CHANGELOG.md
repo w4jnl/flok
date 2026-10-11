@@ -6,6 +6,13 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+- **flok for iPhone** (`app/ios`, SwiftUI, iOS 17+): every instance in one list with its
+  agents, states and host tags, a "needs you" filter, the live screen of an agent with a key
+  bar and a reply field, Approve / Deny / Mark seen from the lock screen, the badge counting
+  what waits. It talks to `flok-relay` only; the API it speaks is written down in `app/API.md`
+  for the Android app to come. Built from `project.yml` with XcodeGen (`make ios-project`,
+  `ios-build`, `ios-test`); a TestFlight build needs your team id in `Local.xcconfig` and the
+  relay's APNs key.
 - **Keys that outlive the binary they were bound with.** A sidebar started through a symlink
   (`~/.local/bin/flok`) bound every key to that path; when the link went away, each key
   answered `returned 127` and later sidebars left the bindings alone because they ran flok. The
