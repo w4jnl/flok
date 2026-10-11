@@ -16,7 +16,7 @@ struct AgentView: View {
         VStack(spacing: 0) {
             header
             Divider()
-            ScreenView(text: relay.screens[target], fontSize: settings.fontSize)
+            ScreenView(text: relay.screens[target], fontSize: settings.fontSize, wrap: settings.wrapLines, onZoom: { settings.fontSize = $0 })
                 .onTapGesture { typing = false } // a tap on the screen puts the keyboard away
             Divider()
             KeyBar { key in Task { await send(text: key.text, keys: key.keys) } }
@@ -43,6 +43,13 @@ struct AgentView: View {
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
                 Button { typing = false } label: { Label("Hide keyboard", systemImage: "keyboard.chevron.compact.down") }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button { settings.fontSize = max(5, settings.fontSize - 1) } label: { Label("Smaller text", systemImage: "textformat.size.smaller") }
+                    Button { settings.fontSize = min(24, settings.fontSize + 1) } label: { Label("Larger text", systemImage: "textformat.size.larger") }
+                    Button { settings.wrapLines.toggle() } label: { Label(settings.wrapLines ? "Scroll long lines" : "Wrap long lines", systemImage: settings.wrapLines ? "arrow.left.and.right" : "text.justify.left") }
+                } label: { Image(systemName: "textformat.size") }
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
@@ -116,42 +123,63 @@ struct AgentView: View {
     }
 }
 
-/// A pane's text, monospaced, following the bottom as it changes; wide lines scroll sideways.
+/// A pane's text, monospaced, following the bottom as it changes. Wide lines scroll sideways
+/// or wrap (wrap); a pinch zooms the text, a double tap fits the widest line to the screen.
 struct ScreenView: View {
     let text: String?
     let fontSize: Double
+    var wrap = false
+    var onZoom: (Double) -> Void = { _ in }
     @State private var waitedLong = false
+    @State private var pinch: CGFloat = 1
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView([.vertical, .horizontal]) {
-                Text(trimmed)
-                    .font(.system(size: fontSize, design: .monospaced))
-                    .fixedSize(horizontal: true, vertical: false)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(8)
-                    .textSelection(.enabled)
-                Color.clear.frame(width: 1, height: 1).id("bottom").frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .background(Color(UIColor.secondarySystemBackground))
-            .scrollDismissesKeyboard(.immediately)
+        GeometryReader { geo in
+            ScrollViewReader { proxy in
+                ScrollView(wrap ? [.vertical] : [.vertical, .horizontal]) {
+                    Text(trimmed)
+                        .font(.system(size: fontSize * pinch, design: .monospaced))
+                        .fixedSize(horizontal: !wrap, vertical: false)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(8)
+                        .textSelection(.enabled)
+                    Color.clear.frame(width: 1, height: 1).id("bottom").frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .background(Color(UIColor.secondarySystemBackground))
+                .scrollDismissesKeyboard(.immediately)
+                .simultaneousGesture(MagnifyGesture()
+                    .onChanged { pinch = max(0.4, min(3, $0.magnification)) }
+                    .onEnded { _ in
+                        onZoom(max(5, min(24, (fontSize * pinch).rounded())))
+                        pinch = 1
+                    })
+                .onTapGesture(count: 2) { onZoom(Self.fitting(trimmed, width: geo.size.width - 16)) }
+                .onChange(of: text) { _, _ in withAnimation(.linear(duration: 0.1)) { proxy.scrollTo("bottom", anchor: UnitPoint(x: 0, y: 1)) } } // follow the bottom, keep the left edge
             .onChange(of: text) { _, _ in withAnimation(.linear(duration: 0.1)) { proxy.scrollTo("bottom", anchor: UnitPoint(x: 0, y: 1)) } } // follow the bottom, keep the left edge
-            .overlay {
-                if text == nil {
-                    VStack(spacing: 8) {
-                        ProgressView("waiting for the screen…").font(.footnote)
-                        if waitedLong {
-                            Text("Nothing yet. The instance may be offline, or this agent sits on a host whose flok needs an upgrade (`flok host install <host>`).")
-                                .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center).padding(.horizontal, 24)
+                .overlay {
+                    if text == nil {
+                        VStack(spacing: 8) {
+                            ProgressView("waiting for the screen…").font(.footnote)
+                            if waitedLong {
+                                Text("Nothing yet. The instance may be offline, or this agent sits on a host whose flok needs an upgrade (`flok host install <host>`).")
+                                    .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center).padding(.horizontal, 24)
+                            }
                         }
-                    }
-                    .task {
-                        try? await Task.sleep(for: .seconds(6))
-                        waitedLong = true
+                        .task {
+                            try? await Task.sleep(for: .seconds(6))
+                            waitedLong = true
+                        }
                     }
                 }
             }
         }
+    }
+
+    /// The font size at which the widest line of the screen just fits width points.
+    static func fitting(_ text: String, width: CGFloat) -> Double {
+        let cols = max(20, text.components(separatedBy: "\n").map(\.count).max() ?? 80)
+        let em = ("M" as NSString).size(withAttributes: [.font: UIFont.monospacedSystemFont(ofSize: 10, weight: .regular)]).width / 10
+        return max(5, min(24, (Double(width) / (Double(cols) * em)).rounded(.down)))
     }
 
     private var trimmed: String {

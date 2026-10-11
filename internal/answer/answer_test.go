@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestNormalizeAndArgs(t *testing.T) {
@@ -30,6 +31,23 @@ func TestNormalizeAndArgs(t *testing.T) {
 	}
 	if Describe(Answer{Text: "héllo", Keys: []string{"Enter"}}) != "5 chars + Enter" {
 		t.Fatalf("describe: %q", Describe(Answer{Text: "héllo", Keys: []string{"Enter"}}))
+	}
+	// Type: text and keys in two writes with a pause between, one write otherwise
+	var calls [][]string
+	var times []time.Time
+	run := func(args ...string) (string, error) {
+		calls = append(calls, args)
+		times = append(times, time.Now())
+		return "", nil
+	}
+	if err := Type(run, "%3", Answer{Text: "yes", Keys: []string{"Enter"}}); err != nil || len(calls) != 2 ||
+		!reflect.DeepEqual(calls[0], []string{"send-keys", "-t", "%3", "-l", "yes"}) || !reflect.DeepEqual(calls[1], []string{"send-keys", "-t", "%3", "Enter"}) ||
+		times[1].Sub(times[0]) < KeyGap {
+		t.Fatalf("type text+keys: %q %v (gap %v)", calls, err, times[len(times)-1].Sub(times[0]))
+	}
+	calls = nil
+	if err := Type(run, "%3", Answer{Keys: []string{"Escape"}}); err != nil || len(calls) != 1 {
+		t.Fatalf("type keys only: %q %v", calls, err)
 	}
 }
 

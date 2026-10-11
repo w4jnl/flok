@@ -12,6 +12,7 @@ final class Settings {
     var relayURL: String { didSet { defaults.set(relayURL, forKey: "relayURL") } }
     var deviceToken: String { didSet { Keychain.set(deviceToken, for: "deviceToken") } }
     var fontSize: Double { didSet { defaults.set(fontSize, forKey: "fontSize") } }
+    var wrapLines: Bool { didSet { defaults.set(wrapLines, forKey: "wrapLines") } }
     /// "<relay>|<apns token>" of the last device registration, so it is not repeated at every start.
     var registered: String? { didSet { defaults.set(registered, forKey: "registered") } }
 
@@ -21,6 +22,7 @@ final class Settings {
         relayURL = defaults.string(forKey: "relayURL") ?? ""
         deviceToken = Keychain.get("deviceToken") ?? defaults.string(forKey: "deviceToken") ?? ""
         fontSize = defaults.object(forKey: "fontSize") as? Double ?? 11
+        wrapLines = defaults.bool(forKey: "wrapLines")
         registered = defaults.string(forKey: "registered")
     }
 

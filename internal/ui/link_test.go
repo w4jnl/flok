@@ -38,9 +38,10 @@ func TestLinkCommands(t *testing.T) {
 		t.Fatalf("answer: %#v", msg)
 	}
 	m.answerDone(am)
-	last := ft.Calls[len(ft.Calls)-1]
-	if got := strings.Join(last, " "); got != "send-keys -t %1 -l y ; send-keys -t %1 Enter" {
-		t.Fatalf("send-keys: %q", got)
+	k := len(ft.Calls)
+	text, keys := strings.Join(ft.Calls[k-2], " "), strings.Join(ft.Calls[k-1], " ")
+	if text != "send-keys -t %1 -l y" || keys != "send-keys -t %1 Enter" { // two writes: the Enter must not ride in the text's paste
+		t.Fatalf("send-keys: %q then %q", text, keys)
 	}
 	log, _ := os.ReadFile(filepath.Join(m.d.Store.Dir, "events.log"))
 	if !strings.Contains(string(log), `"source":"phone"`) || !strings.Contains(string(log), `"what":"1 chars + Enter"`) || strings.Contains(string(log), `"y"`) {

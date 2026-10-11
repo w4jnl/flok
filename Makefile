@@ -5,7 +5,7 @@ LDFLAGS := -s -w -X github.com/w4jnl/flok/internal/cli.Version=$(VERSION)
 
 UNAME := $(shell uname -s)
 
-.PHONY: build build-bar bundle-bar relay relay-image ios-project ios-build ios-test icons install test vet e2e run-status
+.PHONY: build build-bar bundle-bar relay relay-image ios-project ios-build ios-test ios-device icons install test vet e2e run-status
 
 build:
 	CGO_ENABLED=0 go build -ldflags '$(LDFLAGS)' -o bin/$(BIN) ./cmd/$(BIN)
@@ -32,6 +32,13 @@ ios-build: ios-project
 	cd app/ios && xcodebuild -project Flok.xcodeproj -scheme Flok -configuration Debug -destination '$(IOS_SIM)' -derivedDataPath build/DerivedData build CODE_SIGNING_ALLOWED=NO -quiet
 ios-test: ios-project
 	cd app/ios && xcodebuild -project Flok.xcodeproj -scheme Flok -configuration Debug -destination '$(IOS_SIM)' -derivedDataPath build/DerivedData test CODE_SIGNING_ALLOWED=NO -quiet
+# Build, install and launch on the iPhone plugged in (unlocked); signs with Local.xcconfig's team.
+ios-device: ios-project
+	@udid=$$(xcrun devicectl list devices 2>/dev/null | grep -v simulated | grep -oE '[0-9A-F]{8}-[0-9A-F]{16}' | head -1); \
+	[ -n "$$udid" ] || { echo "ios-device: no iPhone connected"; exit 1; }; \
+	cd app/ios && xcodebuild -project Flok.xcodeproj -scheme Flok -configuration Debug -destination "id=$$udid" -derivedDataPath build/DerivedData build -quiet && \
+	xcrun devicectl device install app --device "$$udid" build/DerivedData/Build/Products/Debug-iphoneos/Flok.app >/dev/null && \
+	xcrun devicectl device process launch --terminate-existing --device "$$udid" nl.w4j.flok >/dev/null && echo "ios-device: installed and launched on $$udid"
 
 # The menu bar companion is the only cgo binary (fyne.io/systray), macOS only.
 build-bar:
