@@ -26,7 +26,7 @@ relay-image:
 # simulator build and tests need no signing.
 IOS_SIM ?= platform=iOS Simulator,name=iPhone 15
 ios-project:
-	@[ -f app/ios/Local.xcconfig ] || printf 'FLOK_TEAM_ID =\n' > app/ios/Local.xcconfig
+	@[ -f app/ios/Local.xcconfig ] || printf 'FLOK_TEAM_ID =\nFLOK_ENTITLEMENTS = Flok/Flok.entitlements\n' > app/ios/Local.xcconfig
 	cd app/ios && xcodegen generate
 ios-build: ios-project
 	cd app/ios && xcodebuild -project Flok.xcodeproj -scheme Flok -configuration Debug -destination '$(IOS_SIM)' -derivedDataPath build/DerivedData build CODE_SIGNING_ALLOWED=NO -quiet

@@ -1,5 +1,7 @@
 # flok for iPhone: the Xcode project is generated from this file (brew install xcodegen;
-# make ios-project). Signing comes from Local.xcconfig (gitignored): FLOK_TEAM_ID = your team id.
+# make ios-project). Local.xcconfig (gitignored) holds what is yours: FLOK_TEAM_ID = your team
+# id, and FLOK_ENTITLEMENTS = Flok/Flok.entitlements (pushes; a free Apple ID's personal team
+# cannot sign that: leave it empty there).
 name: Flok
 options:
   bundleIdPrefix: nl.w4j
@@ -35,6 +37,7 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         INFOPLIST_KEY_UIUserInterfaceStyle: Automatic
+        CODE_SIGN_ENTITLEMENTS: $(FLOK_ENTITLEMENTS)
     info:
       path: Flok/Info.plist
       properties:
@@ -46,10 +49,6 @@ targets:
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         ITSAppUsesNonExemptEncryption: false
-    entitlements:
-      path: Flok/Flok.entitlements
-      properties:
-        aps-environment: development
   FlokTests:
     type: bundle.unit-test
     platform: iOS

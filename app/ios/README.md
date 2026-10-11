@@ -31,8 +31,13 @@ xcrun simctl push booted nl.w4j.flok payload.apns
 
 ## On a phone
 
-1. Copy `Local.xcconfig.example` to `Local.xcconfig` and put your Apple team id in it (the
-   developer account, Membership). Sign in to Xcode with the same Apple ID once.
+A free Apple ID installs the app on your own phone from Xcode (the build expires after a week;
+run again); the Apple Developer Program adds pushes and TestFlight. With a free account set
+`FLOK_ENTITLEMENTS =` (empty) in `Local.xcconfig`: its personal team cannot sign the push
+entitlement, and nothing else changes.
+
+1. Copy `Local.xcconfig.example` to `Local.xcconfig` and put your Apple team id in it (Xcode →
+   Settings → Accounts after signing in, or Membership in the developer account).
 2. In the developer account: an App ID `nl.w4j.flok` with Push Notifications enabled, and under
    Keys one key for the Apple Push Notifications service. The `.p8`, its key id, the team id and
    the bundle id go into the relay (`deploy/relay`, `FLOK_RELAY_APNS_*`).
