@@ -48,7 +48,7 @@ struct SettingsView: View {
             } header: {
                 Text("Notifications")
             } footer: {
-                Text("Pushes come through the relay's APNs key; a development build needs its sandbox setting.")
+                Text("Pushes come through the relay's APNs key. This phone tells the relay which Apple service its token belongs to (a build from Xcode: sandbox).")
             }
             Section("Screen") {
                 Stepper("Font size \(Int(settings.fontSize))", value: $settings.fontSize, in: 7...18)

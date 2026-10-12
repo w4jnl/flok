@@ -24,15 +24,15 @@ import (
 type fakePush struct {
 	mu   sync.Mutex
 	sent []apns.Notification
-	tok  []string
+	to   []apns.Device
 	fail error
 }
 
-func (f *fakePush) Send(_ context.Context, device string, n apns.Notification) error {
+func (f *fakePush) Send(_ context.Context, d apns.Device, n apns.Notification) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.sent = append(f.sent, n)
-	f.tok = append(f.tok, device)
+	f.to = append(f.to, d)
 	return f.fail
 }
 
@@ -134,8 +134,8 @@ func TestRelayEndToEnd(t *testing.T) {
 	if code, out := api(t, srv, "", "GET", "/healthz", nil); code != 200 || out["ok"] != true {
 		t.Fatalf("healthz: %d %v", code, out)
 	}
-	// a device registers (what the app does with its APNs token)
-	if code, _ := api(t, srv, "dev-tok", "POST", "/api/devices", map[string]any{"token": "devicetoken123", "name": "jaro's phone"}); code != 200 {
+	// a device registers (what the app does with its APNs token; an Xcode build's is a sandbox one)
+	if code, _ := api(t, srv, "dev-tok", "POST", "/api/devices", map[string]any{"token": "devicetoken123", "name": "jaro's phone", "sandbox": true}); code != 200 {
 		t.Fatalf("register: %d", code)
 	}
 
@@ -186,7 +186,7 @@ func TestRelayEndToEnd(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	push.mu.Lock()
-	if len(push.sent) != 1 || push.tok[0] != "devicetoken123" || push.sent[0].Title != "home · api" || push.sent[0].Body != "needs you: perm:Bash" ||
+	if len(push.sent) != 1 || push.to[0] != (apns.Device{Token: "devicetoken123", Sandbox: true}) || push.sent[0].Title != "home · api" || push.sent[0].Body != "needs you: perm:Bash" ||
 		push.sent[0].Category != CategoryPermission || *push.sent[0].Badge != 1 || push.sent[0].CollapseID != "home:%1" || !push.sent[0].TimeSensitive {
 		t.Fatalf("push: %+v", push.sent)
 	}

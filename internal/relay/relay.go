@@ -29,7 +29,7 @@ import (
 
 // Pusher sends one alert to one device; apns.Client is the real one.
 type Pusher interface {
-	Send(ctx context.Context, device string, n apns.Notification) error
+	Send(ctx context.Context, d apns.Device, n apns.Notification) error
 }
 
 // Config of the relay.
@@ -376,13 +376,13 @@ func (s *Server) event(in *instance, gen uint64, ev wire.Event) {
 		go func(d device) {
 			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 			defer cancel()
-			err := s.cfg.Push.Send(ctx, d.Token, n)
+			err := s.cfg.Push.Send(ctx, apns.Device{Token: d.Token, Sandbox: d.Sandbox}, n)
 			switch {
 			case errors.Is(err, apns.ErrUnregistered):
 				s.cfg.Logf("push: device %s (%s) is gone, forgotten", short(d.Token), d.Name)
 				s.devices.remove(d.Token)
 			case err != nil:
-				s.cfg.Logf("push: %s (%s): %v", short(d.Token), d.Name, err)
+				s.cfg.Logf("push: %s (%s, %s): %v", short(d.Token), d.Name, service(d.Sandbox), err)
 			default:
 				s.cfg.Logf("push: %s · %s → %s (%s)", in.name, ev.Agent, d.Name, ev.Kind)
 			}
@@ -665,7 +665,7 @@ func (s *Server) handleDeviceAdd(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 		return
 	}
-	s.cfg.Logf("device %s (%s) registered", short(req.Token), req.Name)
+	s.cfg.Logf("device %s (%s) registered, %s", short(req.Token), req.Name, service(req.Sandbox))
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "push": s.cfg.Push != nil})
 }
 
@@ -676,6 +676,14 @@ func (s *Server) handleDeviceRemove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// service names the APNs service a device's token belongs to, for the log.
+func service(sandbox bool) string {
+	if sandbox {
+		return "sandbox"
+	}
+	return "production"
 }
 
 func short(tok string) string {

@@ -5,7 +5,7 @@ LDFLAGS := -s -w -X github.com/w4jnl/flok/internal/cli.Version=$(VERSION)
 
 UNAME := $(shell uname -s)
 
-.PHONY: build build-bar bundle-bar relay relay-image ios-project ios-build ios-test ios-device icons install test vet e2e run-status
+.PHONY: build build-bar bundle-bar relay relay-image ios-project ios-build ios-test ios-device ios-testflight icons install test vet e2e run-status
 
 build:
 	CGO_ENABLED=0 go build -ldflags '$(LDFLAGS)' -o bin/$(BIN) ./cmd/$(BIN)
@@ -39,6 +39,13 @@ ios-device: ios-project
 	cd app/ios && xcodebuild -project Flok.xcodeproj -scheme Flok -configuration Debug -destination "id=$$udid" -derivedDataPath build/DerivedData -allowProvisioningUpdates build -quiet && \
 	xcrun devicectl device install app --device "$$udid" build/DerivedData/Build/Products/Debug-iphoneos/Flok.app >/dev/null && \
 	xcrun devicectl device process launch --terminate-existing --device "$$udid" nl.w4j.flok >/dev/null && echo "ios-device: installed and launched on $$udid"
+
+# TestFlight: archive a Release build and upload it to App Store Connect (the app record for the
+# bundle id must exist there; ExportOptions.plist lets Xcode raise the build number).
+ios-testflight: ios-project
+	cd app/ios && rm -rf build/Flok.xcarchive build/export && \
+	xcodebuild -project Flok.xcodeproj -scheme Flok -configuration Release -destination 'generic/platform=iOS' -derivedDataPath build/DerivedData -archivePath build/Flok.xcarchive -allowProvisioningUpdates archive -quiet && \
+	xcodebuild -exportArchive -archivePath build/Flok.xcarchive -exportOptionsPlist ExportOptions.plist -exportPath build/export -allowProvisioningUpdates
 
 # The menu bar companion is the only cgo binary (fyne.io/systray), macOS only.
 build-bar:

@@ -24,20 +24,29 @@ import (
 
 // Config of the provider.
 type Config struct {
-	Key     []byte // the .p8 file (PKCS#8 PEM) from the developer account
-	KeyID   string // its key id (10 characters)
-	TeamID  string // the team id
-	Topic   string // the app's bundle id
-	Sandbox bool   // development builds (Xcode) register with the sandbox service
-	URL     string // overrides the service URL (tests); "" = Apple's, by Sandbox
-	HTTP    *http.Client
+	Key        []byte // the .p8 file (PKCS#8 PEM) from the developer account
+	KeyID      string // its key id (10 characters)
+	TeamID     string // the team id
+	Topic      string // the app's bundle id
+	URL        string // overrides the production service URL (tests)
+	SandboxURL string // overrides the sandbox service URL (tests); "" = URL when that is set
+	HTTP       *http.Client
 }
 
-// Hosts of the service.
+// Hosts of the service. One key serves both: which one a device needs depends on how its app
+// was built, so every Device says it.
 const (
-	Production = "https://api.push.apple.com"
-	SandboxURL = "https://api.sandbox.push.apple.com"
+	ProductionHost = "https://api.push.apple.com"
+	SandboxHost    = "https://api.sandbox.push.apple.com"
 )
+
+// Device is where an alert goes: the app's push token and the service that token belongs to.
+// A development build installed from Xcode gets its tokens from the sandbox; TestFlight and the
+// App Store from production. A token sent to the other service is refused as BadDeviceToken.
+type Device struct {
+	Token   string
+	Sandbox bool
+}
 
 // Notification is one alert.
 type Notification struct {
@@ -66,10 +75,11 @@ func (e *Error) Error() string { return fmt.Sprintf("apns: %d %s", e.Status, e.R
 
 // Client sends to one app.
 type Client struct {
-	cfg  Config
-	key  *ecdsa.PrivateKey
-	base string
-	http *http.Client
+	cfg     Config
+	key     *ecdsa.PrivateKey
+	base    string // production
+	sandbox string
+	http    *http.Client
 
 	mu       sync.Mutex
 	token    string
@@ -97,26 +107,26 @@ func New(cfg Config) (*Client, error) {
 	if !ok {
 		return nil, errors.New("apns: the key is not an EC (P-256) key")
 	}
-	base := cfg.URL
-	if base == "" {
-		base = Production
-		if cfg.Sandbox {
-			base = SandboxURL
-		}
+	base, sandbox := ProductionHost, SandboxHost
+	if cfg.URL != "" {
+		base, sandbox = cfg.URL, cfg.URL
+	}
+	if cfg.SandboxURL != "" {
+		sandbox = cfg.SandboxURL
 	}
 	hc := cfg.HTTP
 	if hc == nil {
 		hc = &http.Client{Timeout: 20 * time.Second, Transport: &http.Transport{ForceAttemptHTTP2: true, Proxy: http.ProxyFromEnvironment,
 			TLSHandshakeTimeout: 15 * time.Second, IdleConnTimeout: 10 * time.Minute}}
 	}
-	return &Client{cfg: cfg, key: ec, base: base, http: hc, tokenTTL: 50 * time.Minute}, nil
+	return &Client{cfg: cfg, key: ec, base: base, sandbox: sandbox, http: hc, tokenTTL: 50 * time.Minute}, nil
 }
 
 // Topic is the app's bundle id.
 func (c *Client) Topic() string { return c.cfg.Topic }
 
-// Send delivers one alert to a device token.
-func (c *Client) Send(ctx context.Context, device string, n Notification) error {
+// Send delivers one alert to a device, through the service its token belongs to.
+func (c *Client) Send(ctx context.Context, d Device, n Notification) error {
 	tok, err := c.jwt(time.Now())
 	if err != nil {
 		return err
@@ -147,7 +157,11 @@ func (c *Client) Send(ctx context.Context, device string, n Notification) error 
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+"/3/device/"+device, bytes.NewReader(body))
+	base := c.base
+	if d.Sandbox {
+		base = c.sandbox
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/3/device/"+d.Token, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
