@@ -14,8 +14,15 @@ updates this file first. Dates are the tag dates.
   bar and a reply field, Approve / Deny / Mark seen from the lock screen, the badge counting
   what waits. It talks to `flok-relay` only; the API it speaks is written down in `app/API.md`
   for the Android app to come. Built from `project.yml` with XcodeGen (`make ios-project`,
-  `ios-build`, `ios-test`); a TestFlight build needs your team id in `Local.xcconfig` and the
-  relay's APNs key.
+  `ios-test`; `ios-device` installs on a phone on the cable, `ios-testflight` uploads to App
+  Store Connect); your team id goes in `Local.xcconfig`, the APNs key into the relay.
+- **Replies from the phone are sent.** Text and Enter reached Claude Code in one burst, which it
+  takes for a paste: the reply sat in the prompt unsent. The text and the keys now go in two
+  writes 150 ms apart. Agents on a remote host need this release there too
+  (`flok host install <name>`).
+- **A remote host whose flok predates the phone** now says so: the phone shows "flok 0.5.2 on
+  beta predates the phone … (flok host install beta)" in place of the screen and as the answer's
+  error, instead of waiting for a screen that never comes.
 - **Keys that outlive the binary they were bound with.** A sidebar started through a symlink
   (`~/.local/bin/flok`) bound every key to that path; when the link went away, each key
   answered `returned 127` and later sidebars left the bindings alone because they ran flok. The
