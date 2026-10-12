@@ -5,69 +5,84 @@ struct AgentView: View {
     let target: Target
     @Environment(Relay.self) private var relay
     @Environment(Settings.self) private var settings
+    @Environment(\.verticalSizeClass) private var vClass
+    @Environment(\.dismiss) private var dismiss
     @State private var input = ""
     @State private var notice: String?
     @State private var confirmInterrupt = false
+    @State private var inputChoice: Bool? // the user's show/hide of the bottom; nil = the orientation's default
     @FocusState private var typing: Bool
 
     private var found: (InstanceState, Agent)? { relay.agent(target) }
+    /// Landscape on a phone: little height, so the chrome shrinks to two thin strips.
+    private var compact: Bool { vClass == .compact }
+    private var inputShown: Bool { inputChoice ?? !compact }
 
     var body: some View {
         VStack(spacing: 0) {
-            header
+            if compact {
+                compactBar
+            } else {
+                header
+            }
             Divider()
             ScreenView(text: relay.screens[target], fontSize: settings.fontSize, wrap: settings.wrapLines, onZoom: { settings.fontSize = $0 })
                 .onTapGesture { typing = false } // a tap on the screen puts the keyboard away
             Divider()
-            KeyBar { key in Task { await send(text: key.text, keys: key.keys) } }
-            HStack(spacing: 8) {
-                TextField("type a reply, Enter sends it", text: $input, axis: .vertical)
-                    .textFieldStyle(.roundedBorder)
-                    .lineLimit(1...4)
-                    .autocorrectionDisabled()
-                    .textInputAutocapitalization(.never)
-                    .focused($typing)
-                    .onSubmit { Task { await sendInput() } }
-                Button { Task { await sendInput() } } label: { Image(systemName: "paperplane.fill") }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(input.isEmpty)
+            if inputShown {
+                HStack(spacing: 0) {
+                    KeyBar { key in Task { await send(text: key.text, keys: key.keys) } }
+                    Button { inputChoice = false; typing = false } label: { Image(systemName: "chevron.down") }
+                        .buttonStyle(.bordered).padding(.trailing, 8)
+                        .accessibilityLabel("Hide the keys")
+                }
+                HStack(spacing: 8) {
+                    TextField("type a reply, Enter sends it", text: $input, axis: .vertical)
+                        .textFieldStyle(.roundedBorder)
+                        .lineLimit(1...4)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                        .focused($typing)
+                        .onSubmit { Task { await sendInput() } }
+                    Button { Task { await sendInput() } } label: { Image(systemName: "paperplane.fill") }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(input.isEmpty)
+                }
+                .padding(.horizontal, 10).padding(.vertical, compact ? 4 : 8)
+            } else {
+                HStack {
+                    if let notice { Text(notice).font(.footnote).foregroundStyle(.secondary).lineLimit(1) }
+                    Spacer()
+                    Button { inputChoice = true } label: { Label("Keys", systemImage: "chevron.up").labelStyle(.iconOnly) }
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel("Show the keys")
+                }
+                .padding(.horizontal, 12).padding(.vertical, 4)
             }
-            .padding(10)
-            if let notice {
-                Text(notice).font(.footnote).foregroundStyle(.secondary).padding(.bottom, 6)
+            if inputShown, let notice {
+                Text(notice).font(.footnote).foregroundStyle(.secondary).padding(.bottom, 4)
             }
         }
         .navigationTitle(found?.1.name ?? target.pane)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar(compact ? .hidden : .visible, for: .navigationBar)
         .toolbar {
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
                 Button { typing = false } label: { Label("Hide keyboard", systemImage: "keyboard.chevron.compact.down") }
             }
-            ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Button { settings.fontSize = max(5, settings.fontSize - 1) } label: { Label("Smaller text", systemImage: "textformat.size.smaller") }
-                    Button { settings.fontSize = min(24, settings.fontSize + 1) } label: { Label("Larger text", systemImage: "textformat.size.larger") }
-                    Button { settings.wrapLines.toggle() } label: { Label(settings.wrapLines ? "Scroll long lines" : "Wrap long lines", systemImage: settings.wrapLines ? "arrow.left.and.right" : "text.justify.left") }
-                } label: { Image(systemName: "textformat.size") }
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Button { Task { await send(keys: ["Enter"]) } } label: { Label("Approve (Enter)", systemImage: "checkmark") }
-                    Button { Task { await send(keys: ["Escape"]) } } label: { Label("Deny (Esc)", systemImage: "xmark") }
-                    Button { Task { await seen() } } label: { Label("Mark seen", systemImage: "eye") }
-                    Divider()
-                    Button(role: .destructive) { confirmInterrupt = true } label: { Label("Interrupt (Ctrl-C)", systemImage: "stop.circle") }
-                } label: { Image(systemName: "ellipsis.circle") }
-            }
+            ToolbarItem(placement: .topBarTrailing) { textMenu }
+            ToolbarItem(placement: .topBarTrailing) { actionMenu }
         }
         .confirmationDialog("Send Ctrl-C to \(found?.1.name ?? "the agent")?", isPresented: $confirmInterrupt, titleVisibility: .visible) {
             Button("Interrupt", role: .destructive) { Task { await send(keys: ["C-c"]) } }
         }
         .task(id: target) { relay.subscribe(target) }
         .onDisappear { relay.unsubscribe(target) }
+        .onChange(of: compact) { _, _ in inputChoice = nil } // a turn of the phone goes back to that orientation's default
     }
 
+    /// Portrait: the agent's state under the navigation bar.
     @ViewBuilder private var header: some View {
         if let (inst, a) = found {
             HStack(spacing: 10) {
@@ -92,6 +107,47 @@ struct AgentView: View {
         } else {
             Text("this agent is gone from the instance's view").font(.footnote).foregroundStyle(.secondary).padding(8)
         }
+    }
+
+    /// Landscape: one thin strip with the way back, the state and the menus.
+    private var compactBar: some View {
+        HStack(spacing: 10) {
+            Button { dismiss() } label: { Image(systemName: "chevron.left").fontWeight(.semibold) }
+                .buttonStyle(.borderless)
+            if let (inst, a) = found {
+                Text(StateStyle.glyph(a.state)).foregroundStyle(StateStyle.color(a.state)).font(.system(.body, design: .monospaced))
+                Text(a.name).fontWeight(.semibold)
+                Text(StateStyle.label(a)).foregroundStyle(StateStyle.color(a.state))
+                Text("\(inst.name)\(a.host.map { " / " + $0 } ?? "") · \(a.paneId)").foregroundStyle(.secondary)
+                if !inst.online { Label("offline", systemImage: "wifi.slash").foregroundStyle(Palette.orange) }
+            } else {
+                Text(target.pane).foregroundStyle(.secondary)
+            }
+            Spacer()
+            textMenu
+            actionMenu
+        }
+        .font(.footnote)
+        .lineLimit(1)
+        .padding(.horizontal, 12).padding(.vertical, 5)
+    }
+
+    private var textMenu: some View {
+        Menu {
+            Button { settings.fontSize = max(5, settings.fontSize - 1) } label: { Label("Smaller text", systemImage: "textformat.size.smaller") }
+            Button { settings.fontSize = min(24, settings.fontSize + 1) } label: { Label("Larger text", systemImage: "textformat.size.larger") }
+            Button { settings.wrapLines.toggle() } label: { Label(settings.wrapLines ? "Scroll long lines" : "Wrap long lines", systemImage: settings.wrapLines ? "arrow.left.and.right" : "text.justify.left") }
+        } label: { Image(systemName: "textformat.size") }
+    }
+
+    private var actionMenu: some View {
+        Menu {
+            Button { Task { await send(keys: ["Enter"]) } } label: { Label("Approve (Enter)", systemImage: "checkmark") }
+            Button { Task { await send(keys: ["Escape"]) } } label: { Label("Deny (Esc)", systemImage: "xmark") }
+            Button { Task { await seen() } } label: { Label("Mark seen", systemImage: "eye") }
+            Divider()
+            Button(role: .destructive) { confirmInterrupt = true } label: { Label("Interrupt (Ctrl-C)", systemImage: "stop.circle") }
+        } label: { Image(systemName: "ellipsis.circle") }
     }
 
     private func sendInput() async {
