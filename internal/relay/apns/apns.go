@@ -51,6 +51,7 @@ type Device struct {
 // Notification is one alert.
 type Notification struct {
 	Title         string
+	Subtitle      string
 	Body          string
 	Category      string // the app's notification category (actions)
 	ThreadID      string // groups alerts in Notification Center
@@ -58,6 +59,7 @@ type Notification struct {
 	Badge         *int
 	Sound         string // "default", or "" for none
 	TimeSensitive bool   // breaks through Focus modes the user allowed it for
+	Mutable       bool   // the app's notification service extension may rework it (mutable-content)
 	Data          map[string]any
 }
 
@@ -131,7 +133,11 @@ func (c *Client) Send(ctx context.Context, d Device, n Notification) error {
 	if err != nil {
 		return err
 	}
-	aps := map[string]any{"alert": map[string]string{"title": n.Title, "body": n.Body}}
+	alert := map[string]string{"title": n.Title, "body": n.Body}
+	if n.Subtitle != "" {
+		alert["subtitle"] = n.Subtitle
+	}
+	aps := map[string]any{"alert": alert}
 	if n.Sound != "" {
 		aps["sound"] = n.Sound
 	}
@@ -146,6 +152,9 @@ func (c *Client) Send(ctx context.Context, d Device, n Notification) error {
 	}
 	if n.TimeSensitive {
 		aps["interruption-level"] = "time-sensitive"
+	}
+	if n.Mutable {
+		aps["mutable-content"] = 1
 	}
 	payload := map[string]any{"aps": aps}
 	for k, v := range n.Data {

@@ -16,6 +16,7 @@ type device struct {
 	Name    string    `json:"name,omitempty"`
 	Sandbox bool      `json:"sandbox,omitempty"`
 	Added   time.Time `json:"added"`
+	Prefs   *Prefs    `json:"prefs,omitempty"` // what the phone wants pushed; nil = everything
 }
 
 // deviceStore keeps the devices in devices.json under the data dir (in memory without one).
@@ -68,6 +69,9 @@ func (ds *deviceStore) add(d device) error {
 	old, had := ds.byTk[d.Token]
 	if had {
 		d.Added = old.Added
+		if d.Prefs == nil { // a registration without settings (curl) keeps the phone's
+			d.Prefs = old.Prefs
+		}
 	}
 	ds.byTk[d.Token] = d
 	if err := ds.saveLocked(); err != nil { // a device the file does not hold is not registered
@@ -79,6 +83,24 @@ func (ds *deviceStore) add(d device) error {
 		return err
 	}
 	return nil
+}
+
+// setPrefs replaces a device's settings; false when the token is not registered.
+func (ds *deviceStore) setPrefs(tok string, p *Prefs) (bool, error) {
+	ds.mu.Lock()
+	defer ds.mu.Unlock()
+	old, ok := ds.byTk[tok]
+	if !ok {
+		return false, nil
+	}
+	d := old
+	d.Prefs = p
+	ds.byTk[tok] = d
+	if err := ds.saveLocked(); err != nil {
+		ds.byTk[tok] = old
+		return true, err
+	}
+	return true, nil
 }
 
 func (ds *deviceStore) remove(tok string) bool {

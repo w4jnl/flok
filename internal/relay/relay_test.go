@@ -146,7 +146,7 @@ func TestRelayEndToEnd(t *testing.T) {
 	}
 
 	// the instance links in with the real client
-	snap := snapshot.Snapshot{Unseen: 1, Agents: []snapshot.Agent{{PaneID: "%1", Name: "api", State: agent.Blocked, Reason: "permission:Bash", Unseen: 1}}}
+	snap := snapshot.Snapshot{Unseen: 1, Agents: []snapshot.Agent{{PaneID: "%1", SessionName: "Hugo", Name: "api", State: agent.Blocked, Reason: "permission:Bash", Unseen: 1}}}
 	cl := link.New(link.Config{URL: srv.URL, Token: "inst-tok", Name: "home", Version: "test", Hostname: "mac"})
 	cmds := make(chan link.Command, 16)
 	go func() {
@@ -186,7 +186,8 @@ func TestRelayEndToEnd(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	push.mu.Lock()
-	if len(push.sent) != 1 || push.to[0] != (apns.Device{Token: "devicetoken123", Sandbox: true}) || push.sent[0].Title != "home · api" || push.sent[0].Body != "needs you: perm:Bash" ||
+	if len(push.sent) != 1 || push.to[0] != (apns.Device{Token: "devicetoken123", Sandbox: true}) || push.sent[0].Title != "api" || push.sent[0].Subtitle != "home · Hugo" ||
+		push.sent[0].Body != "● needs you: perm:Bash" || push.sent[0].Sound != SoundRequest || !push.sent[0].Mutable || push.sent[0].Data["push_kind"] != KindPermission ||
 		push.sent[0].Category != CategoryPermission || *push.sent[0].Badge != 1 || push.sent[0].CollapseID != "home:%1" || !push.sent[0].TimeSensitive {
 		t.Fatalf("push: %+v", push.sent)
 	}
@@ -239,9 +240,16 @@ func TestRelayEndToEnd(t *testing.T) {
 		t.Fatalf("screen: %+v", f)
 	}
 	app2 := dialApp(t, srv, "dev-tok")
-	app2.send(t, wire.Frame{Type: wire.TypeSubscribe, Instance: "home", Pane: "%1", On: true}) // a second viewer: no second subscribe to the instance
 	app2.next(t, func(f wire.Frame) bool { return f.Type == wire.TypeInstances })
+	app2.send(t, wire.Frame{Type: wire.TypeSubscribe, Instance: "home", Pane: "%1", On: true}) // a second viewer: no second subscribe to the instance …
+	if f := app2.next(t, func(f wire.Frame) bool { return f.Type == wire.TypeScreen }); f.Screen.Text != "Allow Bash? [y/n]\n" {
+		t.Fatalf("… but the screen the first one has, at once: %+v", f) // the instance resends only a changed screen
+	}
 	app2.conn.Close(websocket.StatusNormalClosure, "bye")
+	// one look without a stream (the notification's expanded view) takes the held screen too
+	if code, out := api(t, srv, "dev-tok", "GET", "/api/screen?instance=home&pane=%251", nil); code != 200 || out["text"] != "Allow Bash? [y/n]\n" {
+		t.Fatalf("screen while subscribed: %d %v", code, out)
+	}
 	app.send(t, wire.Frame{Type: wire.TypeSubscribe, Instance: "home", Pane: "%1", On: false})
 	c = <-cmds
 	if c.Kind != "subscribe" || c.On {
@@ -251,6 +259,23 @@ func TestRelayEndToEnd(t *testing.T) {
 	case c := <-cmds:
 		t.Fatalf("unexpected command: %+v", c)
 	case <-time.After(100 * time.Millisecond):
+	}
+	// one look at a pane nobody watches: subscribe, the first screen, unsubscribe
+	go func() {
+		c := <-cmds
+		if c.Kind != "subscribe" || !c.On || c.Pane != "%1" {
+			t.Errorf("one look subscribes: %+v", c)
+		}
+		cl.Screen("%1", "fresh\n")
+	}()
+	if code, out := api(t, srv, "dev-tok", "GET", "/api/screen?instance=home&pane=%251", nil); code != 200 || out["text"] != "fresh\n" {
+		t.Fatalf("one look: %d %v", code, out)
+	}
+	if c := <-cmds; c.Kind != "subscribe" || c.On {
+		t.Fatalf("one look lets go: %+v", c)
+	}
+	if code, _ := api(t, srv, "dev-tok", "GET", "/api/screen?instance=office&pane=%251", nil); code != http.StatusBadGateway {
+		t.Fatalf("one look at an unknown instance: %d", code)
 	}
 
 	// the instance goes away: offline to the app, an answer is refused
@@ -295,15 +320,18 @@ func TestRelayRefuses(t *testing.T) {
 }
 
 func TestAlertWords(t *testing.T) {
-	n := Alert("office", wire.Event{Pane: "beta:%3", Host: "beta", Agent: "docs", Kind: "done"}, 0)
-	if n.Title != "office · beta/docs" || n.Body != "finished" || n.Category != CategoryDone || n.TimeSensitive {
+	n := Alert("office", wire.Event{Pane: "beta:%3", Host: "beta", Agent: "docs", Kind: "done"}, 0, "Docs")
+	if n.Title != "docs" || n.Subtitle != "office / beta · Docs" || n.Body != "✓ done" || n.Category != CategoryDone || n.TimeSensitive || n.Sound != SoundDone {
 		t.Fatalf("done: %+v", n)
 	}
-	n = Alert("home", wire.Event{Pane: "%1", Agent: "api", Kind: "blocked", Reason: "question"}, 2)
-	if n.Body != "needs you: question" || n.Category != CategoryQuestion || *n.Badge != 2 {
+	n = Alert("home", wire.Event{Pane: "%1", Agent: "api", Kind: "blocked", Reason: "question"}, 2, "")
+	if n.Subtitle != "home" || n.Body != "● needs you: question" || n.Category != CategoryQuestion || *n.Badge != 2 || !n.TimeSensitive || n.Sound != SoundRequest {
 		t.Fatalf("question: %+v", n)
 	}
-	if n := Alert("home", wire.Event{Pane: "%1", Agent: "api", Kind: "error"}, 0); n.Body != "failed" {
+	if n := Alert("home", wire.Event{Pane: "%1", Agent: "api", Kind: "blocked", Reason: "permission"}, 0, ""); n.Body != "● needs you: perm" || n.Category != CategoryPermission {
+		t.Fatalf("a permission without a tool: %+v", n)
+	}
+	if n := Alert("home", wire.Event{Pane: "%1", Agent: "api", Kind: "error"}, 0, ""); n.Body != "✗ failed" || n.Data["push_kind"] != KindError {
 		t.Fatalf("error: %+v", n)
 	}
 	if NewToken() == NewToken() || len(NewToken()) != 48 {
@@ -362,5 +390,102 @@ func TestDeviceLabelTellsRegistrationsApart(t *testing.T) {
 	}
 	if got := (device{Token: "d14088c4abcdef00", Sandbox: true}).label(); got != "device d14088c4… sandbox" {
 		t.Fatalf("label without a name: %q", got)
+	}
+}
+
+func TestPrefsFilterAndSound(t *testing.T) {
+	now := time.Now()
+	soon, past := now.Add(time.Hour), now.Add(-time.Minute)
+	off, on := false, true
+	p := &Prefs{
+		Kinds: map[string]KindPrefs{KindDone: {Off: true}, KindQuestion: {Sound: "none", TimeSensitive: &off}, KindError: {Sound: "default", TimeSensitive: &on}},
+		Mutes: []Mute{{Instance: "home", Agent: "api", Until: &soon}, {Instance: "home", Host: "beta", Agent: "docs"}, {Instance: "home", Agent: "old", Until: &past}},
+	}
+	perm := wire.Event{Agent: "web", Kind: "blocked", Reason: "permission:Bash"}
+	cases := []struct {
+		ev   wire.Event
+		want bool
+		why  string
+	}{
+		{perm, true, "a permission prompt of an unmuted agent"},
+		{wire.Event{Agent: "web", Kind: "done"}, false, "done is off"},
+		{wire.Event{Agent: "api", Kind: "blocked", Reason: "permission:Bash"}, false, "api is muted for an hour"},
+		{wire.Event{Agent: "docs", Host: "beta", Kind: "error"}, false, "beta's docs is muted for good"},
+		{wire.Event{Agent: "docs", Kind: "error"}, true, "the local docs is another agent"},
+		{wire.Event{Agent: "old", Kind: "error"}, true, "an expired mute does not count"},
+	}
+	for _, c := range cases {
+		if got := p.Allows("home", c.ev, now); got != c.want {
+			t.Errorf("%s: Allows = %v", c.why, got)
+		}
+	}
+	if p.Allows("office", wire.Event{Agent: "api", Kind: "error"}, now) != true {
+		t.Error("a mute is per instance")
+	}
+	if p.Sound(KindPermission) != SoundRequest || p.Sound(KindQuestion) != "" || p.Sound(KindError) != "default" || (*Prefs)(nil).Sound(KindDone) != SoundDone {
+		t.Error("sounds: flok by default, silent and the system sound when chosen")
+	}
+	if !p.TimeSensitive(KindPermission) || p.TimeSensitive(KindQuestion) || !p.TimeSensitive(KindError) || (*Prefs)(nil).TimeSensitive(KindDone) {
+		t.Error("time-sensitive: on for prompts and questions unless switched off, off otherwise unless switched on")
+	}
+	if (&Prefs{Kinds: map[string]KindPrefs{"bogus": {}}}).valid() || (&Prefs{Kinds: map[string]KindPrefs{KindDone: {Sound: "beep"}}}).valid() || (&Prefs{Mutes: []Mute{{Agent: "x"}}}).valid() {
+		t.Error("unknown kinds and sounds, a mute without an instance: refused")
+	}
+	p.prune(now)
+	if len(p.Mutes) != 2 {
+		t.Errorf("prune keeps the live mutes: %+v", p.Mutes)
+	}
+}
+
+// Each phone's settings decide its pushes: a filtered one is not sent, the others carry the
+// phone's sound; settings come with the registration and through PUT …/prefs.
+func TestRelayPushesByPrefs(t *testing.T) {
+	push := &fakePush{}
+	s, err := New(Config{InstanceTokens: []string{"inst-tok"}, DeviceTokens: []string{"dev-tok"}, DataDir: t.TempDir(), Push: push, Logf: t.Logf})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(s.Handler())
+	defer srv.Close()
+	if code, _ := api(t, srv, "dev-tok", "POST", "/api/devices", map[string]any{"token": "quietphone01", "name": "quiet",
+		"prefs": map[string]any{"kinds": map[string]any{"done": map[string]any{"off": true}}}}); code != 200 {
+		t.Fatalf("register with prefs: %d", code)
+	}
+	if code, _ := api(t, srv, "dev-tok", "POST", "/api/devices", map[string]any{"token": "loudphone001", "name": "loud"}); code != 200 {
+		t.Fatalf("register: %d", code)
+	}
+	if code, _ := api(t, srv, "dev-tok", "PUT", "/api/devices/loudphone001/prefs", map[string]any{"kinds": map[string]any{"done": map[string]any{"sound": "default"}}}); code != 200 {
+		t.Fatalf("prefs: %d", code)
+	}
+	if code, _ := api(t, srv, "dev-tok", "PUT", "/api/devices/nosuchphone1/prefs", map[string]any{}); code != http.StatusNotFound {
+		t.Fatalf("prefs for an unknown phone: %d", code)
+	}
+	if code, _ := api(t, srv, "dev-tok", "PUT", "/api/devices/loudphone001/prefs", map[string]any{"kinds": map[string]any{"done": map[string]any{"sound": "beep"}}}); code != http.StatusBadRequest {
+		t.Fatalf("an unknown sound: %d", code)
+	}
+	// a curl registration without prefs keeps the phone's
+	if code, _ := api(t, srv, "dev-tok", "POST", "/api/devices", map[string]any{"token": "quietphone01", "name": "quiet"}); code != 200 {
+		t.Fatalf("re-register: %d", code)
+	}
+	in := &instance{name: "home", subs: map[string]int{}, gen: 1, online: true}
+	s.mu.Lock()
+	s.instances["home"] = in
+	s.mu.Unlock()
+	s.event(in, 1, wire.Event{Pane: "%1", Agent: "api", Kind: "done"})
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		push.mu.Lock()
+		n := len(push.sent)
+		push.mu.Unlock()
+		if n >= 1 || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	time.Sleep(50 * time.Millisecond) // a second push would have been sent by now
+	push.mu.Lock()
+	defer push.mu.Unlock()
+	if len(push.sent) != 1 || push.to[0].Token != "loudphone001" || push.sent[0].Sound != "default" {
+		t.Fatalf("only the loud phone, with its sound: %+v → %+v", push.to, push.sent)
 	}
 }

@@ -63,7 +63,8 @@ type instance struct {
 	online  bool
 	since   time.Time
 	snap    *snapshot.Snapshot
-	subs    map[string]int // pane → how many apps look at it
+	subs    map[string]int         // pane → how many apps look at it
+	screens map[string]wire.Screen // pane → its last screen, while someone looks at it
 	out     chan wire.Frame
 	pending map[string]chan string // answer / seen id → outcome ("" = ok)
 	nextID  uint64
@@ -101,6 +102,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/devices", s.withDevice(s.handleDevicesList))
 	mux.HandleFunc("POST /api/devices", s.withDevice(s.handleDeviceAdd))
 	mux.HandleFunc("DELETE /api/devices/{token}", s.withDevice(s.handleDeviceRemove))
+	mux.HandleFunc("PUT /api/devices/{token}/prefs", s.withDevice(s.handleDevicePrefs))
+	mux.HandleFunc("GET /api/screen", s.withDevice(s.handleScreen))
 	return mux
 }
 
@@ -320,6 +323,12 @@ func (s *Server) screen(in *instance, gen uint64, sc wire.Screen) {
 	if in.gen != gen {
 		return
 	}
+	if in.subs[sc.Pane] > 0 { // kept for the next app that looks: an unchanged screen is not resent
+		if in.screens == nil {
+			in.screens = map[string]wire.Screen{}
+		}
+		in.screens[sc.Pane] = sc
+	}
 	key := [2]string{in.name, sc.Pane}
 	for a := range s.apps {
 		if a.subs[key] {
@@ -368,12 +377,20 @@ func (s *Server) event(in *instance, gen uint64, ev wire.Event) {
 	}
 	devices := s.devices.list()
 	s.mu.Unlock()
+	session := sessionOf(in.snap, ev.Pane)
 	if s.cfg.Push == nil || len(devices) == 0 {
 		return
 	}
-	n := Alert(in.name, ev, badge)
+	n := Alert(in.name, ev, badge, session)
+	kind, now := PushKind(ev), time.Now()
 	for _, d := range devices {
-		go func(d device) {
+		if why := d.Prefs.filtered(in.name, ev, now); why != "" {
+			s.cfg.Logf("push: %s · %s → %s: not sent, %s", in.name, ev.Agent, d.label(), why)
+			continue
+		}
+		n := n // the phone's own sound and interruption level
+		n.Sound, n.TimeSensitive = d.Prefs.Sound(kind), d.Prefs.TimeSensitive(kind)
+		go func(d device, n apns.Notification) {
 			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 			defer cancel()
 			err := s.cfg.Push.Send(ctx, apns.Device{Token: d.Token, Sandbox: d.Sandbox}, n)
@@ -386,8 +403,26 @@ func (s *Server) event(in *instance, gen uint64, ev wire.Event) {
 			default:
 				s.cfg.Logf("push: %s · %s → %s (%s)", in.name, ev.Agent, d.label(), ev.Kind)
 			}
-		}(d)
+		}(d, n)
 	}
+}
+
+// sessionOf is the session name of the agent in a pane ("beta:%3" for a host's), from the
+// instance's last snapshot; "" when it is not there.
+func sessionOf(snap *snapshot.Snapshot, pane string) string {
+	if snap == nil {
+		return ""
+	}
+	for _, a := range snap.Agents {
+		ref := a.PaneID
+		if a.Host != "" {
+			ref = a.Host + ":" + a.PaneID
+		}
+		if ref == pane {
+			return a.SessionName
+		}
+	}
+	return ""
 }
 
 // Notification categories the app registers actions for.
@@ -397,31 +432,44 @@ const (
 	CategoryDone       = "FLOK_DONE"       // finished or failed: Open
 )
 
-// Alert is the push for an event: the same words as [notify], plus what the app needs to act
-// (instance, pane, kind, reason) and a category for its actions.
-func Alert(instance string, ev wire.Event, badge int) apns.Notification {
-	agent := ev.Agent
+// Alert is the push for an event, worded like the sidebar: the agent as the title, where it runs
+// as the subtitle (instance, host, session), its state with the sidebar's glyph as the body. The
+// data carries what the app and its extensions act on (instance, pane, kind, reason, push_kind,
+// session); the category picks the actions. Sound and interruption level are the defaults
+// here; event sets each phone's own (Prefs).
+func Alert(instance string, ev wire.Event, badge int, session string) apns.Notification {
+	where := instance
 	if ev.Host != "" {
-		agent = ev.Host + "/" + ev.Agent
+		where += " / " + ev.Host
 	}
-	n := apns.Notification{Title: instance + " · " + agent, ThreadID: instance, CollapseID: instance + ":" + ev.Pane, Sound: "default", Badge: &badge,
-		Data: map[string]any{"instance": instance, "pane": ev.Pane, "kind": ev.Kind, "reason": ev.Reason, "agent": ev.Agent, "host": ev.Host}}
-	switch ev.Kind {
-	case "blocked":
-		n.TimeSensitive = true
-		reason := strings.TrimPrefix(ev.Reason, "permission:")
-		switch {
-		case strings.HasPrefix(ev.Reason, "permission"):
-			n.Body, n.Category = "needs you: perm:"+reason, CategoryPermission
-		case ev.Reason != "":
-			n.Body, n.Category = "needs you: "+ev.Reason, CategoryQuestion
-		default:
-			n.Body, n.Category = "needs you", CategoryQuestion
+	if session != "" {
+		where += " · " + session
+	}
+	title := ev.Agent
+	if title == "" {
+		title = ev.Pane
+	}
+	kind := PushKind(ev)
+	var defaults *Prefs
+	n := apns.Notification{Title: title, Subtitle: where, ThreadID: instance, CollapseID: instance + ":" + ev.Pane, Badge: &badge, Mutable: true,
+		Sound: defaults.Sound(kind), TimeSensitive: defaults.TimeSensitive(kind),
+		Data: map[string]any{"instance": instance, "pane": ev.Pane, "kind": ev.Kind, "reason": ev.Reason, "agent": ev.Agent, "host": ev.Host,
+			"session": session, "push_kind": kind}}
+	switch kind {
+	case KindPermission:
+		n.Body, n.Category = "● needs you: perm", CategoryPermission
+		if tool := strings.TrimPrefix(strings.TrimPrefix(ev.Reason, "permission"), ":"); tool != "" {
+			n.Body += ":" + tool
 		}
-	case "error":
-		n.Body, n.Category = "failed", CategoryDone
+	case KindQuestion:
+		n.Body, n.Category = "● needs you", CategoryQuestion
+		if ev.Reason != "" {
+			n.Body += ": " + ev.Reason
+		}
+	case KindError:
+		n.Body, n.Category = "✗ failed", CategoryDone
 	default:
-		n.Body, n.Category = "finished", CategoryDone
+		n.Body, n.Category = "✓ done", CategoryDone
 	}
 	return n
 }
@@ -572,6 +620,9 @@ func (s *Server) handleAppWS(w http.ResponseWriter, r *http.Request) {
 			case f.On && !a.subs[key]:
 				a.subs[key] = true
 				s.subscribeLocked(f.Instance, f.Pane)
+				if sc, ok := s.instances[f.Instance].screens[f.Pane]; ok { // someone else looks already
+					a.send(wire.Frame{Type: wire.TypeScreen, Instance: f.Instance, Screen: &sc})
+				}
 			case !f.On && a.subs[key]:
 				delete(a.subs, key)
 				s.unsubscribeLocked(f.Instance, f.Pane)
@@ -629,6 +680,7 @@ func (s *Server) unsubscribeLocked(name, pane string) {
 	in.subs[pane]--
 	if in.subs[pane] == 0 {
 		delete(in.subs, pane)
+		delete(in.screens, pane)
 		if in.online {
 			select {
 			case in.out <- wire.Frame{Type: wire.TypeSubscribe, Pane: pane, On: false}:
@@ -644,13 +696,14 @@ type deviceReq struct {
 	Token   string `json:"token"`
 	Name    string `json:"name,omitempty"`
 	Sandbox bool   `json:"sandbox,omitempty"`
+	Prefs   *Prefs `json:"prefs,omitempty"`
 }
 
 func (s *Server) handleDevicesList(w http.ResponseWriter, r *http.Request) {
 	list := s.devices.list()
 	out := make([]map[string]any, 0, len(list))
 	for _, d := range list {
-		out = append(out, map[string]any{"token": short(d.Token), "name": d.Name, "sandbox": d.Sandbox, "added": d.Added})
+		out = append(out, map[string]any{"token": short(d.Token), "name": d.Name, "sandbox": d.Sandbox, "added": d.Added, "prefs": d.Prefs})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"devices": out, "push": s.cfg.Push != nil})
 }
@@ -661,13 +714,93 @@ func (s *Server) handleDeviceAdd(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "a device token is needed"})
 		return
 	}
-	d := device{Token: req.Token, Name: req.Name, Sandbox: req.Sandbox, Added: time.Now()}
+	if !req.Prefs.valid() {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "prefs: unknown kind or sound, or a mute without instance and agent"})
+		return
+	}
+	req.Prefs.prune(time.Now())
+	d := device{Token: req.Token, Name: req.Name, Sandbox: req.Sandbox, Added: time.Now(), Prefs: req.Prefs}
 	if err := s.devices.add(d); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 		return
 	}
 	s.cfg.Logf("device %s registered", d.label())
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "push": s.cfg.Push != nil})
+}
+
+// handleDevicePrefs replaces a phone's notification settings (the app sends them whole).
+func (s *Server) handleDevicePrefs(w http.ResponseWriter, r *http.Request) {
+	var p Prefs
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&p); err != nil || !p.valid() {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "prefs: not JSON, an unknown kind or sound, or a mute without instance and agent"})
+		return
+	}
+	p.prune(time.Now())
+	tok := r.PathValue("token")
+	found, err := s.devices.setPrefs(tok, &p)
+	switch {
+	case !found:
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": "no such device"})
+		return
+	case err != nil:
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return
+	}
+	s.cfg.Logf("device %s: notification settings, %d kinds set, %d mutes", short(tok), len(p.Kinds), len(p.Mutes))
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// ScreenWait bounds how long GET /api/screen waits for an instance to send the screen.
+var ScreenWait = 4 * time.Second
+
+// handleScreen is one look at a pane, for a caller without a live stream (the notification's
+// expanded view): it subscribes like an app, answers with the first screen (or the one another
+// app's subscription already holds) and lets go.
+func (s *Server) handleScreen(w http.ResponseWriter, r *http.Request) {
+	inst, pane := r.URL.Query().Get("instance"), r.URL.Query().Get("pane")
+	if inst == "" || pane == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "instance and pane are needed"})
+		return
+	}
+	key := [2]string{inst, pane}
+	a := &app{out: make(chan wire.Frame, 16), subs: map[[2]string]bool{key: true}}
+	s.mu.Lock()
+	in := s.instances[inst]
+	if in == nil || !in.online {
+		s.mu.Unlock()
+		writeJSON(w, http.StatusBadGateway, map[string]any{"error": inst + " is offline"})
+		return
+	}
+	s.apps[a] = struct{}{}
+	s.subscribeLocked(inst, pane)
+	cached, ok := in.screens[pane]
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		delete(s.apps, a)
+		s.unsubscribeLocked(inst, pane)
+		s.mu.Unlock()
+	}()
+	if ok {
+		writeJSON(w, http.StatusOK, map[string]any{"pane": pane, "text": cached.Text})
+		return
+	}
+	timeout := time.NewTimer(ScreenWait)
+	defer timeout.Stop()
+	for {
+		select {
+		case f := <-a.out:
+			if f.Type == wire.TypeScreen && f.Screen != nil && f.Instance == inst && f.Screen.Pane == pane {
+				writeJSON(w, http.StatusOK, map[string]any{"pane": pane, "text": f.Screen.Text})
+				return
+			}
+		case <-timeout.C:
+			writeJSON(w, http.StatusGatewayTimeout, map[string]any{"error": "no screen from " + inst + " in time"})
+			return
+		case <-r.Context().Done():
+			return
+		}
+	}
 }
 
 func (s *Server) handleDeviceRemove(w http.ResponseWriter, r *http.Request) {

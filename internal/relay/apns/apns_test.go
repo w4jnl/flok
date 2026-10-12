@@ -57,8 +57,8 @@ func TestSendOverHTTP2WithProviderToken(t *testing.T) {
 		t.Fatal(err)
 	}
 	badge := 2
-	err = c.Send(context.Background(), Device{Token: "abc123"}, Notification{Title: "home · api", Body: "needs you: perm:Bash", Category: "FLOK_PERMISSION",
-		ThreadID: "home", CollapseID: "home:%1", Badge: &badge, Sound: "default", TimeSensitive: true, Data: map[string]any{"pane": "%1", "aps": "ignored"}})
+	err = c.Send(context.Background(), Device{Token: "abc123"}, Notification{Title: "api", Subtitle: "home · Hugo", Body: "● needs you: perm:Bash", Category: "FLOK_PERMISSION",
+		ThreadID: "home", CollapseID: "home:%1", Badge: &badge, Sound: "flok-request.caf", TimeSensitive: true, Mutable: true, Data: map[string]any{"pane": "%1", "aps": "ignored"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +68,8 @@ func TestSendOverHTTP2WithProviderToken(t *testing.T) {
 	}
 	aps := g.body["aps"].(map[string]any)
 	alert := aps["alert"].(map[string]any)
-	if alert["title"] != "home · api" || aps["category"] != "FLOK_PERMISSION" || aps["badge"].(float64) != 2 || aps["interruption-level"] != "time-sensitive" || g.body["pane"] != "%1" {
+	if alert["title"] != "api" || alert["subtitle"] != "home · Hugo" || aps["category"] != "FLOK_PERMISSION" || aps["badge"].(float64) != 2 ||
+		aps["interruption-level"] != "time-sensitive" || aps["sound"] != "flok-request.caf" || aps["mutable-content"].(float64) != 1 || g.body["pane"] != "%1" {
 		t.Fatalf("payload: %+v", g.body)
 	}
 	// the provider token: ES256 over header.claims, verifiable with the key's public half

@@ -38,6 +38,7 @@ trap 'm11_cleanup; cleanup' EXIT
 api() { curl -s -m 5 -H "Authorization: Bearer $DEV_TOK" "$@" "http://127.0.0.1:$RELAY_PORT${API_PATH}"; }
 GET() { API_PATH=$1 api; }
 POST() { API_PATH=$1 api -X POST -d "$2"; }
+PUT() { API_PATH=$1 api -X PUT -d "$2"; }
 
 # --- the relay is up, the instance links in --------------------------------------------------
 expect_soon "the relay answers /healthz" '"ok":true' "$RELAY" health -url "http://127.0.0.1:$RELAY_PORT/healthz"
@@ -57,8 +58,9 @@ hook claude '{"hook_event_name":"SessionStart","source":"startup","session_id":"
 hook claude '{"hook_event_name":"UserPromptSubmit","session_id":"ph1"}'
 hook claude '{"hook_event_name":"PermissionRequest","session_id":"ph1","tool_name":"Bash","tool_input":{"command":"npm test"},"tool_use_id":"t1"}'
 expect_soon "the permission request reaches the app as an event" '"type":"event","instance":"e2e","event":."pane":"'"$AGENT"'".*"kind":"blocked"' cat "$T/tail.out"
-expect_soon "… and the phone as a time-sensitive push with the permission category" '^/3/device/e2edevicetoken0001[|]e2e:'"$AGENT"'[|]e2e · '"$PROJ"'[|]needs you: perm:Bash[|]FLOK_PERMISSION[|]1$' cat "$APNS_LOG"
+expect_soon "… and the phone as a time-sensitive push with the permission category and flok's sound" '^/3/device/e2edevicetoken0001[|]e2e:'"$AGENT"'[|]'"$PROJ"'[|]● needs you: perm:Bash[|]FLOK_PERMISSION[|]1[|]e2e · [^|]+[|]flok-request.caf[|]time-sensitive$' cat "$APNS_LOG"
 expect_soon "the subscription streams the agent's screen" '"type":"screen","instance":"e2e","screen":."pane":"'"$AGENT"'"' cat "$T/tail.out"
+expect "one look at the screen (the notification's expanded view)" '"pane":"'"$AGENT"'","text":"' "$(GET "/api/screen?instance=e2e&pane=$(printf %s "$AGENT" | sed 's/%/%25/')")"
 
 # --- the phone answers -------------------------------------------------------------------------
 expect "an answer is typed into the agent pane" '"ok":true' "$(POST /api/answer '{"instance":"e2e","pane":"'"$AGENT"'","text":"y","keys":["enter"]}')"
@@ -73,7 +75,10 @@ expect "an unknown instance is refused" 'no instance office' "$(POST /api/answer
 expect "seen through the API is taken" '"ok":true' "$(POST /api/seen '{"instance":"e2e","pane":"'"$AGENT"'"}')"
 hook claude '{"hook_event_name":"PostToolUse","session_id":"ph1","tool_name":"Bash","tool_use_id":"t1"}'
 hook claude '{"hook_event_name":"Stop","session_id":"ph1"}'
-expect_soon "the finish is pushed too" '[|]e2e · '"$PROJ"'[|]finished[|]FLOK_DONE[|]' cat "$APNS_LOG"
+expect_soon "the finish is pushed too, with the done sound" '[|]'"$PROJ"'[|]✓ done[|]FLOK_DONE[|][0-9]*[|]e2e · [^|]+[|]flok-done.caf[|]$' cat "$APNS_LOG"
+expect "the phone mutes the agent" '"ok":true' "$(PUT /api/devices/e2edevicetoken0001/prefs '{"mutes":[{"instance":"e2e","agent":"'"$PROJ"'"}]}')"
+expect "the settings are listed with the phone" '"mutes":\[\{"instance":"e2e","agent":"'"$PROJ"'"' "$(GET /api/devices)"
+expect "and taken off again" '"ok":true' "$(PUT /api/devices/e2edevicetoken0001/prefs '{}')"
 
 # --- an agent on a remote host, answered through the main instance -----------------------------
 fake_ssh_setup
@@ -87,7 +92,7 @@ expect_soon "beta's pane shows what was typed" '^n$' tmux -L e2e-beta capture-pa
 rhook beta claude '{"hook_event_name":"SessionStart","source":"startup","session_id":"rb1","cwd":"'"$R"'"}'
 rhook beta claude '{"hook_event_name":"UserPromptSubmit","session_id":"rb1"}'
 rhook beta claude '{"hook_event_name":"PermissionRequest","session_id":"rb1","tool_name":"Bash","tool_input":{"command":"ls"},"tool_use_id":"rt1"}'
-expect_soon "a push for the remote agent names the host" '[|]e2e · beta/'"$PROJ"'[|]needs you: perm:Bash[|]FLOK_PERMISSION[|]' cat "$APNS_LOG"
+expect_soon "a push for the remote agent names the host" '[|]'"$PROJ"'[|]● needs you: perm:Bash[|]FLOK_PERMISSION[|][0-9]*[|]e2e / beta( · [^|]*)?[|]' cat "$APNS_LOG"
 kill "$TAIL_PID" 2>/dev/null || true
 "$RELAY" tail -url "http://127.0.0.1:$RELAY_PORT" -token "$DEV_TOK" -subscribe "e2e:beta:$BPANE" > "$T/tail.out" 2>&1 &
 TAIL_PID=$!
