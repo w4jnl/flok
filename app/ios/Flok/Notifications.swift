@@ -102,17 +102,27 @@ final class Notifications: NSObject, UNUserNotificationCenterDelegate {
 
     // MARK: delegate
 
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
-        [.banner, .sound, .badge, .list]
+    // The completion-handler forms on purpose: UIKit asserts that the handler runs on the main
+    // thread, and the async forms of these methods call it from the concurrency pool (a tapped
+    // notification aborted the app in -[UIApplication _performBlockAfterCATransactionCommitSynchronizes:]).
+
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
+                                            withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler([.banner, .sound, .badge, .list])
     }
 
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
+                                            withCompletionHandler completionHandler: @escaping () -> Void) {
         let info = response.notification.request.content.userInfo
         let instance = info["instance"] as? String ?? ""
         let pane = info["pane"] as? String ?? ""
         let action = response.actionIdentifier
-        await MainActor.run {
-            Task { await Notifications.shared.perform(action: action, instance: instance, pane: pane) }
+        let done = MainThreadCallback(completionHandler)
+        Task { @MainActor in
+            // An action from the lock screen runs in the background: iOS keeps the app alive
+            // until the handler is called, so it is called once the answer went out.
+            await Notifications.shared.perform(action: action, instance: instance, pane: pane)
+            done.call()
         }
     }
 
@@ -130,4 +140,11 @@ final class Notifications: NSObject, UNUserNotificationCenterDelegate {
             relay.pendingOpen = target
         }
     }
+}
+
+/// Carries a UIKit completion handler into a main-actor task; it is only ever called there.
+private struct MainThreadCallback: @unchecked Sendable {
+    let body: () -> Void
+    init(_ body: @escaping () -> Void) { self.body = body }
+    @MainActor func call() { body() }
 }
