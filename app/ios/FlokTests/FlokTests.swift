@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import Testing
 @testable import Flok
 
@@ -72,8 +73,10 @@ struct NotificationTests {
     @Test func actionsTypeTheRightKeys() {
         #expect(NotificationAction.approve.keys == ["Enter"])
         #expect(NotificationAction.deny.keys == ["Escape"])
-        #expect(NotificationAction.seen.keys == nil)
-        #expect(NotificationCategory.permission.actions.map(\.identifier) == ["APPROVE", "DENY"])
+        #expect(NotificationAction.seen.keys == nil && NotificationAction.mute.keys == nil)
+        #expect(NotificationCategory.permission.actions.map(\.identifier) == ["APPROVE", "DENY", "MUTE_1H"])
+        #expect(NotificationCategory.question.actions.map(\.identifier) == ["MUTE_1H"])
+        #expect(NotificationCategory.done.actions.map(\.identifier) == ["SEEN", "MUTE_1H"])
         #expect(Set(NotificationCategory.all.map(\.identifier)) == ["FLOK_PERMISSION", "FLOK_QUESTION", "FLOK_DONE"])
     }
 
@@ -82,5 +85,95 @@ struct NotificationTests {
         #expect(elapsed(since: t0, now: t0.addingTimeInterval(65)) == "1:05")
         #expect(elapsed(since: t0, now: t0.addingTimeInterval(3725)) == "1:02:05")
         #expect(elapsed(since: nil) == "")
+    }
+}
+
+struct PushTests {
+    @Test func readsWhatTheRelaySends() throws {
+        let p = try #require(PushPayload(["instance": "Home", "pane": "macmini:%1", "agent": "docker", "host": "macmini", "session": "infra",
+                                          "kind": "blocked", "reason": "permission:Bash", "push_kind": "permission"]))
+        #expect(p.place == "Home / macmini · infra")
+        #expect(p.glyph == "●" && p.label == "needs you: perm:Bash" && p.answerable && p.tileName == "tile-attention")
+        #expect(PushPayload(["pane": "%1"]) == nil, "no instance, not a flok push")
+    }
+
+    @Test func anOlderRelayWithoutPushKindIsSortedTheSameWay() throws {
+        #expect(PushPayload(["instance": "Home", "pane": "%1", "kind": "blocked", "reason": "question"])?.pushKind == "question")
+        #expect(PushPayload(["instance": "Home", "pane": "%1", "kind": "blocked", "reason": "permission"])?.label == "needs you: perm")
+        let failed = try #require(PushPayload(["instance": "Home", "pane": "%1", "kind": "error"]))
+        #expect(failed.glyph == "✗" && failed.label == "failed" && !failed.answerable && failed.wantsYou)
+        let done = try #require(PushPayload(["instance": "Home", "pane": "%1", "kind": "done"]))
+        #expect(done.glyph == "✓" && done.tileName == "tile-done" && done.place == "Home")
+    }
+
+    @Test func theCardShowsTheBottomOfTheScreen() {
+        let screen = "line 1\nline 2   \n❯ Allow Bash?\n  1. Yes\n  2. No\n\n\n"
+        #expect(NotificationCard.tail(screen, lines: 3) == "❯ Allow Bash?\n  1. Yes\n  2. No")
+        #expect(NotificationCard.tail("", lines: 3) == "")
+    }
+
+    /// Renders the card for a look by eye: TEST_RUNNER_FLOK_CARD_PNG=/path xcodebuild test …
+    @MainActor @Test func rendersTheCard() throws {
+        guard let path = ProcessInfo.processInfo.environment["FLOK_CARD_PNG"] else { return }
+        let push = PushPayload(instance: "Home", pane: "%36", agent: "dotfiles-revamp", host: "", session: "dotfiles", kind: "blocked", reason: "permission:Bash")
+        let screen = "● Bash(yadm pull --rebase)\n  ⎿  Running…\n\n╭──────────────────────────────╮\n│ Bash command                 │\n│   yadm pull --rebase         │\n│ Do you want to proceed?      │\n│ ❯ 1. Yes                     │\n│   2. Yes, and don't ask again │\n│   3. No, and tell Claude …   │\n╰──────────────────────────────╯\n"
+        let card = NotificationCard(push: push, screen: .text(screen), status: "sent ↵").frame(width: 390)
+        let r = ImageRenderer(content: card)
+        r.scale = 3
+        let image = try #require(r.uiImage)
+        try #require(image.pngData()).write(to: URL(fileURLWithPath: path))
+    }
+}
+
+struct PrefsTests {
+    @Test func kindsBackAtTheirDefaultsAreDropped() {
+        var p = NotificationPrefs()
+        p.setOn(.done, false)
+        p.setSound(.question, .none)
+        p.setTimeSensitive(.permission, false)
+        #expect(!p.isOn(.done) && p.sound(.question) == .none && !p.timeSensitive(.permission) && p.timeSensitive(.question))
+        p.setOn(.done, true)
+        p.setSound(.question, .flok)
+        p.setTimeSensitive(.permission, true)
+        #expect(p.kinds.isEmpty, "all back to the defaults: nothing left to store")
+    }
+
+    @Test func mutesMatchByInstanceHostAndName() {
+        var p = NotificationPrefs()
+        let now = Date()
+        p.mute(instance: "Home", host: "macmini", agent: "docker", until: now.addingTimeInterval(3600))
+        p.mute(instance: "Home", host: nil, agent: "api", until: nil)
+        #expect(p.mute(instance: "Home", host: "macmini", agent: "docker", now: now) != nil)
+        #expect(p.mute(instance: "Home", host: "", agent: "docker", now: now) == nil, "the local docker is another agent")
+        #expect(p.mute(instance: "Home", host: "", agent: "api", now: now) != nil)
+        #expect(p.mute(instance: "Home", host: "macmini", agent: "docker", now: now.addingTimeInterval(7200)) == nil, "expired")
+        p.mute(instance: "Home", host: "macmini", agent: "docker", until: nil)
+        #expect(p.mutes.count == 2, "muting again replaces the earlier mute")
+        p.unmute(instance: "Home", host: "macmini", agent: "docker")
+        #expect(p.mutes.count == 1)
+    }
+
+    @Test func encodesTheWayTheRelayReadsThem() throws {
+        var p = NotificationPrefs()
+        p.setTimeSensitive(.question, false)
+        p.mute(instance: "Home", host: "macmini", agent: "docker", until: Date(timeIntervalSince1970: 1_791_000_000))
+        let json = String(decoding: try Wire.encoder.encode(p), as: UTF8.self)
+        #expect(json.contains(#""time_sensitive":false"#))
+        #expect(json.contains(#""until":"2026-10-03T"#), "RFC 3339, what Go's time parses")
+        #expect(json.contains(#""host":"macmini""#) && json.contains(#""agent":"docker""#))
+    }
+
+    @Test func tomorrowMorningIsEightTheNextDay() {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "Europe/Amsterdam")!
+        let evening = cal.date(from: DateComponents(year: 2026, month: 10, day: 12, hour: 23, minute: 30))!
+        let c = cal.dateComponents([.day, .hour, .minute], from: NotificationPrefs.tomorrowMorning(from: evening, calendar: cal))
+        #expect(c.day == 13 && c.hour == 8 && c.minute == 0)
+    }
+
+    @Test func theSpinnerTurnsAQuarterEveryFrame() {
+        let t0 = Date(timeIntervalSinceReferenceDate: 1000)
+        let frames = (0..<5).map { StateGlyph.frame(at: t0.addingTimeInterval(Double($0) * StateGlyph.frameTime)) }
+        #expect(frames == ["◐", "◓", "◑", "◒", "◐"])
     }
 }

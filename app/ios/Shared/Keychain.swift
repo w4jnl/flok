@@ -1,4 +1,7 @@
-// The device token lives in the keychain; everything else the app remembers is a preference.
+// The device token and the relay's address live in the keychain, in the access group the app
+// shares with its notification content extension (the first of keychain-access-groups in both
+// entitlements, so items go there without naming it): the expanded notification reads them to
+// fetch the screen and answer. Everything else the app remembers is a preference.
 import Foundation
 import Security
 

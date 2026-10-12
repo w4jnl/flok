@@ -18,20 +18,6 @@ struct EventRecord: Identifiable, Sendable {
     var id: String { instance + " " + event.id }
 }
 
-enum RelayError: LocalizedError {
-    case notConfigured
-    case http(Int, String)
-    case offline
-
-    var errorDescription: String? {
-        switch self {
-        case .notConfigured: "set the relay and the device token first"
-        case .http(let code, let msg): msg.isEmpty ? "relay answered \(code)" : msg
-        case .offline: "not connected"
-        }
-    }
-}
-
 @MainActor
 @Observable
 final class Relay {
@@ -58,6 +44,9 @@ final class Relay {
     private(set) var screens: [Target: String] = [:]
     /// Set by a notification tap: the view navigates there and clears it.
     var pendingOpen: Target?
+    /// The last failure to hand the notification settings to the relay; nil once they got there.
+    private(set) var prefsError: String?
+    private var prefsSync: Task<Void, Never>?
 
     private var session: URLSession
     private var task: URLSessionWebSocketTask?
@@ -217,20 +206,8 @@ final class Relay {
     }
 
     private func call(_ method: String, _ path: String, body: Data? = nil) async throws {
-        guard let base = settings.baseURL, !settings.deviceToken.isEmpty else { throw RelayError.notConfigured }
-        var req = URLRequest(url: RelayURL.api(base, path))
-        req.httpMethod = method
-        req.setValue("Bearer \(settings.deviceToken)", forHTTPHeaderField: "Authorization")
-        if let body {
-            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            req.httpBody = body
-        }
-        let (data, resp) = try await session.data(for: req)
-        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
-        if code != 200 {
-            let msg = (try? JSONDecoder().decode([String: String].self, from: data))?["error"] ?? ""
-            throw RelayError.http(code, msg)
-        }
+        guard let api = RelayAPI(relayURL: settings.relayURL, token: settings.deviceToken) else { throw RelayError.notConfigured }
+        try await api.send(method, path, body: body, session: session)
     }
 
     /// Types into an agent pane: text first, then the keys. The relay waits for the instance
@@ -250,7 +227,10 @@ final class Relay {
         #else
         sandbox = false
         #endif
-        try await post("/api/devices", DeviceBody(token: apnsToken, name: UIDevice.current.name, sandbox: sandbox))
+        var prefs = settings.notificationPrefs
+        prefs.prune()
+        try await post("/api/devices", DeviceBody(token: apnsToken, name: UIDevice.current.name, sandbox: sandbox, prefs: prefs))
+        prefsError = nil
         let before = settings.registered
         settings.registered = "\(settings.relayURL)|\(apnsToken)"
         // The token this app registered before (an Xcode build that TestFlight replaced, a phone
@@ -263,10 +243,54 @@ final class Relay {
     /// The token of an earlier registration with this relay that `now` replaces; nil when there
     /// is none, it was another relay's (whose list this device token cannot reach), or the same.
     nonisolated static func replacedToken(_ registered: String?, relayURL: String, now: String) -> String? {
+        guard let token = registeredToken(registered, relayURL: relayURL), token != now else { return nil }
+        return token
+    }
+
+    /// The push token this phone registered with a relay, from a `registered` record.
+    nonisolated static func registeredToken(_ registered: String?, relayURL: String) -> String? {
         guard let registered, let bar = registered.lastIndex(of: "|") else { return nil }
         let url = String(registered[..<bar]), token = String(registered[registered.index(after: bar)...])
-        guard url == relayURL, !token.isEmpty, token != now else { return nil }
+        guard url == relayURL, !token.isEmpty else { return nil }
         return token
+    }
+
+    // MARK: notification settings
+
+    /// Changes the notification settings and hands them to the relay a moment later (a run of
+    /// toggles is one request).
+    func updatePrefs(_ change: (inout NotificationPrefs) -> Void) {
+        change(&settings.notificationPrefs)
+        prefsSync?.cancel()
+        prefsSync = Task {
+            try? await Task.sleep(for: .milliseconds(600))
+            guard !Task.isCancelled else { return }
+            await syncPrefs()
+        }
+    }
+
+    /// Changes the settings and sends them at once: a lock-screen action waits for it.
+    func updatePrefsNow(_ change: (inout NotificationPrefs) -> Void) async {
+        change(&settings.notificationPrefs)
+        prefsSync?.cancel()
+        await syncPrefs()
+    }
+
+    /// Sends the settings now. Before the phone registered
+    /// there is nothing to update: the registration carries them.
+    func syncPrefs() async {
+        guard let token = Self.registeredToken(settings.registered, relayURL: settings.relayURL) else { return }
+        var prefs = settings.notificationPrefs
+        prefs.prune()
+        do {
+            try await call("PUT", "/api/devices/\(token)/prefs", body: Wire.encoder.encode(prefs))
+            prefsError = nil
+        } catch RelayError.http(404, "no such device") { // the relay forgot this phone: register again, with them
+            settings.registered = nil
+            await Notifications.shared.registerIfNeeded()
+        } catch {
+            prefsError = error.localizedDescription
+        }
     }
 
     /// One fetch of every instance (pull to refresh; the stream keeps it current otherwise).

@@ -1,7 +1,10 @@
 # flok for iPhone: the Xcode project is generated from this file (brew install xcodegen;
 # make ios-project). Local.xcconfig (gitignored) holds what is yours: FLOK_TEAM_ID = your team
-# id, and FLOK_ENTITLEMENTS = Flok/Flok.entitlements (pushes; a free Apple ID's personal team
-# cannot sign that: leave it empty there).
+# id, and FLOK_ENTITLEMENTS = Flok/Flok.entitlements (pushes, time-sensitive alerts and the
+# keychain group shared with the content extension; a free Apple ID's personal team cannot sign
+# that: leave it empty there). Shared/ is compiled into the app and its notification extensions:
+# FlokNotificationService puts the state tile on a push, FlokNotificationContent is the expanded
+# view with the live screen and the answer keys.
 name: Flok
 options:
   bundleIdPrefix: nl.w4j
@@ -30,6 +33,10 @@ targets:
     platform: iOS
     sources:
       - path: Flok
+      - path: Shared
+    dependencies:
+      - target: FlokNotificationService
+      - target: FlokNotificationContent
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: nl.w4j.flok
@@ -49,6 +56,50 @@ targets:
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         ITSAppUsesNonExemptEncryption: false
+  FlokNotificationService:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: FlokNotificationService
+      - path: Shared/PushPayload.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: nl.w4j.flok.NotificationService
+        TARGETED_DEVICE_FAMILY: "1,2"
+    info:
+      path: FlokNotificationService/Info.plist
+      properties:
+        CFBundleDisplayName: flok
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.usernotifications.service
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).NotificationService
+  FlokNotificationContent:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: FlokNotificationContent
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: nl.w4j.flok.NotificationContent
+        TARGETED_DEVICE_FAMILY: "1,2"
+        CODE_SIGN_ENTITLEMENTS: FlokNotificationContent/FlokNotificationContent.entitlements
+    info:
+      path: FlokNotificationContent/Info.plist
+      properties:
+        CFBundleDisplayName: flok
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.usernotifications.content-extension
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).NotificationViewController
+          NSExtensionAttributes:
+            UNNotificationExtensionCategory: [FLOK_PERMISSION, FLOK_QUESTION, FLOK_DONE]
+            UNNotificationExtensionInitialContentSizeRatio: 0.9
+            UNNotificationExtensionDefaultContentHidden: true
+            UNNotificationExtensionUserInteractionEnabled: true
   FlokTests:
     type: bundle.unit-test
     platform: iOS

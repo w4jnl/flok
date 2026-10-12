@@ -1,6 +1,7 @@
 // Pushes: the categories with their lock-screen actions, the APNs token handed to the relay,
 // and what a tapped action does. Approve and Deny answer the agent through the relay's HTTP
-// API without opening the app; a plain tap opens the pane.
+// API without opening the app, Mute 1 h silences the agent in the settings the relay filters
+// with; a plain tap opens the pane. The expanded view is the content extension's.
 import Foundation
 import UIKit
 import UserNotifications
@@ -9,6 +10,7 @@ enum NotificationAction: String, CaseIterable {
     case approve = "APPROVE"
     case deny = "DENY"
     case seen = "SEEN"
+    case mute = "MUTE_1H"
 
     /// What the action types: Enter takes the highlighted choice of a permission prompt (Yes),
     /// Escape dismisses it (No).
@@ -16,7 +18,7 @@ enum NotificationAction: String, CaseIterable {
         switch self {
         case .approve: ["Enter"]
         case .deny: ["Escape"]
-        case .seen: nil
+        case .seen, .mute: nil
         }
     }
 }
@@ -27,14 +29,16 @@ enum NotificationCategory: String, CaseIterable {
     case done = "FLOK_DONE"
 
     var actions: [UNNotificationAction] {
+        let mute = UNNotificationAction(identifier: NotificationAction.mute.rawValue, title: "Mute 1 h", options: [], icon: UNNotificationActionIcon(systemImageName: "bell.slash"))
         switch self {
         case .permission:
-            [UNNotificationAction(identifier: NotificationAction.approve.rawValue, title: "Approve", options: [.authenticationRequired]),
-             UNNotificationAction(identifier: NotificationAction.deny.rawValue, title: "Deny", options: [.authenticationRequired, .destructive])]
+            return [UNNotificationAction(identifier: NotificationAction.approve.rawValue, title: "Approve", options: [.authenticationRequired], icon: UNNotificationActionIcon(systemImageName: "checkmark")),
+                    UNNotificationAction(identifier: NotificationAction.deny.rawValue, title: "Deny", options: [.authenticationRequired, .destructive], icon: UNNotificationActionIcon(systemImageName: "xmark")),
+                    mute]
         case .question:
-            []
+            return [mute]
         case .done:
-            [UNNotificationAction(identifier: NotificationAction.seen.rawValue, title: "Mark seen", options: [])]
+            return [UNNotificationAction(identifier: NotificationAction.seen.rawValue, title: "Mark seen", options: [], icon: UNNotificationActionIcon(systemImageName: "eye")), mute]
         }
     }
 
@@ -113,29 +117,29 @@ final class Notifications: NSObject, UNUserNotificationCenterDelegate {
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
                                             withCompletionHandler completionHandler: @escaping () -> Void) {
-        let info = response.notification.request.content.userInfo
-        let instance = info["instance"] as? String ?? ""
-        let pane = info["pane"] as? String ?? ""
+        let push = PushPayload(response.notification.request.content.userInfo)
         let action = response.actionIdentifier
         let done = MainThreadCallback(completionHandler)
         Task { @MainActor in
             // An action from the lock screen runs in the background: iOS keeps the app alive
             // until the handler is called, so it is called once the answer went out.
-            await Notifications.shared.perform(action: action, instance: instance, pane: pane)
+            await Notifications.shared.perform(action: action, push: push)
             done.call()
         }
     }
 
-    func perform(action: String, instance: String, pane: String) async {
-        guard !instance.isEmpty, !pane.isEmpty else { return }
-        let target = Target(instance: instance, pane: pane)
-        guard let relay else { return }
+    func perform(action: String, push: PushPayload?) async {
+        guard let push, let relay else { return }
+        let target = Target(instance: push.instance, pane: push.pane)
         switch NotificationAction(rawValue: action) {
         case .approve, .deny:
             let keys = NotificationAction(rawValue: action)!.keys
             do { try await relay.answer(target, keys: keys) } catch { lastError = error.localizedDescription }
         case .seen:
             do { try await relay.markSeen(target) } catch { lastError = error.localizedDescription }
+        case .mute:
+            guard !push.agent.isEmpty else { return }
+            await relay.updatePrefsNow { $0.mute(instance: push.instance, host: push.host, agent: push.agent, until: .now.addingTimeInterval(3600)) }
         case nil: // the notification itself, or Open
             relay.pendingOpen = target
         }

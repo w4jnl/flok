@@ -89,7 +89,7 @@ struct AgentView: View {
     @ViewBuilder private var header: some View {
         if let (inst, a) = found {
             HStack(spacing: 10) {
-                Text(StateStyle.glyph(a.state)).foregroundStyle(StateStyle.color(a.state)).font(.system(.title3, design: .monospaced))
+                StateGlyph(state: a.state).foregroundStyle(StateStyle.color(a.state)).font(.system(.title3, design: .monospaced))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(StateStyle.label(a)).foregroundStyle(StateStyle.color(a.state)).font(.subheadline.weight(.medium))
                     HStack(spacing: 6) {
@@ -118,7 +118,7 @@ struct AgentView: View {
             Button { dismiss() } label: { Image(systemName: "chevron.left").fontWeight(.semibold) }
                 .buttonStyle(.borderless)
             if let (inst, a) = found {
-                Text(StateStyle.glyph(a.state)).foregroundStyle(StateStyle.color(a.state)).font(.system(.body, design: .monospaced))
+                StateGlyph(state: a.state).foregroundStyle(StateStyle.color(a.state)).font(.system(.body, design: .monospaced))
                 Text(a.name).fontWeight(.semibold)
                 Text(StateStyle.label(a)).foregroundStyle(StateStyle.color(a.state))
                 Text("\(inst.name)\(a.host.map { " / " + $0 } ?? "") · \(a.paneId)").foregroundStyle(.secondary)
@@ -148,9 +148,36 @@ struct AgentView: View {
             Button { Task { await send(keys: ["Enter"]) } } label: { Label("Approve (Enter)", systemImage: "checkmark") }
             Button { Task { await send(keys: ["Escape"]) } } label: { Label("Deny (Esc)", systemImage: "xmark") }
             Button { Task { await seen() } } label: { Label("Mark seen", systemImage: "eye") }
+            muteMenu
             Divider()
             Button(role: .destructive) { confirmInterrupt = true } label: { Label("Interrupt (Ctrl-C)", systemImage: "stop.circle") }
         } label: { Image(systemName: "ellipsis.circle") }
+    }
+
+    /// Mutes this agent's notifications in the settings the relay filters with: matched by
+    /// instance, host and name, so a restarted agent stays muted.
+    @ViewBuilder private var muteMenu: some View {
+        if let (inst, a) = found {
+            if let m = settings.notificationPrefs.mute(instance: inst.name, host: a.host, agent: a.name) {
+                Button {
+                    relay.updatePrefs { $0.unmute(instance: inst.name, host: a.host, agent: a.name) }
+                    flash("notifications on")
+                } label: {
+                    Label(m.until.map { "Unmute (muted until \($0.formatted(date: .omitted, time: .shortened)))" } ?? "Unmute", systemImage: "bell")
+                }
+            } else {
+                Menu {
+                    Button("For 1 hour") { mute(inst.name, a, until: .now.addingTimeInterval(3600)) }
+                    Button("Until tomorrow 8:00") { mute(inst.name, a, until: NotificationPrefs.tomorrowMorning()) }
+                    Button("Always") { mute(inst.name, a, until: nil) }
+                } label: { Label("Mute notifications", systemImage: "bell.slash") }
+            }
+        }
+    }
+
+    private func mute(_ instance: String, _ a: Agent, until: Date?) {
+        relay.updatePrefs { $0.mute(instance: instance, host: a.host, agent: a.name, until: until) }
+        flash("muted")
     }
 
     private func sendInput() async {

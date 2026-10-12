@@ -37,6 +37,7 @@ struct SettingsView: View {
                 } else if notifications.authorization == .denied {
                     Text("Allow notifications for flok in the Settings app.").font(.footnote).foregroundStyle(.secondary)
                 } else {
+                    NavigationLink("Filters and sounds") { NotificationSettingsView() }
                     Button("Register again") {
                         settings.registered = nil
                         Task { await notifications.registerIfNeeded() }
@@ -56,6 +57,7 @@ struct SettingsView: View {
             Section("About") {
                 LabeledContent("Version", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")
                 LabeledContent("Instances", value: "\(relay.instances.count)")
+                NavigationLink("Acknowledgements") { AcknowledgementsView() }
             }
         }
         .navigationTitle("Settings")

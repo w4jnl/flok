@@ -6,6 +6,19 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+- **Notifications on the phone, your way.** A new Settings → Notifications page in the app
+  turns each kind (permission prompt, question, finished, failed) on or off, picks its sound
+  (flok's, the iOS default, silent) and whether it breaks through Focus, and lists the muted
+  agents. Mute an agent from its screen (1 hour, until tomorrow, always) or with **Mute 1 h** on
+  the notification; a mute survives the agent's restart. The relay holds each phone's settings
+  (`PUT /api/devices/{token}/prefs`) and decides before every push, logging what it held back.
+- **Notifications look like flok.** flok's own sounds; the agent as the title, instance / host ·
+  session under it, the sidebar's glyph and words (`● needs you: perm:Bash`, `✓ done`); a
+  state tile in the brand colours as the thumbnail; and a long press opens a flok-styled card
+  with the agent's screen as it is now (fetched from the relay, never sent through Apple) and
+  keys (1 2 3 y n ↵ esc) that answer from the notification. Time-sensitive alerts now really
+  break through Focus (the app has the entitlement).
+- **Working agents spin** in the app's list and on the agent screen, like the sidebar's ◐◓◑◒.
 - **The relay's log tells a phone's registrations apart.** Every push, failed push and
   registration names the device, the start of its token and its Apple service
   (`iPhone 04344cb7… production`), and the app takes the token it registered before out of the

@@ -60,7 +60,7 @@ bundle-bar: build-bar
 	codesign --force --sign - dist/$(BIN)-bar.app
 
 icons:
-	go run ./assets/icons/gen assets/icons
+	go run ./assets/icons/gen assets/icons app/ios/FlokNotificationService/Tiles
 
 install: build
 	mkdir -p $(PREFIX)/bin

@@ -49,6 +49,17 @@ entitlement, and nothing else changes.
 4. In the app: Settings → relay and device token → Save and connect → Enable notifications.
    The APNs token is handed to the relay (`/api/devices`) and shows as registered.
 
+## Notifications
+
+Settings → Notifications decides what this phone gets: each kind on or off, its sound (flok's
+two, bundled from `Flok/Sounds`, the iOS default, or silent), whether it breaks through Focus,
+and the muted agents. The relay keeps a copy per phone and filters before every push. Two
+extensions dress the push: `FlokNotificationService` adds the state tile (`Tiles/`, rendered by
+`make icons`), `FlokNotificationContent` is the expanded card (`Shared/NotificationCard.swift`,
+JetBrains Mono from `Shared/Fonts`) that fetches the screen from the relay and answers with
+keys. It reads the relay's address and the device token from the keychain group the app shares
+(`keychain-access-groups` in both entitlements), so it works once the app ran after an update.
+
 ## What the app does, and does not
 
 Answers go through the relay's allowlist: a short line of text and the named keys the key bar
