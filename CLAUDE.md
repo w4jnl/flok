@@ -274,8 +274,9 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
   release workflow publishes `ghcr.io/w4jnl/flok-relay` for amd64 and arm64 with plain docker
   (no third-party actions). The iOS app lives in `app/ios` (SwiftUI, iOS 17+, Swift 6 strict
   concurrency; XcodeGen `project.yml` → `Flok.xcodeproj`, not committed; `make ios-project`,
-  `ios-build`, `ios-test` against the iPhone 15 simulator, no signing; `Local.xcconfig` holds
-  the team id): `Model/Wire.swift` mirrors the relay JSON (snake_case, Go's RFC 3339 dates),
+  `ios-build`, `ios-test` against the iPhone 15 simulator, no signing; `ios-device` installs on
+  the phone on the cable, `ios-testflight` archives and uploads with `ExportOptions.plist`;
+  `Local.xcconfig` holds the team id): `Model/Wire.swift` mirrors the relay JSON (snake_case, Go's RFC 3339 dates),
   `Model/Relay.swift` is the `@MainActor @Observable` client (URLSessionWebSocketTask to
   `/api/ws`, backoff, subscriptions resent on reconnect, HTTP for answer/seen/devices so a
   lock-screen action works without the socket), `Notifications.swift` the categories

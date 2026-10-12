@@ -43,7 +43,8 @@ entitlement, and nothing else changes.
    the bundle id go into the relay (`deploy/relay`, `FLOK_RELAY_APNS_*`).
 3. Build and run on the device from Xcode (`make ios-device` with the phone on the cable). A
    build installed this way is a development build and registers a sandbox token; a TestFlight
-   build (Product → Archive → Distribute) a production one. The relay pushes each phone through
+   build (`make ios-testflight`, after creating the app record for `nl.w4j.flok` in App Store
+   Connect; or Product → Archive → Distribute) a production one. The relay pushes each phone through
    the service its token belongs to, so both kinds work side by side.
 4. In the app: Settings → relay and device token → Save and connect → Enable notifications.
    The APNs token is handed to the relay (`/api/devices`) and shows as registered.
