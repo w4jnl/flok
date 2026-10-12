@@ -191,3 +191,61 @@ struct SeenTests {
         #expect(PushPayload(["instance": "Home", "pane": "macmini:%3"])?.key == "Home:macmini:%3", "the relay's name for it")
     }
 }
+
+struct LiveActivityTests {
+    /// What relay/live.go sends as content-state (LiveState): the names and shapes ActivityKit decodes.
+    @Test func decodesTheRelaysContentState() throws {
+        let json = #"{"working":2,"waiting":1,"done":0,"rows":[{"instance":"Home","host":"macmini","agent":"docker","pane":"macmini:%1","state":"blocked","label":"needs you: perm:Bash","since":1791100000}]}"#
+        let st = try JSONDecoder().decode(FlokActivityAttributes.ContentState.self, from: Data(json.utf8))
+        #expect(st.working == 2 && st.waiting == 1 && st.dominant == "blocked")
+        let r = try #require(st.rows.first)
+        #expect(r.place == "Home / macmini" && r.started == Date(timeIntervalSince1970: 1_791_100_000))
+        let attrs = try JSONDecoder().decode(FlokActivityAttributes.self, from: Data(#"{"kind":"overview","instance":"","pane":"","agent":""}"#.utf8))
+        #expect(attrs.kind == "overview")
+    }
+
+    @Test func overviewRanksLikeTheRelay() throws {
+        let json = """
+        {"type":"instances","instances":[
+         {"name":"Home","online":true,"since":"2026-10-13T08:00:00Z","snap":{"agents":[
+          {"pane_id":"%1","session_id":"$0","session_name":"a","name":"w-old","kind":"claude","state":"working","unseen":0,"state_since":"2026-10-13T09:00:00Z","tool":"Edit"},
+          {"pane_id":"%2","session_id":"$0","session_name":"a","name":"w-new","kind":"claude","state":"working","unseen":0,"state_since":"2026-10-13T09:05:00Z"},
+          {"pane_id":"%3","session_id":"$0","session_name":"a","name":"asks","kind":"claude","state":"blocked","reason":"permission:Bash","unseen":1,"state_since":"2026-10-13T09:07:00Z"},
+          {"pane_id":"%4","session_id":"$0","session_name":"a","name":"done-seen","kind":"claude","state":"done","unseen":0},
+          {"pane_id":"%5","session_id":"$0","session_name":"a","name":"done-unseen","kind":"claude","state":"done","unseen":1,"state_since":"2026-10-13T09:06:00Z"}]}},
+         {"name":"Office","online":false,"since":"2026-10-13T08:00:00Z","snap":{"agents":[
+          {"pane_id":"%1","session_id":"$0","session_name":"a","name":"offline","kind":"claude","state":"working","unseen":0}]}}]}
+        """
+        let f = try Wire.decoder.decode(Frame.self, from: Data(json.utf8))
+        let st = LiveActivities.overview(f.instances ?? [])
+        #expect(st.working == 2 && st.waiting == 1 && st.done == 1, "an offline instance does not count")
+        #expect(st.rows.map(\.agent) == ["asks", "done-unseen", "w-old"])
+        #expect(st.rows[0].label == "needs you: perm:Bash" && st.rows[2].label == "working", "no tool: a tool change is not a push")
+    }
+
+    @Test func linksOpenTheAgent() throws {
+        let r = LiveRow(instance: "Home", host: "macmini", agent: "docker", pane: "macmini:%1", state: "working", label: "working", since: 0)
+        let t = try #require(FlokLink.target(r.link))
+        #expect(t.instance == "Home" && t.pane == "macmini:%1")
+        #expect(FlokLink.target(URL(string: "flok://home")!) == nil)
+    }
+
+    /// Renders the Lock Screen view and the island's parts for a look by eye: TEST_RUNNER_FLOK_LIVE_PNG=/dir
+    @MainActor @Test func rendersTheActivity() throws {
+        guard let dir = ProcessInfo.processInfo.environment["FLOK_LIVE_PNG"] else { return }
+        let now = Date().timeIntervalSince1970
+        let st = FlokActivityAttributes.ContentState(working: 2, waiting: 1, done: 1, rows: [
+            LiveRow(instance: "Home", host: "", agent: "dotfiles-revamp", pane: "%36", state: "blocked", label: "needs you: perm:Bash", since: now - 95),
+            LiveRow(instance: "Home", host: "", agent: "api", pane: "%39", state: "done", label: "done", since: now - 30),
+            LiveRow(instance: "Home", host: "macmini", agent: "docker", pane: "macmini:%1", state: "working", label: "working", since: now - 724),
+        ])
+        func save<V: View>(_ v: V, _ name: String, width: CGFloat, bg: Color) throws {
+            let r = ImageRenderer(content: v.frame(width: width).background(bg))
+            r.scale = 3
+            try #require(r.uiImage?.pngData()).write(to: URL(fileURLWithPath: dir).appending(path: name))
+        }
+        try save(LiveLockScreen(attributes: .overview, state: st), "lock.png", width: 370, bg: Brand.ground)
+        try save(LiveExpandedBottom(state: st).padding(12), "expanded.png", width: 370, bg: .black)
+        try save(HStack { LiveCompactLeading(state: st); Spacer(); LiveCompactTrailing(attributes: .overview, state: st) }.padding(8), "compact.png", width: 230, bg: .black)
+    }
+}

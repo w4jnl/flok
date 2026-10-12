@@ -22,6 +22,14 @@ struct RootView: View {
                 path = [Target(instance: String(o[..<i]), pane: String(o[o.index(after: i)...]))]
             }
         }
+        .onOpenURL { url in // the Live Activity: flok://agent?instance=…&pane=…
+            if let t = FlokLink.target(url) {
+                relay.pendingOpen = Target(instance: t.instance, pane: t.pane)
+            } else {
+                showSettings = false
+                path = []
+            }
+        }
         .onChange(of: relay.pendingOpen) { _, t in
             guard let t else { return }
             showSettings = false

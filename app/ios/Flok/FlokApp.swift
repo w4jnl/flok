@@ -19,6 +19,7 @@ struct FlokApp: App {
             case .active:
                 Relay.shared.connect()
                 Task { await Notifications.shared.refreshAuthorization() }
+                LiveActivities.shared.reportSoon()
             case .background:
                 Relay.shared.disconnect()
             default:
@@ -32,6 +33,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         Notifications.shared.relay = Relay.shared
         Notifications.shared.setup()
+        LiveActivities.shared.setup(relay: Relay.shared)
         return true
     }
 

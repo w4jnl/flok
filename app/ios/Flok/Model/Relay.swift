@@ -191,6 +191,16 @@ final class Relay {
             try? await UNUserNotificationCenter.current().setBadgeCount(n)
             await Notifications.clearDelivered(waiting: waiting, judged: judged)
         }
+        if UIApplication.shared.applicationState == .active {
+            LiveActivities.shared.ensureOverview(instances, allowed: settings.notificationPrefs.showsActivity)
+        }
+    }
+
+    /// Hands the relay this phone's Live Activity tokens (sent whole); before the phone
+    /// registered there is no record to put them on, and the registration sends them after.
+    func reportActivities(start: String?, activities: [ActivityReport]) async {
+        guard let token = Self.registeredToken(settings.registered, relayURL: settings.relayURL) else { return }
+        try? await call("PUT", "/api/devices/\(token)/activity", body: Wire.encoder.encode(ActivityBody(startToken: start, activities: activities)))
     }
 
     /// "<instance>:<pane>" of every agent that waits on the user: unseen, or blocked (a block
@@ -252,6 +262,7 @@ final class Relay {
         prefsError = nil
         let before = settings.registered
         settings.registered = "\(settings.relayURL)|\(apnsToken)"
+        LiveActivities.shared.reportSoon() // the relay knows the phone now: its activity tokens follow
         // The token this app registered before (an Xcode build that TestFlight replaced, a phone
         // restored from a backup) would stay in the relay's list until a push to it fails.
         if let old = Self.replacedToken(before, relayURL: settings.relayURL, now: apnsToken) {

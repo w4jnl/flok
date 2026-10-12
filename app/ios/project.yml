@@ -4,7 +4,8 @@
 # keychain group shared with the content extension; a free Apple ID's personal team cannot sign
 # that: leave it empty there). Shared/ is compiled into the app and its notification extensions:
 # FlokNotificationService puts the state tile on a push, FlokNotificationContent is the expanded
-# view with the live screen and the answer keys.
+# view with the live screen and the answer keys, FlokWidgets is the Live Activity (Dynamic
+# Island, Lock Screen).
 name: Flok
 options:
   bundleIdPrefix: nl.w4j
@@ -37,6 +38,7 @@ targets:
     dependencies:
       - target: FlokNotificationService
       - target: FlokNotificationContent
+      - target: FlokWidgets
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: nl.w4j.flok
@@ -53,6 +55,10 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}
         UIBackgroundModes: [remote-notification]
+        NSSupportsLiveActivities: true
+        CFBundleURLTypes:
+          - CFBundleURLName: nl.w4j.flok
+            CFBundleURLSchemes: [flok]
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         ITSAppUsesNonExemptEncryption: false
@@ -100,6 +106,29 @@ targets:
             UNNotificationExtensionInitialContentSizeRatio: 0.9
             UNNotificationExtensionDefaultContentHidden: true
             UNNotificationExtensionUserInteractionEnabled: true
+  FlokWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: FlokWidgets
+      - path: Shared/FlokActivity.swift
+      - path: Shared/LiveViews.swift
+      - path: Shared/Brand.swift
+      - path: Shared/Fonts
+      - path: Shared/Images
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: nl.w4j.flok.Widgets
+        TARGETED_DEVICE_FAMILY: "1,2"
+    info:
+      path: FlokWidgets/Info.plist
+      properties:
+        CFBundleDisplayName: flok
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UIAppFonts: [JetBrainsMono-Regular.ttf, JetBrainsMono-Bold.ttf]
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
   FlokTests:
     type: bundle.unit-test
     platform: iOS

@@ -64,6 +64,9 @@ struct NotificationPrefs: Codable, Equatable, Sendable {
 
     var kinds: [String: KindPrefs] = [:]
     var mutes: [Mute] = []
+    var noActivity: Bool? // true: no flok overview in the Dynamic Island / on the Lock Screen
+
+    var showsActivity: Bool { noActivity != true }
 
     // MARK: per kind
 

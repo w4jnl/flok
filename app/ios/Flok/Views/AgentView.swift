@@ -157,6 +157,7 @@ struct AgentView: View {
             Button { Task { await send(keys: ["Escape"]) } } label: { Label("Deny (Esc)", systemImage: "xmark") }
             Button { Task { await seen() } } label: { Label("Mark seen", systemImage: "eye") }
             muteMenu
+            followButton
             Divider()
             Button(role: .destructive) { confirmInterrupt = true } label: { Label("Interrupt (Ctrl-C)", systemImage: "stop.circle") }
         } label: { Image(systemName: "ellipsis.circle") }
@@ -179,6 +180,27 @@ struct AgentView: View {
                     Button("Until tomorrow 8:00") { mute(inst.name, a, until: NotificationPrefs.tomorrowMorning()) }
                     Button("Always") { mute(inst.name, a, until: nil) }
                 } label: { Label("Mute notifications", systemImage: "bell.slash") }
+            }
+        }
+    }
+
+    /// Follows this agent in the Dynamic Island and on the Lock Screen until it finishes.
+    @ViewBuilder private var followButton: some View {
+        if let (inst, a) = found {
+            if LiveActivities.shared.following(target) {
+                Button {
+                    LiveActivities.shared.unfollow(target)
+                    flash("not following")
+                } label: { Label("Stop following", systemImage: "rectangle.portrait.slash") }
+            } else {
+                Button {
+                    do {
+                        try LiveActivities.shared.follow(target, instance: inst, agent: a)
+                        flash("following in the Dynamic Island")
+                    } catch {
+                        flash(LiveActivities.shared.enabled ? error.localizedDescription : "Live Activities are off for flok in Settings")
+                    }
+                } label: { Label("Follow in Dynamic Island", systemImage: "capsule.portrait") }
             }
         }
     }

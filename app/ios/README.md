@@ -60,6 +60,15 @@ JetBrains Mono from `Shared/Fonts`) that fetches the screen from the relay and a
 keys. It reads the relay's address and the device token from the keychain group the app shares
 (`keychain-access-groups` in both entitlements), so it works once the app ran after an update.
 
+## Live Activity
+
+`FlokWidgets` is the Live Activity (Dynamic Island, Lock Screen): `Shared/FlokActivity.swift`
+holds the attributes and content the relay pushes, `Shared/LiveViews.swift` the faces.
+`Flok/LiveActivities.swift` hands the relay the push-to-start token and each activity's update
+token, starts the overview itself when the app is open and agents are busy, and follows one
+agent from its screen. A simulator build needs signing (`-allowProvisioningUpdates`, not
+`CODE_SIGNING_ALLOWED=NO`) for a token-pushed activity: ActivityKit wants the APS environment.
+
 ## What the app does, and does not
 
 Answers go through the relay's allowlist: a short line of text and the named keys the key bar

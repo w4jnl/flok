@@ -20,6 +20,7 @@ Every call carries `Authorization: Bearer <device token>`, one of the relay's
 | `GET /api/devices` | | `{"devices":[{"token":"short…","name","sandbox","added","prefs"?}],"push":bool}` |
 | `POST /api/devices` | `{"token","name"?,"sandbox"?,"prefs"?}` | `{"ok":true,"push":bool}`; `token` is the platform push token (APNs hex, later an FCM token); a registration without `prefs` keeps the device's |
 | `PUT /api/devices/{token}/prefs` | `Prefs` | `{"ok":true}`; 404 for a device the relay does not know (register again) |
+| `PUT /api/devices/{token}/activity` | `{"start_token"?,"activities":[{"id","token","kind":"overview"\|"agent","instance"?,"pane"?}]}` | `{"ok":true}`: the device's Live Activity tokens, sent whole (below) |
 | `DELETE /api/devices/{token}` | | `{"ok":true}` |
 | `GET /api/screen?instance=…&pane=…` | | `{"pane","text"}`: one look at a pane (the relay subscribes, waits up to 4 s for the screen, lets go); 502 offline, 504 no screen in time |
 | `GET /api/ws` | WebSocket | the live stream |
@@ -115,6 +116,28 @@ iOS app also marks an agent seen when its screen is opened and after it answers 
 focusing the pane in tmux does.
 
 A missing kind is on, with flok's sound, time-sensitive for `permission` and `question` only.
+`"no_activity": true` in `Prefs` turns the overview Live Activity off for the device.
+
+## Live Activities (iOS: Dynamic Island, Lock Screen)
+
+The app reports its push-to-start token and every running activity with its own update token
+(`PUT …/activity`, whole, after each change). The relay pushes ActivityKit payloads (APNs
+`liveactivity`, topic `<bundle id>.push-type.liveactivity`) with `content-state`:
+
+```
+{"working":int,"waiting":int,"done":int,
+ "rows":[{"instance","host","agent","pane","state":"working|blocked|done|idle|gone","label","since":unix}]}
+```
+
+and attributes (type `FlokActivityAttributes`) `{"kind":"overview"|"agent","instance","pane","agent"}`;
+every field is always present. The **overview** counts every online instance's working,
+blocked and finished-unseen agents, the three most urgent as rows (blocked oldest first,
+finished newest first, working longest first; a working row has no tool, so a tool change is
+not a push). The relay starts it by push-to-start on an idle → busy edge (once until the device
+reports it), updates it on every change (priority 10 when `waiting` grows, else 5), and ends it
+after two quiet minutes (nothing working, waiting or unseen). An **agent** activity, started by
+the app, follows that agent's row and ends when it is gone, or ten minutes after it finished. A
+refused activity token is dropped alone.
 A mute matches the event's instance, host and agent name (a pane id changes when the agent
 restarts, its name does not); without `until` it lasts until removed, expired ones are
 dropped. The relay logs a push it did not send and why.

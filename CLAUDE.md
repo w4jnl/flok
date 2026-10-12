@@ -272,7 +272,10 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
   (`relay/prefs.go`: kinds on/off, sound, time-sensitive, mutes by instance+host+agent name; with
   the registration and `PUT /api/devices/{token}/prefs`, checked before every push), pushes
   worded like the sidebar (title agent, subtitle instance / host · session, flok's sounds
-  `flok-request.caf`/`flok-done.caf`) through `internal/relay/apns` (HTTP/2, ES256 provider token cached 50 min,
+  `flok-request.caf`/`flok-done.caf`), a silent sync push when an agent stops waiting, and Live
+  Activities (`relay/live.go`: the overview over all instances, started by push-to-start on an
+  idle → busy edge, updated on state changes, ended after a quiet; followed agents; tokens via
+  `PUT /api/devices/{token}/activity`) through `internal/relay/apns` (HTTP/2, ES256 provider token cached 50 min,
   categories `FLOK_PERMISSION`/`FLOK_QUESTION`/`FLOK_DONE`, badge = unseen over all instances,
   410 forgets the device) to the devices in `devices.json`. `deploy/relay` has the Dockerfile
   (scratch + CA bundle), the Portainer compose with Traefik labels and the example configs; the
@@ -286,7 +289,7 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
   `assets/icons/gen`), `FlokNotificationContent` is the expanded card in the brand's dress
   (`Shared/NotificationCard.swift`, JetBrains Mono bundled) that fetches the screen and answers
   through `RelayAPI`, reading the relay and token from the keychain group both entitlements
-  share): `Model/Wire.swift` mirrors the relay JSON (snake_case, Go's RFC 3339 dates),
+  share; `FlokWidgets` is the Live Activity, `Flok/LiveActivities.swift` its token plumbing): `Model/Wire.swift` mirrors the relay JSON (snake_case, Go's RFC 3339 dates),
   `Model/Relay.swift` is the `@MainActor @Observable` client (URLSessionWebSocketTask to
   `/api/ws`, backoff, subscriptions resent on reconnect, HTTP for answer/seen/devices so a
   lock-screen action works without the socket), `Notifications.swift` the categories

@@ -38,6 +38,18 @@ struct NotificationSettingsView: View {
                 }
             }
             Section {
+                Toggle("Show flok while agents work", isOn: Binding(get: { prefs.showsActivity }, set: { on in
+                    relay.updatePrefs { $0.noActivity = on ? nil : true }
+                    LiveActivities.shared.ensureOverview(relay.instances, allowed: on)
+                }))
+            } header: {
+                Text("Dynamic Island and Lock Screen")
+            } footer: {
+                Text(LiveActivities.shared.enabled
+                     ? "What works, what waits on you and what finished, starting when the first agent works and ending when all is quiet. Follow one agent from its screen (⋯ → Follow in Dynamic Island)."
+                     : "Live Activities are off for flok: Settings → flok → Live Activities.")
+            }
+            Section {
                 let mutes = prefs.mutes.filter { m in m.until.map { $0 > now } ?? true }
                 if mutes.isEmpty {
                     Text("No agent is muted.").foregroundStyle(.secondary)

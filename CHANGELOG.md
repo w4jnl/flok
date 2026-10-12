@@ -19,6 +19,13 @@ updates this file first. Dates are the tag dates.
   keys (1 2 3 y n ↵ esc) that answer from the notification. Time-sensitive alerts now really
   break through Focus (the app has the entitlement).
 - **Working agents spin** in the app's list and on the agent screen, like the sidebar's ◐◓◑◒.
+- **flok in the Dynamic Island and on the Lock Screen.** A Live Activity, the phone's menu bar:
+  what works (◐), what waits on you (●) and what finished unseen (✓) over every instance, the
+  most urgent agents with their running time, in the brand's dress. The relay starts it when
+  the first agent starts working or asking, keeps it current while the app sleeps, and ends it
+  when all has been quiet for two minutes; a tap opens the agent. Follow one agent on its own
+  from its screen (⋯ → Follow in Dynamic Island); it goes away a while after the agent finished.
+  Switch the overview off in Settings → Notifications.
 - **Seen on the phone is seen.** Opening an agent in the app, or answering it (from its screen,
   the lock screen or the notification card), marks it seen like focusing its pane in tmux. And
   when an agent stops waiting on you anywhere, its notification leaves the Lock Screen and the
