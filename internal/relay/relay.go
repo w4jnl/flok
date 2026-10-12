@@ -379,12 +379,12 @@ func (s *Server) event(in *instance, gen uint64, ev wire.Event) {
 			err := s.cfg.Push.Send(ctx, apns.Device{Token: d.Token, Sandbox: d.Sandbox}, n)
 			switch {
 			case errors.Is(err, apns.ErrUnregistered):
-				s.cfg.Logf("push: device %s (%s) is gone, forgotten", short(d.Token), d.Name)
+				s.cfg.Logf("push: %s is gone, forgotten", d.label())
 				s.devices.remove(d.Token)
 			case err != nil:
-				s.cfg.Logf("push: %s (%s, %s): %v", short(d.Token), d.Name, service(d.Sandbox), err)
+				s.cfg.Logf("push: %s · %s → %s: %v", in.name, ev.Agent, d.label(), err)
 			default:
-				s.cfg.Logf("push: %s · %s → %s (%s)", in.name, ev.Agent, d.Name, ev.Kind)
+				s.cfg.Logf("push: %s · %s → %s (%s)", in.name, ev.Agent, d.label(), ev.Kind)
 			}
 		}(d)
 	}
@@ -661,11 +661,12 @@ func (s *Server) handleDeviceAdd(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "a device token is needed"})
 		return
 	}
-	if err := s.devices.add(device{Token: req.Token, Name: req.Name, Sandbox: req.Sandbox, Added: time.Now()}); err != nil {
+	d := device{Token: req.Token, Name: req.Name, Sandbox: req.Sandbox, Added: time.Now()}
+	if err := s.devices.add(d); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 		return
 	}
-	s.cfg.Logf("device %s (%s) registered, %s", short(req.Token), req.Name, service(req.Sandbox))
+	s.cfg.Logf("device %s registered", d.label())
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "push": s.cfg.Push != nil})
 }
 
@@ -675,7 +676,18 @@ func (s *Server) handleDeviceRemove(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]any{"error": "no such device"})
 		return
 	}
+	s.cfg.Logf("device %s removed", short(tok))
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// label names a device in the log: its name, the start of its token and its APNs service, so
+// two registrations of one phone (an Xcode and a TestFlight build) tell apart.
+func (d device) label() string {
+	name := d.Name
+	if name == "" {
+		name = "device"
+	}
+	return name + " " + short(d.Token) + " " + service(d.Sandbox)
 }
 
 // service names the APNs service a device's token belongs to, for the log.

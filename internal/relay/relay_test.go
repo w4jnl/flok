@@ -355,3 +355,12 @@ func TestRelayReplacesALink(t *testing.T) {
 		break
 	}
 }
+
+func TestDeviceLabelTellsRegistrationsApart(t *testing.T) {
+	if got := (device{Name: "iPhone", Token: "04344cb7abcdef00"}).label(); got != "iPhone 04344cb7… production" {
+		t.Fatalf("label: %q", got)
+	}
+	if got := (device{Token: "d14088c4abcdef00", Sandbox: true}).label(); got != "device d14088c4… sandbox" {
+		t.Fatalf("label without a name: %q", got)
+	}
+}

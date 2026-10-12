@@ -101,7 +101,7 @@ start_relay
 expect_soon -t 20 "the link is back after the relay restarts" '^connected$' json "$SNAP" "s['link']['state']"
 expect_soon -t 10 "the instance is online at the new relay, snapshot included" '"name":"e2e","online":true.*"pane_id":"'"$AGENT"'"' GET /api/instances
 expect "the relay logged the instance" 'instance e2e online' "$(cat "$RELAY_LOG")"
-expect "the relay logged the pushes" 'push: e2e · '"$PROJ"' → e2e phone \(blocked\)' "$(cat "$RELAY_LOG")"
+expect "the relay logged the pushes" 'push: e2e · '"$PROJ"' → e2e phone e2edevic… production \(blocked\)' "$(cat "$RELAY_LOG")"
 hook claude '{"hook_event_name":"SessionEnd","session_id":"ph1","reason":"exit"}'
 m11_cleanup
 finish

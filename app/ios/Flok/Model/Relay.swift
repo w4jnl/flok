@@ -213,12 +213,18 @@ final class Relay {
     // MARK: commands (HTTP, so a lock-screen action works without the socket)
 
     private func post<T: Encodable>(_ path: String, _ body: T) async throws {
+        try await call("POST", path, body: Wire.encoder.encode(body))
+    }
+
+    private func call(_ method: String, _ path: String, body: Data? = nil) async throws {
         guard let base = settings.baseURL, !settings.deviceToken.isEmpty else { throw RelayError.notConfigured }
         var req = URLRequest(url: RelayURL.api(base, path))
-        req.httpMethod = "POST"
+        req.httpMethod = method
         req.setValue("Bearer \(settings.deviceToken)", forHTTPHeaderField: "Authorization")
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try Wire.encoder.encode(body)
+        if let body {
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.httpBody = body
+        }
         let (data, resp) = try await session.data(for: req)
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
         if code != 200 {
@@ -245,7 +251,22 @@ final class Relay {
         sandbox = false
         #endif
         try await post("/api/devices", DeviceBody(token: apnsToken, name: UIDevice.current.name, sandbox: sandbox))
+        let before = settings.registered
         settings.registered = "\(settings.relayURL)|\(apnsToken)"
+        // The token this app registered before (an Xcode build that TestFlight replaced, a phone
+        // restored from a backup) would stay in the relay's list until a push to it fails.
+        if let old = Self.replacedToken(before, relayURL: settings.relayURL, now: apnsToken) {
+            try? await call("DELETE", "/api/devices/\(old)")
+        }
+    }
+
+    /// The token of an earlier registration with this relay that `now` replaces; nil when there
+    /// is none, it was another relay's (whose list this device token cannot reach), or the same.
+    nonisolated static func replacedToken(_ registered: String?, relayURL: String, now: String) -> String? {
+        guard let registered, let bar = registered.lastIndex(of: "|") else { return nil }
+        let url = String(registered[..<bar]), token = String(registered[registered.index(after: bar)...])
+        guard url == relayURL, !token.isEmpty, token != now else { return nil }
+        return token
     }
 
     /// One fetch of every instance (pull to refresh; the stream keeps it current otherwise).

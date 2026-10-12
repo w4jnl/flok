@@ -4,6 +4,14 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
+## Unreleased
+
+- **The relay's log tells a phone's registrations apart.** Every push, failed push and
+  registration names the device, the start of its token and its Apple service
+  (`iPhone 04344cb7… production`), and the app takes the token it registered before out of the
+  relay when it registers a new one, so a TestFlight build that replaces an Xcode build leaves
+  no stale entry behind.
+
 ## 0.6.1 (2026-10-12)
 
 - **One relay for Xcode and TestFlight builds.** `flok-relay` sends each phone's pushes

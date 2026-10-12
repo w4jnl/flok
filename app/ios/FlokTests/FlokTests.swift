@@ -60,6 +60,15 @@ struct URLTests {
 }
 
 struct NotificationTests {
+    @Test func aNewTokenTakesTheOldOneOut() {
+        let relay = "https://flok.example.net"
+        #expect(Relay.replacedToken("\(relay)|aaaa1111", relayURL: relay, now: "bbbb2222") == "aaaa1111", "TestFlight replaced the Xcode build")
+        #expect(Relay.replacedToken("\(relay)|aaaa1111", relayURL: relay, now: "aaaa1111") == nil, "the same token stays")
+        #expect(Relay.replacedToken("https://other.example|aaaa1111", relayURL: relay, now: "bbbb2222") == nil, "another relay's list is not ours")
+        #expect(Relay.replacedToken(nil, relayURL: relay, now: "bbbb2222") == nil)
+        #expect(Relay.replacedToken("garbage", relayURL: relay, now: "bbbb2222") == nil)
+    }
+
     @Test func actionsTypeTheRightKeys() {
         #expect(NotificationAction.approve.keys == ["Enter"])
         #expect(NotificationAction.deny.keys == ["Escape"])
