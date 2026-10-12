@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -487,5 +488,58 @@ func TestRelayPushesByPrefs(t *testing.T) {
 	defer push.mu.Unlock()
 	if len(push.sent) != 1 || push.to[0].Token != "loudphone001" || push.sent[0].Sound != "default" {
 		t.Fatalf("only the loud phone, with its sound: %+v → %+v", push.to, push.sent)
+	}
+}
+
+// An agent that stops waiting on the user (seen, answered) becomes one silent sync push to
+// every phone with what still waits and the badge; a burst of changes is one push.
+func TestRelaySyncsWhenAgentsStopWaiting(t *testing.T) {
+	push := &fakePush{}
+	s, err := New(Config{InstanceTokens: []string{"inst-tok"}, DeviceTokens: []string{"dev-tok"}, Push: push, SyncDelay: 30 * time.Millisecond, Logf: t.Logf})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = s.devices.add(device{Token: "phonetoken01", Name: "phone", Added: time.Now()})
+	in := &instance{name: "home", subs: map[string]int{}, gen: 1, online: true}
+	s.mu.Lock()
+	s.instances["home"] = in
+	s.mu.Unlock()
+	snap := func(unseen int, states ...agent.State) *snapshot.Snapshot {
+		sn := &snapshot.Snapshot{Unseen: unseen}
+		for i, st := range states {
+			a := snapshot.Agent{PaneID: fmt.Sprintf("%%%d", i+1), Name: fmt.Sprint("a", i), State: st}
+			if st == agent.Done {
+				a.Unseen = 1
+			}
+			sn.Agents = append(sn.Agents, a)
+		}
+		return sn
+	}
+	sent := func() int {
+		push.mu.Lock()
+		defer push.mu.Unlock()
+		return len(push.sent)
+	}
+	s.setSnap(in, 1, snap(1, agent.Done, agent.Blocked)) // %1 finished unseen, %2 asks
+	s.setSnap(in, 1, snap(1, agent.Done, agent.Blocked)) // nothing stopped waiting
+	time.Sleep(80 * time.Millisecond)
+	if n := sent(); n != 0 {
+		t.Fatalf("no sync while everything still waits: %d", n)
+	}
+	s.setSnap(in, 1, snap(1, agent.Done, agent.Working)) // %2 answered
+	s.setSnap(in, 1, snap(0, agent.Idle, agent.Working)) // %1 seen, in the same breath
+	deadline := time.Now().Add(2 * time.Second)
+	for sent() == 0 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	time.Sleep(80 * time.Millisecond)
+	push.mu.Lock()
+	defer push.mu.Unlock()
+	if len(push.sent) != 1 {
+		t.Fatalf("one sync for the burst: %+v", push.sent)
+	}
+	n := push.sent[0]
+	if !n.Background || n.Data["flok_sync"] != 1 || n.Data["badge"] != 0 || len(n.Data["waiting"].([]string)) != 0 || n.Title != "" {
+		t.Fatalf("sync: %+v", n)
 	}
 }

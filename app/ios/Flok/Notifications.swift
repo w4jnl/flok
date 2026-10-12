@@ -128,13 +128,45 @@ final class Notifications: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
+    /// Removes the delivered notifications of agents not in `waiting` ("<instance>:<pane>"), for
+    /// the instances in `judged` (nil: all): from the live view while the app runs, from the
+    /// relay's silent sync push while it does not.
+    nonisolated static func clearDelivered(waiting: Set<String>, judged: Set<String>?) async {
+        let center = UNUserNotificationCenter.current()
+        let gone: [String] = await withCheckedContinuation { done in
+            center.getDeliveredNotifications { list in
+                done.resume(returning: list.compactMap { n in
+                    guard let p = PushPayload(n.request.content.userInfo) else { return nil }
+                    if let judged, !judged.contains(p.instance) { return nil }
+                    return waiting.contains(p.key) ? nil : n.request.identifier
+                })
+            }
+        }
+        if !gone.isEmpty {
+            center.removeDeliveredNotifications(withIdentifiers: gone)
+        }
+    }
+
+    /// The relay's silent sync push: what still waits and the badge.
+    func sync(waiting: [String], badge: Int?) async {
+        await Notifications.clearDelivered(waiting: Set(waiting), judged: nil)
+        if let badge {
+            try? await UNUserNotificationCenter.current().setBadgeCount(badge)
+        }
+    }
+
     func perform(action: String, push: PushPayload?) async {
         guard let push, let relay else { return }
         let target = Target(instance: push.instance, pane: push.pane)
         switch NotificationAction(rawValue: action) {
         case .approve, .deny:
             let keys = NotificationAction(rawValue: action)!.keys
-            do { try await relay.answer(target, keys: keys) } catch { lastError = error.localizedDescription }
+            do {
+                try await relay.answer(target, keys: keys)
+                try? await relay.markSeen(target) // answering is looking at it
+            } catch {
+                lastError = error.localizedDescription
+            }
         case .seen:
             do { try await relay.markSeen(target) } catch { lastError = error.localizedDescription }
         case .mute:
@@ -147,7 +179,7 @@ final class Notifications: NSObject, UNUserNotificationCenterDelegate {
 }
 
 /// Carries a UIKit completion handler into a main-actor task; it is only ever called there.
-private struct MainThreadCallback: @unchecked Sendable {
+struct MainThreadCallback: @unchecked Sendable {
     let body: () -> Void
     init(_ body: @escaping () -> Void) { self.body = body }
     @MainActor func call() { body() }

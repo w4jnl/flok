@@ -47,6 +47,9 @@ struct PushPayload: Sendable, Equatable {
         }
     }
 
+    /// "<instance>:<pane>", the relay's name for the agent in a sync push's waiting list.
+    var key: String { instance + ":" + pane }
+
     /// Wants the user: a prompt, a question, a failure.
     var wantsYou: Bool { pushKind != "done" }
     /// Can be answered with keys from the notification.

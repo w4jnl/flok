@@ -7,6 +7,7 @@ struct AgentView: View {
     @Environment(Settings.self) private var settings
     @Environment(\.verticalSizeClass) private var vClass
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var phase
     @State private var input = ""
     @State private var notice: String?
     @State private var confirmInterrupt = false
@@ -80,8 +81,15 @@ struct AgentView: View {
         .confirmationDialog("Send Ctrl-C to \(found?.1.name ?? "the agent")?", isPresented: $confirmInterrupt, titleVisibility: .visible) {
             Button("Interrupt", role: .destructive) { Task { await send(keys: ["C-c"]) } }
         }
-        .task(id: target) { relay.subscribe(target) }
+        .task(id: target) {
+            relay.subscribe(target)
+            await seenIfUnseen()
+        }
         .onDisappear { relay.unsubscribe(target) }
+        // Looking at the agent here is looking at it: as focusing its pane in tmux, it is marked
+        // seen when it opens, when it finishes while open, and when the app comes back to it.
+        .onChange(of: found?.1.unseen ?? 0) { _, n in if n > 0 { Task { await seenIfUnseen() } } }
+        .onChange(of: phase) { _, p in if p == .active { Task { await seenIfUnseen() } } }
         .onChange(of: compact) { _, _ in inputChoice = nil } // a turn of the phone goes back to that orientation's default
     }
 
@@ -187,9 +195,15 @@ struct AgentView: View {
         await send(text: text, keys: ["Enter"])
     }
 
+    private func seenIfUnseen() async {
+        guard phase == .active, let (_, a) = found, a.unseen > 0 else { return }
+        try? await relay.markSeen(target)
+    }
+
     private func send(text: String? = nil, keys: [String]? = nil) async {
         do {
             try await relay.answer(target, text: text, keys: keys)
+            await seenIfUnseen()
             flash("sent")
         } catch {
             flash(error.localizedDescription)

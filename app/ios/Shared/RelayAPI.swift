@@ -68,6 +68,11 @@ struct RelayAPI: Sendable {
         return try JSONDecoder().decode(Out.self, from: data).text
     }
 
+    /// Marks an agent seen, as looking at its pane in tmux would.
+    func seen(instance: String, pane: String) async throws {
+        try await send("POST", "/api/seen", body: JSONEncoder().encode(["instance": instance, "pane": pane]))
+    }
+
     /// Types into an agent pane: text first, then the keys; the relay waits for the instance.
     func answer(instance: String, pane: String, text: String? = nil, keys: [String]? = nil) async throws {
         var body: [String: AnyEncodable] = ["instance": .init(instance), "pane": .init(pane)]

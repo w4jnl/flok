@@ -181,9 +181,28 @@ final class Relay {
         task.send(.string(s)) { _ in }
     }
 
+    /// The badge, and the notifications of agents that no longer wait on the user (seen or
+    /// answered anywhere) taken off the Lock Screen; instances without a snapshot are left alone.
     private func updateBadge() {
         let n = totalUnseen
-        Task { try? await UNUserNotificationCenter.current().setBadgeCount(n) }
+        let waiting = Self.waitingKeys(instances)
+        let judged = Set(instances.filter { $0.snap != nil }.map(\.name))
+        Task {
+            try? await UNUserNotificationCenter.current().setBadgeCount(n)
+            await Notifications.clearDelivered(waiting: waiting, judged: judged)
+        }
+    }
+
+    /// "<instance>:<pane>" of every agent that waits on the user: unseen, or blocked (a block
+    /// stays until it is answered, seen or not). The relay's sync push uses the same names.
+    nonisolated static func waitingKeys(_ instances: [InstanceState]) -> Set<String> {
+        var out = Set<String>()
+        for inst in instances {
+            for a in inst.agents where a.unseen > 0 || a.state == .blocked {
+                out.insert(inst.name + ":" + a.paneRef)
+            }
+        }
+        return out
     }
 
     // MARK: screens

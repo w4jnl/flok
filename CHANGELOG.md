@@ -19,6 +19,10 @@ updates this file first. Dates are the tag dates.
   keys (1 2 3 y n ↵ esc) that answer from the notification. Time-sensitive alerts now really
   break through Focus (the app has the entitlement).
 - **Working agents spin** in the app's list and on the agent screen, like the sidebar's ◐◓◑◒.
+- **Seen on the phone is seen.** Opening an agent in the app, or answering it (from its screen,
+  the lock screen or the notification card), marks it seen like focusing its pane in tmux. And
+  when an agent stops waiting on you anywhere, its notification leaves the Lock Screen and the
+  badge follows: the relay sends the phones a silent sync push.
 - **The relay's log tells a phone's registrations apart.** Every push, failed push and
   registration names the device, the start of its token and its Apple service
   (`iPhone 04344cb7… production`), and the app takes the token it registered before out of the

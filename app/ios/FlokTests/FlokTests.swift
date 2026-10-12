@@ -177,3 +177,17 @@ struct PrefsTests {
         #expect(frames == ["◐", "◓", "◑", "◒", "◐"])
     }
 }
+
+struct SeenTests {
+    @Test func waitingIsUnseenOrBlocked() throws {
+        let json = """
+        {"type":"instances","instances":[{"name":"Home","online":true,"since":"2026-10-13T08:00:00Z","snap":{"unseen":1,"agents":[
+          {"pane_id":"%1","session_id":"$0","session_name":"a","name":"done-unseen","kind":"claude","state":"done","unseen":1},
+          {"pane_id":"%2","session_id":"$0","session_name":"a","name":"asks-seen","kind":"claude","state":"blocked","unseen":0},
+          {"pane_id":"%3","host":"macmini","session_id":"$0","session_name":"a","name":"idle","kind":"claude","state":"idle","unseen":0}]}}]}
+        """
+        let f = try Wire.decoder.decode(Frame.self, from: Data(json.utf8))
+        #expect(Relay.waitingKeys(f.instances ?? []) == ["Home:%1", "Home:%2"], "a block waits until answered, seen or not")
+        #expect(PushPayload(["instance": "Home", "pane": "macmini:%3"])?.key == "Home:macmini:%3", "the relay's name for it")
+    }
+}

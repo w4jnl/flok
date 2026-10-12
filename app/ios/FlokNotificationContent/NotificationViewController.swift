@@ -35,6 +35,7 @@ final class CardModel {
         }
         do {
             try await api.answer(instance: push.instance, pane: push.pane, text: key.text, keys: key.keys)
+            try? await api.seen(instance: push.instance, pane: push.pane) // answering is looking at it
             status = "sent \(key.label)"
             try? await Task.sleep(for: .milliseconds(700)) // the agent redraws, then the screen is fetched again
             await load()

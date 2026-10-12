@@ -105,6 +105,15 @@ whole:
  "mutes":[{"instance","host"?,"agent","until"?:time}]}
 ```
 
+When an agent stops waiting on the user (it was unseen or blocked in the instance's last
+snapshot and is neither now: seen on the Mac or through `/api/seen`, answered), the relay sends
+every device one silent push a few seconds later (APNs `background`, `content-available`, a
+burst of changes is one push): `{"flok_sync":1,"waiting":["<instance>:<pane>"…],"badge":int}`.
+The app removes its delivered notifications for agents not in `waiting` and sets the badge.
+Each sync carries the whole state, so a sync the platform delays or merges loses nothing. The
+iOS app also marks an agent seen when its screen is opened and after it answers it, as
+focusing the pane in tmux does.
+
 A missing kind is on, with flok's sound, time-sensitive for `permission` and `question` only.
 A mute matches the event's instance, host and agent name (a pane id changes when the agent
 restarts, its name does not); without `until` it lasts until removed, expired ones are

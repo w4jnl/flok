@@ -98,6 +98,11 @@ func TestSendOverHTTP2WithProviderToken(t *testing.T) {
 	if g3 := <-rec; g3.auth == g.auth {
 		t.Fatal("an hour-old token must be refreshed")
 	}
+	// a silent sync: content-available only, push type background at priority 5
+	_ = c.Send(context.Background(), Device{Token: "abc123"}, Notification{Background: true, Data: map[string]any{"flok_sync": 1}})
+	if g4 := <-rec; g4.pushType != "background" || g4.body["aps"].(map[string]any)["content-available"].(float64) != 1 || g4.body["aps"].(map[string]any)["alert"] != nil || g4.body["flok_sync"].(float64) != 1 {
+		t.Fatalf("background: %+v", g4)
+	}
 	status = http.StatusGone
 	if err := c.Send(context.Background(), Device{Token: "abc123"}, Notification{Title: "x", Body: "y"}); err != ErrUnregistered {
 		t.Fatalf("410: %v", err)

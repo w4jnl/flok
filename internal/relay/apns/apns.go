@@ -60,6 +60,7 @@ type Notification struct {
 	Sound         string // "default", or "" for none
 	TimeSensitive bool   // breaks through Focus modes the user allowed it for
 	Mutable       bool   // the app's notification service extension may rework it (mutable-content)
+	Background    bool   // a silent push that wakes the app (content-available) and shows nothing
 	Data          map[string]any
 }
 
@@ -138,6 +139,9 @@ func (c *Client) Send(ctx context.Context, d Device, n Notification) error {
 		alert["subtitle"] = n.Subtitle
 	}
 	aps := map[string]any{"alert": alert}
+	if n.Background { // Apple: content-available and nothing that shows or sounds
+		aps = map[string]any{"content-available": 1}
+	}
 	if n.Sound != "" {
 		aps["sound"] = n.Sound
 	}
@@ -176,8 +180,13 @@ func (c *Client) Send(ctx context.Context, d Device, n Notification) error {
 	}
 	req.Header.Set("authorization", "bearer "+tok)
 	req.Header.Set("apns-topic", c.cfg.Topic)
-	req.Header.Set("apns-push-type", "alert")
-	req.Header.Set("apns-priority", "10")
+	if n.Background {
+		req.Header.Set("apns-push-type", "background")
+		req.Header.Set("apns-priority", "5") // background pushes must be 5
+	} else {
+		req.Header.Set("apns-push-type", "alert")
+		req.Header.Set("apns-priority", "10")
+	}
 	req.Header.Set("apns-expiration", strconv.FormatInt(time.Now().Add(time.Hour).Unix(), 10))
 	if n.CollapseID != "" {
 		req.Header.Set("apns-collapse-id", trunc(n.CollapseID, 64))

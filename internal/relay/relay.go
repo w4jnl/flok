@@ -15,12 +15,14 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/coder/websocket"
 
+	"github.com/w4jnl/flok/internal/agent"
 	"github.com/w4jnl/flok/internal/answer"
 	"github.com/w4jnl/flok/internal/link/wire"
 	"github.com/w4jnl/flok/internal/relay/apns"
@@ -41,7 +43,9 @@ type Config struct {
 	Logf           func(string, ...any)
 	// AnswerWait bounds how long an answer waits for the instance's ack; 0 = 8 s.
 	AnswerWait time.Duration
-	Version    string
+	// SyncDelay gathers the agents that stopped waiting into one silent sync push; 0 = 3 s.
+	SyncDelay time.Duration
+	Version   string
 }
 
 // Server is one relay.
@@ -53,6 +57,7 @@ type Server struct {
 	devices   *deviceStore
 	started   time.Time
 	closed    bool
+	syncDue   *time.Timer // a sync push is on its way
 }
 
 type instance struct {
@@ -65,6 +70,7 @@ type instance struct {
 	snap    *snapshot.Snapshot
 	subs    map[string]int         // pane → how many apps look at it
 	screens map[string]wire.Screen // pane → its last screen, while someone looks at it
+	waiting map[string]bool        // pane refs that wait on the user (unseen or blocked), as of the last snapshot
 	out     chan wire.Frame
 	pending map[string]chan string // answer / seen id → outcome ("" = ok)
 	nextID  uint64
@@ -82,6 +88,9 @@ func New(cfg Config) (*Server, error) {
 	}
 	if cfg.AnswerWait <= 0 {
 		cfg.AnswerWait = 8 * time.Second
+	}
+	if cfg.SyncDelay <= 0 {
+		cfg.SyncDelay = 3 * time.Second
 	}
 	ds, err := loadDevices(cfg.DataDir)
 	if err != nil {
@@ -314,7 +323,81 @@ func (s *Server) setSnap(in *instance, gen uint64, snap *snapshot.Snapshot) {
 		return
 	}
 	in.snap = snap
+	waiting := waitingIn(snap)
+	for pane := range in.waiting {
+		if !waiting[pane] { // seen or answered, here or on the phone: the phones clear its alert
+			s.syncSoonLocked()
+			break
+		}
+	}
+	in.waiting = waiting
 	s.fanout(wire.Frame{Type: wire.TypeInstance, Instance: in.name, Inst: s.view(in)})
+}
+
+// waitingIn is the set of agents in a snapshot that wait on the user: unseen, or blocked.
+func waitingIn(snap *snapshot.Snapshot) map[string]bool {
+	out := map[string]bool{}
+	if snap == nil {
+		return out
+	}
+	for _, a := range snap.Agents {
+		if a.Unseen > 0 || a.State == agent.Blocked {
+			ref := a.PaneID
+			if a.Host != "" {
+				ref = a.Host + ":" + a.PaneID
+			}
+			out[ref] = true
+		}
+	}
+	return out
+}
+
+// syncSoonLocked schedules one silent sync push to every phone (a run of changes is one push;
+// iOS throttles background pushes anyway, and each sync carries the whole state). The caller
+// holds s.mu.
+func (s *Server) syncSoonLocked() {
+	if s.cfg.Push == nil || s.syncDue != nil {
+		return
+	}
+	s.syncDue = time.AfterFunc(s.cfg.SyncDelay, s.sync)
+}
+
+// sync tells every phone which agents still wait on the user and the badge: the app removes
+// the notifications of the others and sets the badge, without showing anything.
+func (s *Server) sync() {
+	s.mu.Lock()
+	s.syncDue = nil
+	badge, waiting := 0, []string{}
+	for _, in := range s.instances {
+		if in.snap != nil {
+			badge += in.snap.Unseen
+		}
+		for pane := range in.waiting {
+			waiting = append(waiting, in.name+":"+pane)
+		}
+	}
+	devices := s.devices.list()
+	s.mu.Unlock()
+	sort.Strings(waiting)
+	if len(waiting) > 200 { // the payload stays far below APNs' 4 KB; the app keeps what it cannot match
+		waiting = waiting[:200]
+	}
+	n := apns.Notification{Background: true, Data: map[string]any{"flok_sync": 1, "waiting": waiting, "badge": badge}}
+	for _, d := range devices {
+		go func(d device) {
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer cancel()
+			switch err := s.cfg.Push.Send(ctx, apns.Device{Token: d.Token, Sandbox: d.Sandbox}, n); {
+			case errors.Is(err, apns.ErrUnregistered):
+				s.cfg.Logf("push: %s is gone, forgotten", d.label())
+				s.devices.remove(d.Token)
+			case err != nil:
+				s.cfg.Logf("push: sync → %s: %v", d.label(), err)
+			default:
+				s.cfg.Logf("push: sync → %s (%d waiting, badge %d)", d.label(), len(waiting), badge)
+			}
+		}(d)
+	}
 }
 
 func (s *Server) screen(in *instance, gen uint64, sc wire.Screen) {

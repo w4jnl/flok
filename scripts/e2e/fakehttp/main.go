@@ -20,7 +20,7 @@ import (
 )
 
 func main() {
-	mode := flag.String("mode", "ntfy", "ntfy: Title|Priority|Authorization|body; apns: path|collapse|title|body|category|badge|subtitle|sound|interruption-level")
+	mode := flag.String("mode", "ntfy", "ntfy: Title|Priority|Authorization|body; apns: path|collapse|title|body|category|badge|subtitle|sound|interruption-level|push-type")
 	logPath := flag.String("log", "", "file to append one line per POST to")
 	portFile := flag.String("portfile", "", "file to write the chosen port to once listening")
 	listen := flag.String("listen", "127.0.0.1:0", "address to listen on")
@@ -66,7 +66,7 @@ func main() {
 				badge = fmt.Sprint(*p.APS.Badge)
 			}
 			line = strings.Join([]string{r.URL.Path, r.Header.Get("apns-collapse-id"), p.APS.Alert.Title, p.APS.Alert.Body, p.APS.Category, badge,
-				p.APS.Alert.Subtitle, p.APS.Sound, p.APS.Level}, "|")
+				p.APS.Alert.Subtitle, p.APS.Sound, p.APS.Level, r.Header.Get("apns-push-type")}, "|")
 		default:
 			title := r.Header.Get("Title")
 			if t, err := dec.DecodeHeader(title); err == nil { // RFC 2047, as ntfy reads it
