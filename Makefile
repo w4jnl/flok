@@ -36,7 +36,7 @@ ios-test: ios-project
 ios-device: ios-project
 	@udid=$$(xcrun devicectl list devices 2>/dev/null | grep -v simulated | grep -E ' connected ' | grep -oE '[0-9A-F]{8}-[0-9A-F]{16}' | head -1); \
 	[ -n "$$udid" ] || { echo "ios-device: no iPhone connected and unlocked (a locked phone shows as unavailable)"; exit 1; }; \
-	cd app/ios && xcodebuild -project Flok.xcodeproj -scheme Flok -configuration Debug -destination "id=$$udid" -derivedDataPath build/DerivedData build -quiet && \
+	cd app/ios && xcodebuild -project Flok.xcodeproj -scheme Flok -configuration Debug -destination "id=$$udid" -derivedDataPath build/DerivedData -allowProvisioningUpdates build -quiet && \
 	xcrun devicectl device install app --device "$$udid" build/DerivedData/Build/Products/Debug-iphoneos/Flok.app >/dev/null && \
 	xcrun devicectl device process launch --terminate-existing --device "$$udid" nl.w4j.flok >/dev/null && echo "ios-device: installed and launched on $$udid"
 
