@@ -57,7 +57,7 @@ func TestSendOverHTTP2WithProviderToken(t *testing.T) {
 		t.Fatal(err)
 	}
 	badge := 2
-	err = c.Send(context.Background(), "abc123", Notification{Title: "home · api", Body: "needs you: perm:Bash", Category: "FLOK_PERMISSION",
+	err = c.Send(context.Background(), Device{Token: "abc123"}, Notification{Title: "home · api", Body: "needs you: perm:Bash", Category: "FLOK_PERMISSION",
 		ThreadID: "home", CollapseID: "home:%1", Badge: &badge, Sound: "default", TimeSensitive: true, Data: map[string]any{"pane": "%1", "aps": "ignored"}})
 	if err != nil {
 		t.Fatal(err)
@@ -88,20 +88,53 @@ func TestSendOverHTTP2WithProviderToken(t *testing.T) {
 		t.Fatal("signature does not verify")
 	}
 	// the token is reused, not re-signed per push
-	_ = c.Send(context.Background(), "abc123", Notification{Title: "x", Body: "y"})
+	_ = c.Send(context.Background(), Device{Token: "abc123"}, Notification{Title: "x", Body: "y"})
 	if g2 := <-rec; g2.auth != g.auth {
 		t.Fatal("token was re-signed within its lifetime")
 	}
 	c.tokenAt = time.Now().Add(-time.Hour)
-	_ = c.Send(context.Background(), "abc123", Notification{Title: "x", Body: "y"})
+	_ = c.Send(context.Background(), Device{Token: "abc123"}, Notification{Title: "x", Body: "y"})
 	if g3 := <-rec; g3.auth == g.auth {
 		t.Fatal("an hour-old token must be refreshed")
 	}
 	status = http.StatusGone
-	if err := c.Send(context.Background(), "abc123", Notification{Title: "x", Body: "y"}); err != ErrUnregistered {
+	if err := c.Send(context.Background(), Device{Token: "abc123"}, Notification{Title: "x", Body: "y"}); err != ErrUnregistered {
 		t.Fatalf("410: %v", err)
 	}
 	<-rec
+}
+
+// One key, two services: each device goes to the one its token came from.
+func TestSendPicksTheDevicesService(t *testing.T) {
+	_, pemKey := testKey(t)
+	paths := make(chan string, 4)
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { paths <- r.URL.Path }))
+	srv.EnableHTTP2 = true
+	srv.StartTLS()
+	defer srv.Close()
+	c, err := New(Config{Key: pemKey, KeyID: "KEY1234567", TeamID: "TEAM123456", Topic: "nl.w4j.flok",
+		URL: srv.URL + "/production", SandboxURL: srv.URL + "/sandbox", HTTP: srv.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range []Device{{Token: "fromxcode", Sandbox: true}, {Token: "fromtestflight"}} {
+		if err := c.Send(context.Background(), d, Notification{Title: "x", Body: "y"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if a, b := <-paths, <-paths; a != "/sandbox/3/device/fromxcode" || b != "/production/3/device/fromtestflight" {
+		t.Fatalf("paths: %s, %s", a, b)
+	}
+	// without overrides: Apple's two hosts
+	c, _ = New(Config{Key: pemKey, KeyID: "KEY1234567", TeamID: "TEAM123456", Topic: "nl.w4j.flok"})
+	if c.base != ProductionHost || c.sandbox != SandboxHost {
+		t.Fatalf("hosts: %s %s", c.base, c.sandbox)
+	}
+	// one override (the e2e stand-in) serves both
+	c, _ = New(Config{Key: pemKey, KeyID: "KEY1234567", TeamID: "TEAM123456", Topic: "nl.w4j.flok", URL: "http://127.0.0.1:1"})
+	if c.base != "http://127.0.0.1:1" || c.sandbox != "http://127.0.0.1:1" {
+		t.Fatalf("hosts with URL: %s %s", c.base, c.sandbox)
+	}
 }
 
 func TestNewRefuses(t *testing.T) {

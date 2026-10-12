@@ -41,9 +41,10 @@ entitlement, and nothing else changes.
 2. In the developer account: an App ID `nl.w4j.flok` with Push Notifications enabled, and under
    Keys one key for the Apple Push Notifications service. The `.p8`, its key id, the team id and
    the bundle id go into the relay (`deploy/relay`, `FLOK_RELAY_APNS_*`).
-3. Build and run on the device from Xcode. A build installed this way is a development build:
-   the relay needs `FLOK_RELAY_APNS_SANDBOX=1` for its pushes. A TestFlight build (Product →
-   Archive → Distribute) uses the production service: set it back to empty.
+3. Build and run on the device from Xcode (`make ios-device` with the phone on the cable). A
+   build installed this way is a development build and registers a sandbox token; a TestFlight
+   build (Product → Archive → Distribute) a production one. The relay pushes each phone through
+   the service its token belongs to, so both kinds work side by side.
 4. In the app: Settings → relay and device token → Save and connect → Enable notifications.
    The APNs token is handed to the relay (`/api/devices`) and shows as registered.
 

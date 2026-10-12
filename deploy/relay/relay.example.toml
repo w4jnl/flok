@@ -1,6 +1,6 @@
 # flok-relay configuration (flok-relay serve -config relay.toml). Every value can also come from
 # the environment (FLOK_RELAY_LISTEN, FLOK_RELAY_DATA_DIR, FLOK_RELAY_INSTANCE_TOKENS,
-# FLOK_RELAY_DEVICE_TOKENS, FLOK_RELAY_APNS_KEY_FILE / _KEY_ID / _TEAM_ID / _TOPIC / _SANDBOX),
+# FLOK_RELAY_DEVICE_TOKENS, FLOK_RELAY_APNS_KEY_FILE / _KEY_ID / _TEAM_ID / _TOPIC),
 # which wins over the file. Tokens: `flok-relay token`.
 listen = ":8080"              # plain HTTP; TLS and the public name belong to the reverse proxy
 data_dir = "/data"            # devices.json (the phones registered for pushes)
@@ -12,4 +12,5 @@ key_file = ""                 # the .p8 from the developer account (Keys, Apple 
 key_id = ""                   # its 10-character id
 team_id = ""                  # the team id
 topic = ""                    # the app's bundle id
-sandbox = false               # true for development builds installed from Xcode
+# No sandbox switch: each phone says whether its token is a sandbox one (a build from Xcode) or
+# a production one (TestFlight, App Store), and the relay pushes through that service.

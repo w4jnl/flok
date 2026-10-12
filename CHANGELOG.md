@@ -6,6 +6,9 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+- **One relay for Xcode and TestFlight builds.** `flok-relay` sends each phone's pushes
+  through the Apple service its token belongs to (the app says whether it is a development
+  build), so `FLOK_RELAY_APNS_SANDBOX` is gone; a leftover one is ignored with a log line.
 - **flok for iPhone** (`app/ios`, SwiftUI, iOS 17+): every instance in one list with its
   agents, states and host tags, a "needs you" filter, the live screen of an agent with a key
   bar and a reply field, Approve / Deny / Mark seen from the lock screen, the badge counting

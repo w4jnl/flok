@@ -15,7 +15,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -53,7 +52,7 @@ type fileConfig struct {
 		KeyID   string `toml:"key_id"`
 		TeamID  string `toml:"team_id"`
 		Topic   string `toml:"topic"`
-		Sandbox bool   `toml:"sandbox"`
+		Sandbox bool   `toml:"sandbox"` // no longer used: each device says which service it needs
 	} `toml:"apns"`
 }
 
@@ -136,9 +135,9 @@ func runServe(args []string) int {
 	}
 	logger := log.New(os.Stdout, "", log.LstdFlags)
 	pushCfg := apns.Config{KeyID: env("APNS_KEY_ID", fc.APNS.KeyID), TeamID: env("APNS_TEAM_ID", fc.APNS.TeamID), Topic: env("APNS_TOPIC", fc.APNS.Topic),
-		URL: env("APNS_URL", "")}
-	if v := env("APNS_SANDBOX", strconv.FormatBool(fc.APNS.Sandbox)); v == "1" || strings.EqualFold(v, "true") {
-		pushCfg.Sandbox = true
+		URL: env("APNS_URL", ""), SandboxURL: env("APNS_SANDBOX_URL", "")}
+	if v := env("APNS_SANDBOX", ""); v != "" || fc.APNS.Sandbox {
+		logger.Printf("push: FLOK_RELAY_APNS_SANDBOX / [apns] sandbox is not needed any more and is ignored: each phone says which service it registered with")
 	}
 	if b64 := env("APNS_KEY_B64", ""); b64 != "" { // the .p8 on one line, for a container's environment
 		b, err := base64.StdEncoding.DecodeString(strings.Join(strings.Fields(b64), ""))
@@ -163,7 +162,7 @@ func runServe(args []string) int {
 		return 1
 	} else if p != nil {
 		pusher = p
-		logger.Printf("push: APNs for %s (sandbox=%v)", pushCfg.Topic, pushCfg.Sandbox)
+		logger.Printf("push: APNs for %s (sandbox or production, as each phone registered)", pushCfg.Topic)
 	} else {
 		logger.Printf("push: off (no APNs key)")
 	}

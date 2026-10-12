@@ -64,6 +64,9 @@ offline simply reports so. Every answer and seen mark is logged on the instance 
 (`FLOK_RELAY_LISTEN`, `FLOK_RELAY_DATA_DIR`, `FLOK_RELAY_INSTANCE_TOKENS`,
 `FLOK_RELAY_DEVICE_TOKENS`, `FLOK_RELAY_APNS_KEY_FILE`, or `FLOK_RELAY_APNS_KEY_B64` with the
 `.p8` base64-encoded, or `FLOK_RELAY_APNS_KEY` with the PEM itself, `FLOK_RELAY_APNS_KEY_ID`,
-`FLOK_RELAY_APNS_TEAM_ID`, `FLOK_RELAY_APNS_TOPIC`, `FLOK_RELAY_APNS_SANDBOX`), which wins over
-the file. Logs go to stdout: instances coming and
+`FLOK_RELAY_APNS_TEAM_ID`, `FLOK_RELAY_APNS_TOPIC`), which wins over
+the file. There is no sandbox switch: the app registers its token with `sandbox: true` when it
+is a build installed from Xcode, and the relay pushes each phone through the service its token
+belongs to, so development and TestFlight builds share one relay (a leftover
+`FLOK_RELAY_APNS_SANDBOX` is ignored with a log line). Logs go to stdout: instances coming and
 going, every answer, every push.
