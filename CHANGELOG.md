@@ -4,7 +4,7 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
-## Unreleased
+## 0.6.1 (2026-10-12)
 
 - **One relay for Xcode and TestFlight builds.** `flok-relay` sends each phone's pushes
   through the Apple service its token belongs to (the app says whether it is a development
