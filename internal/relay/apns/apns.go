@@ -61,7 +61,21 @@ type Notification struct {
 	TimeSensitive bool   // breaks through Focus modes the user allowed it for
 	Mutable       bool   // the app's notification service extension may rework it (mutable-content)
 	Background    bool   // a silent push that wakes the app (content-available) and shows nothing
+	Live          *Live  // a Live Activity push instead of an alert (the device token is the activity's)
 	Data          map[string]any
+}
+
+// Live is a Live Activity push (apns-push-type liveactivity): start one (to a push-to-start
+// token), update or end one (to the activity's own token). Title and Body of the Notification
+// are the alert a start needs.
+type Live struct {
+	Event          string    // start | update | end
+	ContentState   any       // the activity's ContentState, as the app's Codable reads it
+	AttributesType string    // start: the app's ActivityAttributes type name
+	Attributes     any       // start: its attributes
+	Stale          time.Time // shown as out of date after; zero = never
+	Dismissal      time.Time // end: off the Lock Screen at; zero = the system's default
+	Urgent         bool      // priority 10, which iOS budgets; routine changes go at 5
 }
 
 // ErrUnregistered is returned for a device token the service no longer knows (the app was
@@ -142,6 +156,19 @@ func (c *Client) Send(ctx context.Context, d Device, n Notification) error {
 	if n.Background { // Apple: content-available and nothing that shows or sounds
 		aps = map[string]any{"content-available": 1}
 	}
+	if l := n.Live; l != nil {
+		aps = map[string]any{"timestamp": time.Now().Unix(), "event": l.Event, "content-state": l.ContentState}
+		if l.Event == "start" {
+			aps["attributes-type"], aps["attributes"], aps["alert"] = l.AttributesType, l.Attributes, alert
+			aps["input-push-token"] = 1 // the new activity's update token, to the app at once (iOS 18)
+		}
+		if !l.Stale.IsZero() {
+			aps["stale-date"] = l.Stale.Unix()
+		}
+		if !l.Dismissal.IsZero() {
+			aps["dismissal-date"] = l.Dismissal.Unix()
+		}
+	}
 	if n.Sound != "" {
 		aps["sound"] = n.Sound
 	}
@@ -180,10 +207,15 @@ func (c *Client) Send(ctx context.Context, d Device, n Notification) error {
 	}
 	req.Header.Set("authorization", "bearer "+tok)
 	req.Header.Set("apns-topic", c.cfg.Topic)
-	if n.Background {
+	switch {
+	case n.Live != nil:
+		req.Header.Set("apns-push-type", "liveactivity")
+		req.Header.Set("apns-topic", c.cfg.Topic+".push-type.liveactivity")
+		req.Header.Set("apns-priority", map[bool]string{true: "10", false: "5"}[n.Live.Urgent])
+	case n.Background:
 		req.Header.Set("apns-push-type", "background")
 		req.Header.Set("apns-priority", "5") // background pushes must be 5
-	} else {
+	default:
 		req.Header.Set("apns-push-type", "alert")
 		req.Header.Set("apns-priority", "10")
 	}

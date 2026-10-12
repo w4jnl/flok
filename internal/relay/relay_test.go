@@ -543,3 +543,176 @@ func TestRelaySyncsWhenAgentsStopWaiting(t *testing.T) {
 		t.Fatalf("sync: %+v", n)
 	}
 }
+
+func TestOverviewCountsAndRanks(t *testing.T) {
+	s, _ := New(Config{InstanceTokens: []string{"i"}, DeviceTokens: []string{"d"}})
+	t0 := time.Date(2026, 10, 13, 9, 0, 0, 0, time.UTC)
+	at := func(m int) time.Time { return t0.Add(time.Duration(m) * time.Minute) }
+	s.instances["home"] = &instance{name: "home", online: true, snap: &snapshot.Snapshot{Agents: []snapshot.Agent{
+		{PaneID: "%1", Name: "w-old", State: agent.Working, StateSince: at(0), Tool: "Edit"},
+		{PaneID: "%2", Name: "w-new", State: agent.Working, StateSince: at(5)},
+		{PaneID: "%3", Name: "asks", State: agent.Blocked, Reason: "permission:Bash", StateSince: at(7)},
+		{PaneID: "%4", Name: "done-seen", State: agent.Done, StateSince: at(1)},
+		{PaneID: "%5", Name: "done-unseen", State: agent.Done, Unseen: 1, StateSince: at(6)},
+		{PaneID: "%6", Name: "idle", State: agent.Idle},
+	}}}
+	s.instances["office"] = &instance{name: "office", online: false, snap: &snapshot.Snapshot{Agents: []snapshot.Agent{
+		{PaneID: "%1", Name: "offline-working", State: agent.Working, StateSince: at(0)},
+	}}}
+	ov := s.overviewLocked()
+	if ov.Working != 2 || ov.Waiting != 1 || ov.Done != 1 {
+		t.Fatalf("counts (an offline instance does not count): %+v", ov)
+	}
+	if len(ov.Rows) != 3 || ov.Rows[0].Agent != "asks" || ov.Rows[0].Label != "needs you: perm:Bash" || ov.Rows[1].Agent != "done-unseen" || ov.Rows[2].Agent != "w-old" || ov.Rows[2].Label != "working" {
+		t.Fatalf("rows: asking, finished unseen, longest working; no tool: %+v", ov.Rows)
+	}
+	if ov.Rows[2].Since != float64(at(0).Unix()) || ov.Rows[0].Pane != "%3" {
+		t.Fatalf("since and pane: %+v", ov.Rows[2])
+	}
+	if w := overviewWords(ov); w != "2 working · 1 needs you · 1 done" {
+		t.Fatalf("words: %q", w)
+	}
+	if !strings.Contains(ov.json(), `"rows":[{"instance":"home","host":"","agent":"asks","pane":"%3","state":"blocked"`) {
+		t.Fatalf("every field present, the app's names: %s", ov.json())
+	}
+}
+
+// The overview starts by push on an idle → busy edge (once, until the phone answers), follows
+// changes (a rise in waiting is urgent), and ends after the quiet; a followed agent's activity
+// ends a little after it finished; a refused activity token costs only that token.
+func TestLiveActivities(t *testing.T) {
+	push := &fakePush{}
+	s, err := New(Config{InstanceTokens: []string{"i"}, DeviceTokens: []string{"d"}, Push: push, LiveDelay: 10 * time.Millisecond,
+		QuietEnd: 150 * time.Millisecond, AgentLinger: time.Minute, SyncDelay: time.Hour, Logf: t.Logf})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(s.Handler())
+	defer srv.Close()
+	_ = s.devices.add(device{Token: "phonetoken01", Name: "phone", Added: time.Now()})
+	in := &instance{name: "home", subs: map[string]int{}, gen: 1, online: true}
+	s.mu.Lock()
+	s.instances["home"] = in
+	s.mu.Unlock()
+	snap := func(agents ...snapshot.Agent) *snapshot.Snapshot { return &snapshot.Snapshot{Agents: agents} }
+	work := snapshot.Agent{PaneID: "%1", Name: "api", State: agent.Working, StateSince: time.Now()}
+	ask := snapshot.Agent{PaneID: "%1", Name: "api", State: agent.Blocked, Reason: "question", StateSince: time.Now()}
+	idle := snapshot.Agent{PaneID: "%1", Name: "api", State: agent.Idle}
+	lives := func() []apns.Notification {
+		push.mu.Lock()
+		defer push.mu.Unlock()
+		var out []apns.Notification
+		for _, n := range push.sent {
+			if n.Live != nil {
+				out = append(out, n)
+			}
+		}
+		return out
+	}
+	waitFor := func(n int, why string) []apns.Notification {
+		t.Helper()
+		deadline := time.Now().Add(2 * time.Second)
+		for len(lives()) < n && time.Now().Before(deadline) {
+			time.Sleep(5 * time.Millisecond)
+		}
+		time.Sleep(40 * time.Millisecond)
+		got := lives()
+		if len(got) != n {
+			t.Fatalf("%s: %d live pushes: %+v", why, len(got), got)
+		}
+		return got
+	}
+
+	// no start token yet: busy, nothing to start
+	s.setSnap(in, 1, snap(work))
+	waitFor(0, "without a start token")
+	s.setSnap(in, 1, snap(idle))
+	time.Sleep(30 * time.Millisecond)
+	if code, _ := api(t, srv, "d", "PUT", "/api/devices/phonetoken01/activity", map[string]any{"start_token": "starttoken01", "activities": []any{}}); code != 200 {
+		t.Fatalf("activity: %d", code)
+	}
+	s.setSnap(in, 1, snap(work)) // idle → busy: one start
+	got := waitFor(1, "the start")
+	if l := got[0].Live; l.Event != "start" || l.AttributesType != "FlokActivityAttributes" || l.Attributes.(LiveAttributes).Kind != "overview" || got[0].Body != "1 working" {
+		t.Fatalf("start: %+v %+v", got[0], l)
+	}
+	push.mu.Lock()
+	startTo := push.to[len(push.to)-1].Token
+	push.mu.Unlock()
+	if startTo != "starttoken01" {
+		t.Fatalf("a start goes to the start token: %s", startTo)
+	}
+	s.setSnap(in, 1, snap(idle))
+	s.setSnap(in, 1, snap(work)) // another edge, but the phone has not answered the first start
+	waitFor(1, "no second start while the first is unanswered")
+
+	// the phone reports the activity: it gets the state, then each change; a rise in waiting is urgent
+	if code, _ := api(t, srv, "d", "PUT", "/api/devices/phonetoken01/activity", map[string]any{"start_token": "starttoken01",
+		"activities": []any{map[string]any{"id": "A1", "token": "overviewtok1", "kind": "overview"}}}); code != 200 {
+		t.Fatal("report")
+	}
+	got = waitFor(2, "the reported activity gets the state")
+	if l := got[1].Live; l.Event != "update" || l.ContentState.(LiveState).Working != 1 || l.Urgent {
+		t.Fatalf("update: %+v", l)
+	}
+	s.setSnap(in, 1, snap(work)) // unchanged: nothing
+	waitFor(2, "an unchanged state is not pushed again")
+	s.setSnap(in, 1, snap(ask))
+	got = waitFor(3, "the question")
+	if l := got[2].Live; l.ContentState.(LiveState).Waiting != 1 || !l.Urgent || l.ContentState.(LiveState).Rows[0].Label != "needs you: question" {
+		t.Fatalf("urgent update: %+v", l)
+	}
+	s.setSnap(in, 1, snap(idle)) // quiet: an update now, the end after QuietEnd
+	got = waitFor(5, "quiet: the update, then the end")
+	if got[3].Live.Event != "update" || got[4].Live.Event != "end" || got[4].Live.Dismissal.IsZero() {
+		t.Fatalf("end: %+v %+v", got[3].Live, got[4].Live)
+	}
+	if acts := s.devices.list()[0].Activities; len(acts) != 0 {
+		t.Fatalf("an ended activity is forgotten: %+v", acts)
+	}
+
+	// a followed agent: updates while it works, ends with a linger once it finished
+	if code, _ := api(t, srv, "d", "PUT", "/api/devices/phonetoken01/activity", map[string]any{"start_token": "starttoken01",
+		"activities": []any{map[string]any{"id": "F1", "token": "followtoken1", "kind": "agent", "instance": "home", "pane": "%1"}}}); code != 200 {
+		t.Fatal("report follow")
+	}
+	waitFor(6, "an idle followed agent ends at once") // idle → end
+	if acts := s.devices.list()[0].Activities; len(acts) != 0 {
+		t.Fatalf("ended: %+v", acts)
+	}
+	s.mu.Lock()
+	s.liveStarted["phonetoken01"] = time.Now() // keep the overview's start out of this part
+	s.mu.Unlock()
+	s.setSnap(in, 1, snap(work))
+	time.Sleep(30 * time.Millisecond)
+	if code, _ := api(t, srv, "d", "PUT", "/api/devices/phonetoken01/activity", map[string]any{
+		"activities": []any{map[string]any{"id": "F2", "token": "followtoken2", "kind": "agent", "instance": "home", "pane": "%1"}}}); code != 200 {
+		t.Fatal("report follow 2")
+	}
+	got = waitFor(7, "the followed agent's state")
+	if l := got[6].Live; l.Event != "update" || l.ContentState.(LiveState).Rows[0].State != "working" {
+		t.Fatalf("follow update: %+v", l)
+	}
+	s.setSnap(in, 1, snap(snapshot.Agent{PaneID: "%1", Name: "api", State: agent.Done, Unseen: 1}))
+	got = waitFor(8, "finished: the end")
+	if l := got[7].Live; l.Event != "end" || l.ContentState.(LiveState).Rows[0].State != "done" || time.Until(l.Dismissal) < 30*time.Second {
+		t.Fatalf("follow end lingers: %+v", l)
+	}
+
+	// a refused activity token: only that token goes, the phone stays
+	push.mu.Lock()
+	push.fail = apns.ErrUnregistered
+	push.mu.Unlock()
+	if code, _ := api(t, srv, "d", "PUT", "/api/devices/phonetoken01/activity", map[string]any{
+		"activities": []any{map[string]any{"id": "A2", "token": "overviewtok2", "kind": "overview"}}}); code != 200 {
+		t.Fatal("report 3")
+	}
+	waitFor(9, "the push to the stale token")
+	time.Sleep(30 * time.Millisecond)
+	if list := s.devices.list(); len(list) != 1 || len(list[0].Activities) != 0 {
+		t.Fatalf("the phone stays, the token goes: %+v", list)
+	}
+	if code, _ := api(t, srv, "d", "PUT", "/api/devices/phonetoken01/activity", map[string]any{"activities": []any{map[string]any{"id": "x", "token": "t", "kind": "agent"}}}); code != http.StatusBadRequest {
+		t.Fatalf("an agent activity without instance and pane: %d", code)
+	}
+}

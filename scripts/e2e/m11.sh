@@ -49,6 +49,8 @@ expect "doctor reports the link as the sidebar sees it" 'link: connected to ws:/
 expect "a phone registers for pushes" '"ok":true' "$(POST /api/devices '{"token":"e2edevicetoken0001","name":"e2e phone"}')"
 expect "the device is listed, token shortened" '"name":"e2e phone"' "$(GET /api/devices)"
 expect "the device list never shows the whole token" '^0$' "$(GET /api/devices | grep -c e2edevicetoken0001 || true)"
+expect "the phone reports a Live Activity" '"ok":true' "$(PUT /api/devices/e2edevicetoken0001/activity '{"activities":[{"id":"A1","token":"e2eoverviewtoken","kind":"overview"}]}')"
+expect_soon "… which gets the overview as a liveactivity push" '^/3/device/e2eoverviewtoken[|].*[|]liveactivity$' cat "$APNS_LOG"
 
 # --- a blocked agent: the app hears it, the phone gets a push ----------------------------------
 "$RELAY" tail -url "http://127.0.0.1:$RELAY_PORT" -token "$DEV_TOK" -subscribe "e2e:$AGENT" > "$T/tail.out" 2>&1 &

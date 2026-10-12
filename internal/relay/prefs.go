@@ -12,8 +12,9 @@ import (
 // sends them with its registration and on every change; the relay only reads them, before each
 // push. iOS cannot drop a push once it arrives, so the filter has to live here.
 type Prefs struct {
-	Kinds map[string]KindPrefs `json:"kinds,omitempty"` // by push kind (KindPermission …); a missing kind = its defaults
-	Mutes []Mute               `json:"mutes,omitempty"`
+	Kinds      map[string]KindPrefs `json:"kinds,omitempty"` // by push kind (KindPermission …); a missing kind = its defaults
+	Mutes      []Mute               `json:"mutes,omitempty"`
+	NoActivity bool                 `json:"no_activity,omitempty"` // no flok overview in the Dynamic Island / on the Lock Screen
 }
 
 // KindPrefs are the settings of one push kind; the zero value is the default.

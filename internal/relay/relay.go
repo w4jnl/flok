@@ -45,7 +45,13 @@ type Config struct {
 	AnswerWait time.Duration
 	// SyncDelay gathers the agents that stopped waiting into one silent sync push; 0 = 3 s.
 	SyncDelay time.Duration
-	Version   string
+	// LiveDelay gathers snapshot changes into one round of Live Activity pushes; 0 = 1.5 s.
+	LiveDelay time.Duration
+	// QuietEnd ends the overview activity after nothing works, waits or is unseen; 0 = 2 min.
+	QuietEnd time.Duration
+	// AgentLinger keeps a followed agent's finished activity on the Lock Screen; 0 = 10 min.
+	AgentLinger time.Duration
+	Version     string
 }
 
 // Server is one relay.
@@ -58,6 +64,14 @@ type Server struct {
 	started   time.Time
 	closed    bool
 	syncDue   *time.Timer // a sync push is on its way
+
+	// Live Activities (live.go)
+	liveDue        *time.Timer          // a round is on its way
+	liveWasActive  bool                 // something worked or waited in the last round
+	liveQuietSince time.Time            // since when nothing works, waits or is unseen
+	liveSent       map[string]string    // activity token → the content last sent
+	liveWaiting    map[string]int       // activity token → its waiting count last sent (a rise is urgent)
+	liveStarted    map[string]time.Time // device token → a start push the phone has not answered yet
 }
 
 type instance struct {
@@ -92,11 +106,21 @@ func New(cfg Config) (*Server, error) {
 	if cfg.SyncDelay <= 0 {
 		cfg.SyncDelay = 3 * time.Second
 	}
+	if cfg.LiveDelay <= 0 {
+		cfg.LiveDelay = 1500 * time.Millisecond
+	}
+	if cfg.QuietEnd <= 0 {
+		cfg.QuietEnd = 2 * time.Minute
+	}
+	if cfg.AgentLinger <= 0 {
+		cfg.AgentLinger = 10 * time.Minute
+	}
 	ds, err := loadDevices(cfg.DataDir)
 	if err != nil {
 		return nil, err
 	}
-	return &Server{cfg: cfg, instances: map[string]*instance{}, apps: map[*app]struct{}{}, devices: ds, started: time.Now()}, nil
+	return &Server{cfg: cfg, instances: map[string]*instance{}, apps: map[*app]struct{}{}, devices: ds, started: time.Now(),
+		liveSent: map[string]string{}, liveWaiting: map[string]int{}, liveStarted: map[string]time.Time{}}, nil
 }
 
 // Handler is the HTTP surface.
@@ -112,6 +136,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/devices", s.withDevice(s.handleDeviceAdd))
 	mux.HandleFunc("DELETE /api/devices/{token}", s.withDevice(s.handleDeviceRemove))
 	mux.HandleFunc("PUT /api/devices/{token}/prefs", s.withDevice(s.handleDevicePrefs))
+	mux.HandleFunc("PUT /api/devices/{token}/activity", s.withDevice(s.handleDeviceActivity))
 	mux.HandleFunc("GET /api/screen", s.withDevice(s.handleScreen))
 	return mux
 }
@@ -198,14 +223,14 @@ func (s *Server) handleLink(w http.ResponseWriter, r *http.Request) {
 		conn.Close(websocket.StatusPolicyViolation, fmt.Sprintf("protocol %d, this relay speaks %d", hello.Hello.Proto, wire.Proto))
 		return
 	}
-	in, gen, replaced := s.register(*hello.Hello, conn)
+	in, gen, out, replaced := s.register(*hello.Hello, conn)
 	if replaced != nil { // the same name again: the earlier link is stale (a drop the relay had not noticed yet)
 		replaced.Close(websocket.StatusGoingAway, "replaced by a newer link from "+in.name)
 	}
 	s.cfg.Logf("instance %s online (flok %s on %s, %s)", in.name, hello.Hello.Version, hello.Hello.Hostname, r.RemoteAddr)
 	wctx, stop := context.WithCancel(ctx)
 	defer stop()
-	go s.writer(wctx, conn, in.out, gen, in)
+	go s.writer(wctx, conn, out, gen, in)
 	defer func() {
 		conn.CloseNow()
 		if s.offline(in, gen) {
@@ -265,8 +290,8 @@ func (s *Server) writer(ctx context.Context, conn *websocket.Conn, out <-chan wi
 
 // register makes an instance current under its name; a link already up under that name is
 // replaced (the same instance reconnecting after a drop the relay has not noticed yet) and
-// returned for closing.
-func (s *Server) register(h wire.Hello, conn *websocket.Conn) (*instance, uint64, *websocket.Conn) {
+// returned for closing. The link's frame channel is returned too: a later link swaps in.out.
+func (s *Server) register(h wire.Hello, conn *websocket.Conn) (*instance, uint64, chan wire.Frame, *websocket.Conn) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	in := s.instances[h.Name]
@@ -292,8 +317,9 @@ func (s *Server) register(h wire.Hello, conn *websocket.Conn) (*instance, uint64
 			in.out <- wire.Frame{Type: wire.TypeSubscribe, Pane: pane, On: true}
 		}
 	}
+	s.liveSoonLocked() // its agents join the overview
 	s.fanout(wire.Frame{Type: wire.TypeInstance, Instance: in.name, Inst: s.view(in)})
-	return in, in.gen, replaced
+	return in, in.gen, in.out, replaced
 }
 
 // offline marks an instance gone when the connection that ends is still its current one.
@@ -308,6 +334,7 @@ func (s *Server) offline(in *instance, gen uint64) bool {
 		ch <- "the instance went offline"
 		delete(in.pending, id)
 	}
+	s.liveSoonLocked() // its agents leave the overview
 	s.fanout(wire.Frame{Type: wire.TypeInstance, Instance: in.name, Inst: s.view(in)})
 	return true
 }
@@ -331,6 +358,7 @@ func (s *Server) setSnap(in *instance, gen uint64, snap *snapshot.Snapshot) {
 		}
 	}
 	in.waiting = waiting
+	s.liveSoonLocked()
 	s.fanout(wire.Frame{Type: wire.TypeInstance, Instance: in.name, Inst: s.view(in)})
 }
 
@@ -830,6 +858,43 @@ func (s *Server) handleDevicePrefs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.cfg.Logf("device %s: notification settings, %d kinds set, %d mutes", short(tok), len(p.Kinds), len(p.Mutes))
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+type activityReq struct {
+	Start      string     `json:"start_token,omitempty"`
+	Activities []Activity `json:"activities"`
+}
+
+// handleDeviceActivity takes a phone's Live Activity tokens (sent whole): its push-to-start
+// token and the activities running, overview or agent, with their update tokens.
+func (s *Server) handleDeviceActivity(w http.ResponseWriter, r *http.Request) {
+	var req activityReq
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&req); err != nil || len(req.Activities) > 20 || len(req.Start) > 512 {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "activity: not JSON, or too many"})
+		return
+	}
+	for _, a := range req.Activities {
+		if a.ID == "" || a.Token == "" || len(a.Token) > 512 || (a.Kind != liveOverview && a.Kind != liveAgent) || (a.Kind == liveAgent && (a.Instance == "" || a.Pane == "")) {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "activity: id, token and kind (overview, or agent with instance and pane) are needed"})
+			return
+		}
+	}
+	tok := r.PathValue("token")
+	found, err := s.devices.setActivities(tok, req.Start, req.Activities)
+	switch {
+	case !found:
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": "no such device"})
+		return
+	case err != nil:
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return
+	}
+	s.mu.Lock()
+	delete(s.liveStarted, tok) // the phone answered: what it runs is known now
+	s.liveSoonLocked()         // a new activity gets the current state at once
+	s.mu.Unlock()
+	s.cfg.Logf("device %s: %d live activities, start token %v", short(tok), len(req.Activities), req.Start != "")
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
