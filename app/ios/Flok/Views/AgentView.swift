@@ -30,13 +30,15 @@ struct AgentView: View {
                 .onTapGesture { typing = false } // a tap on the screen puts the keyboard away
             Divider()
             if inputShown {
-                HStack(spacing: 0) {
-                    KeyBar { key in Task { await send(text: key.text, keys: key.keys) } }
-                    Button { inputChoice = false; typing = false } label: { Image(systemName: "chevron.down") }
-                        .buttonStyle(.bordered).padding(.trailing, 8)
-                        .accessibilityLabel("Hide the keys")
-                }
+                // The keys get the whole row and the controls sit in the reply row, each in its
+                // own place: nothing floats over anything (the keyboard's own toolbar did, over
+                // the send button, on iOS 26 and later).
+                KeyBar { key in Task { await send(text: key.text, keys: key.keys) } }
+                    .clipped()
                 HStack(spacing: 8) {
+                    Button { inputChoice = false; typing = false } label: { Image(systemName: "chevron.down").fontWeight(.semibold) }
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel("Hide the keys and the reply field")
                     TextField("type a reply, Enter sends it", text: $input, axis: .vertical)
                         .textFieldStyle(.roundedBorder)
                         .lineLimit(1...4)
@@ -44,6 +46,11 @@ struct AgentView: View {
                         .textInputAutocapitalization(.never)
                         .focused($typing)
                         .onSubmit { Task { await sendInput() } }
+                    if typing {
+                        Button { typing = false } label: { Image(systemName: "keyboard.chevron.compact.down") }
+                            .buttonStyle(.bordered)
+                            .accessibilityLabel("Hide the keyboard")
+                    }
                     Button { Task { await sendInput() } } label: { Image(systemName: "paperplane.fill") }
                         .buttonStyle(.borderedProminent)
                         .disabled(input.isEmpty)
@@ -67,10 +74,6 @@ struct AgentView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(compact ? .hidden : .visible, for: .navigationBar)
         .toolbar {
-            ToolbarItemGroup(placement: .keyboard) {
-                Spacer()
-                Button { typing = false } label: { Label("Hide keyboard", systemImage: "keyboard.chevron.compact.down") }
-            }
             ToolbarItem(placement: .topBarTrailing) { textMenu }
             ToolbarItem(placement: .topBarTrailing) { actionMenu }
         }
