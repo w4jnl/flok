@@ -103,7 +103,8 @@ whole:
 ```
 {"kinds":{"permission"|"question"|"done"|"error":
            {"off"?:bool, "sound"?:"flok"|"default"|"none", "time_sensitive"?:bool}},
- "mutes":[{"instance","host"?,"agent","until"?:time}]}
+ "mutes":[{"instance","host"?,"agent","until"?:time}],
+ "no_activity"?:bool, "finished_as_notification"?:bool}
 ```
 
 When an agent stops waiting on the user (it was unseen or blocked in the instance's last
@@ -117,6 +118,15 @@ focusing the pane in tmux does.
 
 A missing kind is on, with flok's sound, time-sensitive for `permission` and `question` only.
 `"no_activity": true` in `Prefs` turns the overview Live Activity off for the device.
+
+While a device runs the overview (as it last reported), `done` and `error` do not come as
+notifications: the overview's next update carries them as its `alert` (`title` = agent, `body`
+= `✓ done · <instance> / <host> · <session>`, the kind's `sound` inside the alert, priority 10),
+which lights the activity up on the Lock Screen and expands the Dynamic Island, so a finish is
+one thing on the screen, not two. A badge-only push (an `alert` push with `badge` alone, which
+shows nothing) keeps the badge. Should that update fail, or the overview be gone by then, the
+notification goes after all. `"finished_as_notification": true` keeps them notifications;
+`permission` and `question` are always notifications (their actions, Focus).
 
 ## Live Activities (iOS: Dynamic Island, Lock Screen)
 

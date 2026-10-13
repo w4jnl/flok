@@ -157,8 +157,12 @@ struct PrefsTests {
         var p = NotificationPrefs()
         p.setTimeSensitive(.question, false)
         p.mute(instance: "Home", host: "macmini", agent: "docker", until: Date(timeIntervalSince1970: 1_791_000_000))
+        #expect(p.finishedInIsland, "finished agents light up the overview by default")
+        p.finishedAsNotification = true
+        #expect(!p.finishedInIsland)
         let json = String(decoding: try Wire.encoder.encode(p), as: UTF8.self)
         #expect(json.contains(#""time_sensitive":false"#))
+        #expect(json.contains(#""finished_as_notification":true"#))
         #expect(json.contains(#""until":"2026-10-03T"#), "RFC 3339, what Go's time parses")
         #expect(json.contains(#""host":"macmini""#) && json.contains(#""agent":"docker""#))
     }

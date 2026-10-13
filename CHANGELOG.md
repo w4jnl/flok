@@ -6,6 +6,12 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+- **A finished agent is one thing on the Lock Screen, not two.** While flok shows in the Dynamic
+  Island and on the Lock Screen, a finished or failed agent lights it up, with flok's done sound,
+  instead of arriving as a separate notification beside it; the app badge still counts it.
+  Permission prompts and questions stay notifications (Approve / Deny, the card, Focus). Settings
+  → Notifications → "Finished agents as notifications too" brings the notifications back.
+
 - **An encrypted link for networks whose proxy reads HTTPS.** An office proxy that inspects TLS
   could read everything a flok sends its relay: agent names, screens, your answers, the
   instance token. Set `[link] pin` to the relay's key (`flok-relay pin` prints it) and the link

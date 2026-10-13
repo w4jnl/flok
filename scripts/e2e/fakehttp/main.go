@@ -60,6 +60,7 @@ func main() {
 						Title    string `json:"title"`
 						Subtitle string `json:"subtitle"`
 						Body     string `json:"body"`
+						Sound    string `json:"sound"` // a Live Activity's alert carries its sound inside
 					} `json:"alert"`
 					Category string `json:"category"`
 					Badge    *int   `json:"badge"`
@@ -71,6 +72,9 @@ func main() {
 			badge := ""
 			if p.APS.Badge != nil {
 				badge = fmt.Sprint(*p.APS.Badge)
+			}
+			if p.APS.Sound == "" {
+				p.APS.Sound = p.APS.Alert.Sound
 			}
 			line = strings.Join([]string{r.URL.Path, r.Header.Get("apns-collapse-id"), p.APS.Alert.Title, p.APS.Alert.Body, p.APS.Category, badge,
 				p.APS.Alert.Subtitle, p.APS.Sound, p.APS.Level, r.Header.Get("apns-push-type")}, "|")

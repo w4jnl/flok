@@ -78,7 +78,10 @@ expect "an unknown instance is refused" 'no instance office' "$(POST /api/answer
 expect "seen through the API is taken" '"ok":true' "$(POST /api/seen '{"instance":"e2e","pane":"'"$AGENT"'"}')"
 hook claude '{"hook_event_name":"PostToolUse","session_id":"ph1","tool_name":"Bash","tool_use_id":"t1"}'
 hook claude '{"hook_event_name":"Stop","session_id":"ph1"}'
-expect_soon "the finish is pushed too, with the done sound" '[|]'"$PROJ"'[|]✓ done[|]FLOK_DONE[|][0-9]*[|]e2e · [^|]+[|]flok-done.caf[|][|]alert$' cat "$APNS_LOG"
+expect_soon "the finish lights up the phone's overview instead of a notification, with the done sound" '^/3/device/e2eoverviewtoken[|][|]'"$PROJ"'[|]✓ done · e2e · [^|]+[|][|][|][|]flok-done.caf[|][|]liveactivity$' cat "$APNS_LOG"
+expect_soon "… and a badge-only push, which shows nothing, keeps the badge" '^/3/device/e2edevicetoken0001[|][|][|][|][|][0-9]+[|][|][|][|]alert$' cat "$APNS_LOG"
+expect "no done notification beside it" '^0$' "$(grep -c '✓ done[|]FLOK_DONE' "$APNS_LOG" || true)"
+expect_soon "the relay logged it as an island alert" 'push: e2e · '"$PROJ"' → e2e phone e2edevic… production in the island \(done\)' cat "$RELAY_LOG"
 expect "the phone marks the finished agent seen" '"ok":true' "$(POST /api/seen '{"instance":"e2e","pane":"'"$AGENT"'"}')"
 expect_soon "… and every phone gets a silent sync to clear its alert and badge" '^/3/device/e2edevicetoken0001[|][|][|][|][|][|][|][|][|]background$' cat "$APNS_LOG"
 expect "the phone mutes the agent" '"ok":true' "$(PUT /api/devices/e2edevicetoken0001/prefs '{"mutes":[{"instance":"e2e","agent":"'"$PROJ"'"}]}')"

@@ -73,12 +73,13 @@ type Server struct {
 	syncDue   *time.Timer // a sync push is on its way
 
 	// Live Activities (live.go)
-	liveDue        *time.Timer          // a round is on its way
-	liveWasActive  bool                 // something worked or waited in the last round
-	liveQuietSince time.Time            // since when nothing works, waits or is unseen
-	liveSent       map[string]string    // activity token → the content last sent
-	liveWaiting    map[string]int       // activity token → its waiting count last sent (a rise is urgent)
-	liveStarted    map[string]time.Time // device token → a start push the phone has not answered yet
+	liveDue        *time.Timer             // a round is on its way
+	liveWasActive  bool                    // something worked or waited in the last round
+	liveQuietSince time.Time               // since when nothing works, waits or is unseen
+	liveSent       map[string]string       // activity token → the content last sent
+	liveWaiting    map[string]int          // activity token → its waiting count last sent (a rise is urgent)
+	liveStarted    map[string]time.Time    // device token → a start push the phone has not answered yet
+	liveAlert      map[string]pendingAlert // device token → a finished agent's push for its overview's next update
 }
 
 type instance struct {
@@ -127,7 +128,7 @@ func New(cfg Config) (*Server, error) {
 		return nil, err
 	}
 	return &Server{cfg: cfg, instances: map[string]*instance{}, apps: map[*app]struct{}{}, devices: ds, started: time.Now(),
-		liveSent: map[string]string{}, liveWaiting: map[string]int{}, liveStarted: map[string]time.Time{}}, nil
+		liveSent: map[string]string{}, liveWaiting: map[string]int{}, liveStarted: map[string]time.Time{}, liveAlert: map[string]pendingAlert{}}, nil
 }
 
 // Handler is the HTTP surface.
@@ -557,20 +558,42 @@ func (s *Server) event(in *instance, gen uint64, ev wire.Event) {
 		}
 		n := n // the phone's own sound and interruption level
 		n.Sound, n.TimeSensitive = d.Prefs.Sound(kind), d.Prefs.TimeSensitive(kind)
-		go func(d device, n apns.Notification) {
-			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-			defer cancel()
-			err := s.cfg.Push.Send(ctx, apns.Device{Token: d.Token, Sandbox: d.Sandbox}, n)
-			switch {
-			case errors.Is(err, apns.ErrUnregistered):
-				s.cfg.Logf("push: %s is gone, forgotten", d.label())
-				s.devices.remove(d.Token)
-			case err != nil:
-				s.cfg.Logf("push: %s · %s → %s: %v", in.name, ev.Agent, d.label(), err)
-			default:
-				s.cfg.Logf("push: %s · %s → %s (%s)", in.name, ev.Agent, d.label(), ev.Kind)
-			}
-		}(d, n)
+		what := fmt.Sprintf("%s · %s → %s", in.name, ev.Agent, d.label())
+		if d.Prefs.finishedInIsland(kind, d.hasOverview()) {
+			// the overview's next update carries it as an alert (live); a badge-only push, which
+			// shows nothing, keeps the badge where the notification would have put it
+			s.mu.Lock()
+			s.liveAlert[d.Token] = pendingAlert{n: n, what: what, kind: ev.Kind}
+			s.liveSoonLocked()
+			s.mu.Unlock()
+			go s.sendAlert(d, apns.Notification{Badge: n.Badge}, what+": badge", "")
+			continue
+		}
+		go s.sendAlert(d, n, what, ev.Kind)
+	}
+}
+
+// pendingAlert is a finished agent's push waiting for the overview's next update to carry it.
+type pendingAlert struct {
+	n    apns.Notification
+	what string
+	kind string
+}
+
+// sendAlert sends one notification and logs how it went; a device Apple no longer knows is
+// forgotten.
+func (s *Server) sendAlert(d device, n apns.Notification, what, kind string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	err := s.cfg.Push.Send(ctx, apns.Device{Token: d.Token, Sandbox: d.Sandbox}, n)
+	switch {
+	case errors.Is(err, apns.ErrUnregistered):
+		s.cfg.Logf("push: %s is gone, forgotten", d.label())
+		s.devices.remove(d.Token)
+	case err != nil:
+		s.cfg.Logf("push: %s: %v", what, err)
+	case kind != "":
+		s.cfg.Logf("push: %s (%s)", what, kind)
 	}
 }
 

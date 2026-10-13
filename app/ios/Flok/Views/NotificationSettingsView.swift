@@ -42,11 +42,16 @@ struct NotificationSettingsView: View {
                     relay.updatePrefs { $0.noActivity = on ? nil : true }
                     LiveActivities.shared.ensureOverview(relay.instances, allowed: on)
                 }))
+                if prefs.showsActivity {
+                    Toggle("Finished agents as notifications too", isOn: Binding(get: { prefs.finishedAsNotification == true }, set: { on in
+                        relay.updatePrefs { $0.finishedAsNotification = on ? true : nil }
+                    }))
+                }
             } header: {
                 Text("Dynamic Island and Lock Screen")
             } footer: {
                 Text(LiveActivities.shared.enabled
-                     ? "What works, what waits on you and what finished, starting when the first agent works and ending when all is quiet. Follow one agent from its screen (⋯ → Follow in Dynamic Island)."
+                     ? "What works, what waits on you and what finished, starting when the first agent works and ending when all is quiet. While it shows, a finished or failed agent lights it up with its sound instead of a separate notification (none in Notification Center then); prompts and questions are always notifications. Follow one agent from its screen (⋯ → Follow in Dynamic Island)."
                      : "Live Activities are off for flok: Settings → flok → Live Activities.")
             }
             Section {

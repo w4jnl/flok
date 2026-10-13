@@ -23,6 +23,16 @@ type device struct {
 	Activities    []Activity `json:"activities,omitempty"`
 }
 
+// hasOverview reports whether the phone runs the overview activity, as it last reported.
+func (d device) hasOverview() bool {
+	for _, a := range d.Activities {
+		if a.Kind == liveOverview {
+			return true
+		}
+	}
+	return false
+}
+
 // Activity is one Live Activity on a phone.
 type Activity struct {
 	ID       string `json:"id"`

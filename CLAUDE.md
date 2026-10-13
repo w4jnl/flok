@@ -280,7 +280,10 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
   `flok-request.caf`/`flok-done.caf`), a silent sync push when an agent stops waiting, and Live
   Activities (`relay/live.go`: the overview over all instances, started by push-to-start on an
   idle → busy edge, updated on state changes, ended after a quiet; followed agents; tokens via
-  `PUT /api/devices/{token}/activity`) through `internal/relay/apns` (HTTP/2, ES256 provider token cached 50 min,
+  `PUT /api/devices/{token}/activity`; while a phone runs the overview, done/error go as its
+  update's `alert` instead of a notification (`liveAlert`, `Prefs.finishedInIsland`, a
+  badge-only push for the badge, the notification as fallback; `finished_as_notification`
+  opts out)) through `internal/relay/apns` (HTTP/2, ES256 provider token cached 50 min,
   categories `FLOK_PERMISSION`/`FLOK_QUESTION`/`FLOK_DONE`, badge = unseen over all instances,
   410 forgets the device) to the devices in `devices.json`. `deploy/relay` has the Dockerfile
   (scratch + CA bundle), the Portainer compose with Traefik labels and the example configs; the

@@ -34,8 +34,8 @@ func testKey(t *testing.T) (*ecdsa.PrivateKey, []byte) {
 func TestSendOverHTTP2WithProviderToken(t *testing.T) {
 	key, pemKey := testKey(t)
 	type got struct {
-		proto, path, auth, topic, collapse, pushType string
-		body                                         map[string]any
+		proto, path, auth, topic, collapse, pushType, priority string
+		body                                                   map[string]any
 	}
 	rec := make(chan got, 4)
 	status := http.StatusOK
@@ -43,7 +43,7 @@ func TestSendOverHTTP2WithProviderToken(t *testing.T) {
 		data, _ := io.ReadAll(r.Body)
 		var body map[string]any
 		_ = json.Unmarshal(data, &body)
-		rec <- got{r.Proto, r.URL.Path, r.Header.Get("authorization"), r.Header.Get("apns-topic"), r.Header.Get("apns-collapse-id"), r.Header.Get("apns-push-type"), body}
+		rec <- got{r.Proto, r.URL.Path, r.Header.Get("authorization"), r.Header.Get("apns-topic"), r.Header.Get("apns-collapse-id"), r.Header.Get("apns-push-type"), r.Header.Get("apns-priority"), body}
 		w.WriteHeader(status)
 		if status != http.StatusOK {
 			io.WriteString(w, `{"reason":"Unregistered"}`)
@@ -118,6 +118,24 @@ func TestSendOverHTTP2WithProviderToken(t *testing.T) {
 	aps6 := g6.body["aps"].(map[string]any)
 	if aps6["event"] != "end" || aps6["dismissal-date"].(float64) != 1_800_000_000 || aps6["alert"] != nil || aps6["attributes"] != nil {
 		t.Fatalf("live end: %+v", g6)
+	}
+	// an update that carries a finished agent's alert: the sound inside the alert, priority 10
+	_ = c.Send(context.Background(), Device{Token: "act1"}, Notification{Title: "api", Body: "✓ done · home", Sound: "flok-done.caf",
+		Live: &Live{Event: "update", ContentState: map[string]int{"done": 1}, Urgent: true}})
+	g7 := <-rec
+	aps7 := g7.body["aps"].(map[string]any)
+	al7, _ := aps7["alert"].(map[string]any)
+	if aps7["event"] != "update" || al7["title"] != "api" || al7["body"] != "✓ done · home" || al7["sound"] != "flok-done.caf" || aps7["sound"] != nil ||
+		g7.priority != "10" || aps7["attributes"] != nil {
+		t.Fatalf("live update with an alert: %+v", g7)
+	}
+	// a badge-only push shows nothing: no alert at all
+	badge = 3
+	_ = c.Send(context.Background(), Device{Token: "abc123"}, Notification{Badge: &badge})
+	g8 := <-rec
+	aps8 := g8.body["aps"].(map[string]any)
+	if aps8["alert"] != nil || aps8["badge"].(float64) != 3 || aps8["sound"] != nil || g8.pushType != "alert" {
+		t.Fatalf("badge only: %+v", g8)
 	}
 	status = http.StatusGone
 	if err := c.Send(context.Background(), Device{Token: "abc123"}, Notification{Title: "x", Body: "y"}); err != ErrUnregistered {
