@@ -24,6 +24,7 @@ var flokLabels = map[string]string{
 	"next": "next agent", "prev": "previous agent", "jump": "jump to agent needing input",
 	"toggle": "toggle sidebar rail", "hide": "hide/show sidebar", "keys": "keybinds", "focus": "focus sidebar",
 	"keep-awake": "keep the Mac awake (toggle)",
+	"link":       "phone link off / on (toggle)",
 	"host next":  "next server to the front", "host prev": "previous server to the front",
 	"host last": "the previous server again", "host menu": "servers menu", "host front": "server by position",
 	"menu agents": "agents menu", "menu sessions": "sessions menu", "menu servers": "servers menu",

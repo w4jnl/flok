@@ -61,8 +61,13 @@ sides; additions keep the protocol compatible.
 `Instance`:
 
 ```
-{"name","online":bool,"since":time,"version"?,"hostname"?,"snap":Snapshot?}
+{"name","online":bool,"off"?:true,"since":time,"version"?,"hostname"?,"snap":Snapshot?}
 ```
+
+`off` (with `online` false) means the instance's link was switched off there (`flok link off`),
+on purpose: show it as *off*, quietly, not as *offline* (out of reach), and expect it back only
+when it is switched on. Its agents are out of the badge and a sync push clears their
+notifications; an answer is refused with `<name> is switched off (flok link on there)`.
 
 `Snapshot` is the sidebar's own published view (`snapshot.json`), kept while the instance is
 offline:
@@ -88,6 +93,7 @@ The relay sends one alert per event to every registered device whose `prefs` wan
 like the sidebar: title = the agent, subtitle `<instance>[ / <host>][ · <session>]`, body with
 the sidebar's glyph, `● needs you: perm:Bash` / `● needs you: <reason>` / `✓ done` / `✗ failed`;
 `thread-id` = instance, `collapse-id` = `<instance>:<pane>`, badge = unseen over all instances
+not switched off
 (muted or not), `mutable-content` (the iOS service extension adds the state tile), and the
 custom keys `instance`, `pane`, `kind`, `reason`, `agent`, `host`, `session`, `push_kind` for
 the app to act on. Categories: `FLOK_PERMISSION` (a permission prompt; the iOS app offers
@@ -103,7 +109,8 @@ whole:
 ```
 {"kinds":{"permission"|"question"|"done"|"error":
            {"off"?:bool, "sound"?:"flok"|"default"|"none", "time_sensitive"?:bool}},
- "mutes":[{"instance","host"?,"agent","until"?:time}]}
+ "mutes":[{"instance","host"?,"agent","until"?:time}],
+ "no_activity"?:bool, "finished_as_notification"?:bool}
 ```
 
 When an agent stops waiting on the user (it was unseen or blocked in the instance's last
@@ -117,6 +124,15 @@ focusing the pane in tmux does.
 
 A missing kind is on, with flok's sound, time-sensitive for `permission` and `question` only.
 `"no_activity": true` in `Prefs` turns the overview Live Activity off for the device.
+
+While a device runs the overview (as it last reported), `done` and `error` do not come as
+notifications: the overview's next update carries them as its `alert` (`title` = agent, `body`
+= `✓ done · <instance> / <host> · <session>`, the kind's `sound` inside the alert, priority 10),
+which lights the activity up on the Lock Screen and expands the Dynamic Island, so a finish is
+one thing on the screen, not two. A badge-only push (an `alert` push with `badge` alone, which
+shows nothing) keeps the badge. Should that update fail, or the overview be gone by then, the
+notification goes after all. `"finished_as_notification": true` keeps them notifications;
+`permission` and `question` are always notifications (their actions, Focus).
 
 ## Live Activities (iOS: Dynamic Island, Lock Screen)
 

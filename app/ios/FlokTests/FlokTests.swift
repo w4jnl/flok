@@ -17,13 +17,22 @@ struct WireTests {
         let f = try Wire.decoder.decode(Frame.self, from: Data(json.utf8))
         #expect(f.type == "instances")
         let inst = try #require(f.instances?.first)
-        #expect(inst.name == "Home" && inst.online && inst.unseen == 2)
+        #expect(inst.name == "Home" && inst.online && inst.unseen == 2 && !inst.switchedOff)
         #expect(inst.agents.count == 3)
         #expect(inst.agents[0].paneRef == "%3" && inst.agents[0].state == .blocked)
         #expect(inst.agents[1].paneRef == "beta:%1" && inst.agents[1].state == .done)
         #expect(inst.agents[2].state == .unknown, "an unknown state does not break decoding")
         #expect(StateStyle.label(inst.agents[0]) == "needs you: perm:Bash")
         #expect(StateStyle.label(inst.agents[1]) == "done")
+    }
+
+    @Test func aSwitchedOffInstanceIsNotOffline() throws {
+        let json = #"{"type":"instance","instance":"Office","inst":{"name":"Office","online":false,"off":true,"since":"2026-10-13T08:00:00Z"}}"#
+        let f = try Wire.decoder.decode(Frame.self, from: Data(json.utf8))
+        let inst = try #require(f.inst)
+        #expect(inst.switchedOff && !inst.online)
+        let lost = try Wire.decoder.decode(InstanceState.self, from: Data(#"{"name":"Home","online":false,"since":"2026-10-13T08:00:00Z"}"#.utf8))
+        #expect(!lost.switchedOff, "an instance that went away without a bye is offline")
     }
 
     @Test func decodesEventsAndScreens() throws {
@@ -157,8 +166,12 @@ struct PrefsTests {
         var p = NotificationPrefs()
         p.setTimeSensitive(.question, false)
         p.mute(instance: "Home", host: "macmini", agent: "docker", until: Date(timeIntervalSince1970: 1_791_000_000))
+        #expect(p.finishedInIsland, "finished agents light up the overview by default")
+        p.finishedAsNotification = true
+        #expect(!p.finishedInIsland)
         let json = String(decoding: try Wire.encoder.encode(p), as: UTF8.self)
         #expect(json.contains(#""time_sensitive":false"#))
+        #expect(json.contains(#""finished_as_notification":true"#))
         #expect(json.contains(#""until":"2026-10-03T"#), "RFC 3339, what Go's time parses")
         #expect(json.contains(#""host":"macmini""#) && json.contains(#""agent":"docker""#))
     }

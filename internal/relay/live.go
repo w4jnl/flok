@@ -194,6 +194,7 @@ type liveJob struct {
 	n      apns.Notification
 	key    string // what was sent, for liveSent
 	ending bool
+	alert  *pendingAlert // a finished agent's push this update carries
 }
 
 // live sends what changed to every phone's activities: starts, updates, ends.
@@ -218,6 +219,8 @@ func (s *Server) live() {
 	var jobs []liveJob
 	for _, d := range s.devices.list() {
 		off := d.Prefs != nil && d.Prefs.NoActivity
+		alert, alerting := s.liveAlert[d.Token]
+		delete(s.liveAlert, d.Token)
 		hasOverview := false
 		for i := range d.Activities {
 			a := d.Activities[i]
@@ -229,10 +232,14 @@ func (s *Server) live() {
 						Live: &apns.Live{Event: "end", ContentState: ov, Dismissal: now}}})
 					continue
 				}
-				if key := ov.json(); s.liveSent[a.Token] != key {
+				if key := ov.json(); s.liveSent[a.Token] != key || alerting {
 					urgent := ov.Waiting > s.liveWaiting[a.Token]
-					jobs = append(jobs, liveJob{dev: d, act: &a, key: key, n: apns.Notification{
-						Live: &apns.Live{Event: "update", ContentState: ov, Urgent: urgent}}})
+					j := liveJob{dev: d, act: &a, key: key, n: apns.Notification{Live: &apns.Live{Event: "update", ContentState: ov, Urgent: urgent}}}
+					if alerting { // the finished agent lights the overview up, with its sound, at once
+						j.n.Title, j.n.Body, j.n.Sound, j.n.Live.Urgent = alert.n.Title, liveAlertBody(alert.n), alert.n.Sound, true
+						j.alert, alerting = &alert, false
+					}
+					jobs = append(jobs, j)
 				}
 			case liveAgent:
 				st := s.agentStateLocked(a.Instance, a.Pane)
@@ -250,6 +257,9 @@ func (s *Server) live() {
 					}
 				}
 			}
+		}
+		if alerting { // the overview is gone (ended, or switched off) since: the notification after all
+			go s.sendAlert(d, alert.n, alert.what, alert.kind)
 		}
 		pending := !s.liveStarted[d.Token].IsZero() && now.Sub(s.liveStarted[d.Token]) < 8*time.Hour
 		if edge && !off && !hasOverview && !pending && d.ActivityStart != "" {
@@ -289,16 +299,34 @@ func (s *Server) sendLive(j liveJob) {
 			s.devices.dropActivity(j.dev.Token, "", j.dev.ActivityStart)
 		}
 		s.forgetLive(j)
+		if j.alert != nil { // the overview is not there to light up: the notification after all
+			s.sendAlert(j.dev, j.alert.n, j.alert.what, j.alert.kind)
+		}
 	case err != nil:
 		s.cfg.Logf("live: %s → %s: %v", what, j.dev.label(), err)
 		s.forgetLive(j)
+		if j.alert != nil {
+			s.sendAlert(j.dev, j.alert.n, j.alert.what, j.alert.kind)
+		}
 	default:
 		s.cfg.Logf("live: %s → %s", what, j.dev.label())
+		if j.alert != nil {
+			s.cfg.Logf("push: %s in the island (%s)", j.alert.what, j.alert.kind)
+		}
 		if j.ending {
 			s.devices.dropActivity(j.dev.Token, j.act.Token, "")
 			s.forgetLive(j)
 		}
 	}
+}
+
+// liveAlertBody is the body of a finished agent's alert on the overview: the notification's state
+// and where it runs ("✓ done · home · Hugo"), since the alert has no subtitle.
+func liveAlertBody(n apns.Notification) string {
+	if n.Subtitle == "" {
+		return n.Body
+	}
+	return n.Body + " · " + n.Subtitle
 }
 
 // forgetLive drops what was remembered as sent, so the next round sends it again (or a new

@@ -111,7 +111,7 @@ struct AgentView: View {
                 }
                 Spacer()
                 if !inst.online {
-                    Label("offline", systemImage: "wifi.slash").font(.caption).foregroundStyle(Palette.orange)
+                    OfflineLabel(instance: inst).font(.caption)
                 }
             }
             .padding(.horizontal, 12).padding(.vertical, 8)
@@ -130,7 +130,7 @@ struct AgentView: View {
                 Text(a.name).fontWeight(.semibold)
                 Text(StateStyle.label(a)).foregroundStyle(StateStyle.color(a.state))
                 Text("\(inst.name)\(a.host.map { " / " + $0 } ?? "") · \(a.paneId)").foregroundStyle(.secondary)
-                if !inst.online { Label("offline", systemImage: "wifi.slash").foregroundStyle(Palette.orange) }
+                if !inst.online { OfflineLabel(instance: inst) }
             } else {
                 Text(target.pane).foregroundStyle(.secondary)
             }
@@ -341,6 +341,19 @@ struct KeyBar: View {
                 }
             }
             .padding(.horizontal, 10).padding(.vertical, 6)
+        }
+    }
+}
+
+/// Why an instance's agent cannot be reached: switched off there (quiet, on purpose), or offline.
+struct OfflineLabel: View {
+    let instance: InstanceState
+
+    var body: some View {
+        if instance.switchedOff {
+            Label("link off", systemImage: "pause.circle").foregroundStyle(Palette.comment)
+        } else {
+            Label("offline", systemImage: "wifi.slash").foregroundStyle(Palette.orange)
         }
     }
 }

@@ -370,7 +370,9 @@ the glyph while keep-awake is on (`◑ ⚡ ● 2`). The dropdown
 lists agents in the sidebar's order with the same state detail, remote ones tagged `@host`, and
 once a host is registered a `servers` block: local first, then every host with its mode, agent
 count or connection state, the front one marked; a click brings that server's work pane to the
-front (`flok host front <name> --focus`). With `[bar] enabled = true`,
+front (`flok host front <name> --focus`). Below "Keep awake", a "Phone link" row (shown while
+the sidebar runs one) is checked unless the link is switched off, names what is wrong in its
+title, and switches it with a click (`flok link toggle`). With `[bar] enabled = true`,
 `flok up` starts the bar (single instance) and `flok down` or a detach ends it; the bar also quits
 by itself 30 s after flok disappears.
 
@@ -447,6 +449,24 @@ stream as JSON lines, which is the quickest way to see what the phone would. Tok
 `flok doctor` reports the link as the sidebar sees it (or probes the relay's `/healthz` when
 the sidebar is not running), the footer says when the relay has been out of reach for half a
 minute, and `snapshot.json` carries the link's state.
+
+**Switching it off.** `prefix U` (or `flok link`, or the menu bar's "Phone link" row) switches
+the link off and on again. Off, nothing leaves the Mac for the relay: the link says goodbye and
+closes, the phone shows the instance as *off* (not *offline*, which means out of reach), its
+waiting agents leave the badge and the Lock Screen, and an answer from the phone is refused.
+What happens meanwhile is not sent later; switched on, the link starts over with the current
+view. It stays off across `flok reload` and `flok down`/`up` until you switch it on. The state
+sits at the right end of the sidebar's `[flok]` line, quiet unless something is wrong:
+
+```
+[flok]            phone ●      connected
+[flok]            phone ○      switched off
+[flok]            phone ◌      connecting (orange: the relay is out of reach)
+[flok]            phone ✗      refused (the footer says why)
+```
+
+On the rail the dot alone sits next to the mark. `flok link status` says it in words, and
+`flok status` and `flok doctor` mention a link that is off.
 
 **Behind a proxy that reads HTTPS.** An office proxy that inspects TLS (it signs with the
 company's own root certificate) reads the plain link: agent names, screens, your answers and
@@ -662,6 +682,7 @@ In tmux (your prefix):
 | `prefix S` | the same for the sessions of the server in front, the current one marked |
 | `prefix @` | the same for the servers (as in `@beta`): local and the hosts with their state |
 | `prefix u` | keep the Mac awake, display on, while flok runs; toggles, the state shows on the status line (macOS) |
+| `prefix U` | switch the phone link (`[link] url`) off and on again; the state shows on the status line and in the sidebar |
 | `prefix ?` | keybinds help popup (`?` inside the sidebar opens the same) |
 | `prefix N` / `prefix P` | next / previous server to the front (local, then the hosts in order, wrapping) |
 | `prefix O` | the previous server again (back and forth) |
@@ -744,6 +765,7 @@ only `prefix b` keeps the cursor in the sidebar so you can collapse it and conti
 flok up [--detach]          start or re-attach the outer session (your server keeps running)
 flok down                   stop the outer session
 flok keep-awake [on|off|toggle|status] [--notify]   keep the Mac awake, display on, while flok runs (macOS)
+flok link [on|off|toggle|status] [--notify]   switch the phone link off and on again (stays off until on)
 flok status [--json]        one-shot dump of sessions and agents
 flok jump | next | prev     navigation, used by the bindings           [--client <tty>]
 flok menu agents|sessions|servers   a tmux menu over the work pane (prefix A / S / @), 1-9 picks
@@ -771,7 +793,7 @@ flok serve --stdio | --hello      run headless on this host for a flok elsewhere
 
 flok-relay serve [-config relay.toml] [-listen :8080] [-data /data]   the relay for the phone (deploy/relay)
 flok-relay tail -url <relay> -token <device token> [-subscribe inst:%12] [-answer inst:%12 -text y -keys Enter]
-flok-relay token | health [-url …] | version
+flok-relay token | pin | health [-url …] | version
 ```
 
 ## Configuration
@@ -924,6 +946,7 @@ brand = "#12999D"
 | `~/.local/state/flok/snapshot.json` | the sidebar's merged view, read by flok-bar |
 | `~/.local/state/flok/flok-bar.pid` | the menu bar process started by `flok up` |
 | `~/.local/state/flok/keep-awake` | `1` while `flok keep-awake` asks the sidebar to keep the Mac awake |
+| `~/.local/state/flok/link-off` | `1` while `flok link off` keeps the phone link switched off (kept across sessions) |
 | `~/.local/state/flok/keys.json` | the keys the sidebar bound in your tmux for this session, and what `all` replaced |
 | `~/.local/state/flok/outer.conf` | the generated outer tmux config |
 | `~/.local/state/flok/hosts.json` | the remote hosts (`flok host …`), with `enabled`, a probed `flok` path and `last_connected` |

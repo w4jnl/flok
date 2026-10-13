@@ -73,7 +73,11 @@ struct InstanceHeader: View {
 
     var body: some View {
         HStack {
-            Circle().fill(instance.online ? Palette.green : Palette.comment).frame(width: 8, height: 8)
+            if instance.switchedOff { // a ring, like the sidebar's mark for a link switched off
+                Circle().strokeBorder(Palette.comment, lineWidth: 1.5).frame(width: 8, height: 8)
+            } else {
+                Circle().fill(instance.online ? Palette.green : Palette.comment).frame(width: 8, height: 8)
+            }
             Text(instance.name).font(.headline).textCase(nil)
             if let h = instance.hostname, !h.isEmpty, h != instance.name {
                 Text(h.split(separator: ".").first.map(String.init) ?? h).foregroundStyle(.secondary).textCase(nil)
@@ -83,7 +87,7 @@ struct InstanceHeader: View {
                 let n = instance.agents.count
                 Text(instance.unseen > 0 ? "\(n) · \(instance.unseen) waiting" : "\(n) agents").foregroundStyle(instance.unseen > 0 ? Palette.orange : .secondary).textCase(nil)
             } else {
-                Text("offline since \(instance.since.formatted(date: .omitted, time: .shortened))").foregroundStyle(.secondary).textCase(nil)
+                Text("\(instance.switchedOff ? "off" : "offline") since \(instance.since.formatted(date: .omitted, time: .shortened))").foregroundStyle(.secondary).textCase(nil)
             }
         }
         .font(.subheadline)

@@ -15,6 +15,9 @@ type Prefs struct {
 	Kinds      map[string]KindPrefs `json:"kinds,omitempty"` // by push kind (KindPermission …); a missing kind = its defaults
 	Mutes      []Mute               `json:"mutes,omitempty"`
 	NoActivity bool                 `json:"no_activity,omitempty"` // no flok overview in the Dynamic Island / on the Lock Screen
+	// FinishedAsNotification keeps done and error as notifications while the overview shows;
+	// false: they light up the overview instead (one thing on the Lock Screen, not two).
+	FinishedAsNotification bool `json:"finished_as_notification,omitempty"`
 }
 
 // KindPrefs are the settings of one push kind; the zero value is the default.
@@ -48,6 +51,17 @@ const (
 	SoundRequest = "flok-request.caf"
 	SoundDone    = "flok-done.caf"
 )
+
+// finishedInIsland reports whether a push of this kind goes to the phone as an alert on its
+// overview activity instead of a notification: done and error, while the phone shows the
+// overview, unless it asked for them as notifications. Prompts and questions always stay
+// notifications: they carry the actions and break through Focus.
+func (p *Prefs) finishedInIsland(kind string, hasOverview bool) bool {
+	if kind != KindDone && kind != KindError || !hasOverview {
+		return false
+	}
+	return p == nil || !p.NoActivity && !p.FinishedAsNotification
+}
 
 // PushKind sorts an event into the kind a phone filters on.
 func PushKind(ev wire.Event) string {

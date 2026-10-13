@@ -70,6 +70,7 @@ type SnapshotMsg struct {
 	Unfocused bool
 	Hidden    bool
 	KeepAwake *bool
+	LinkOff   *bool // the phone link switch (flok link)
 	Theme     string
 	Rebuilt   bool // produced by Rebuild from cached tmux data, not by a tmux poll
 	Err       error
@@ -208,8 +209,8 @@ func (p *Poller) Poll() func() SnapshotMsg {
 		msg := SnapshotMsg{Snap: s, Raw: raw, Err: err}
 		if store != nil {
 			msg.Hook, msg.Seen = store.LoadAgents(), store.LoadSeen()
-			keepAwake := store.KeepAwake()
-			msg.Unfocused, msg.Hidden, msg.KeepAwake = !store.TerminalFocused(), store.SidebarHidden(), &keepAwake
+			keepAwake, linkOff := store.KeepAwake(), store.LinkOff()
+			msg.Unfocused, msg.Hidden, msg.KeepAwake, msg.LinkOff = !store.TerminalFocused(), store.SidebarHidden(), &keepAwake, &linkOff
 			msg.Theme, _ = store.TerminalTheme()
 		}
 		msg.FP = Fingerprint(raw, msg.Hook, msg.Seen, msg.Unfocused)
@@ -229,15 +230,15 @@ func (p *Poller) Rebuild(reloadStore bool) func() SnapshotMsg {
 	hook, seen := p.lastHook, p.lastSeen
 	unfocused, hidden, theme := p.lastUnfocused, p.lastHidden, p.lastTheme
 	return func() SnapshotMsg {
-		var keepAwake *bool
+		var keepAwake, linkOff *bool
 		if reloadStore && store != nil {
 			hook, seen = store.LoadAgents(), store.LoadSeen()
-			k := store.KeepAwake()
-			unfocused, hidden, keepAwake = !store.TerminalFocused(), store.SidebarHidden(), &k
+			k, l := store.KeepAwake(), store.LinkOff()
+			unfocused, hidden, keepAwake, linkOff = !store.TerminalFocused(), store.SidebarHidden(), &k, &l
 			theme, _ = store.TerminalTheme()
 		}
 		return SnapshotMsg{Snap: snap, Raw: raw, Hook: hook, Seen: seen, Unfocused: unfocused, Hidden: hidden, Theme: theme, KeepAwake: keepAwake,
-			FP: Fingerprint(raw, hook, seen, unfocused), Rebuilt: true}
+			LinkOff: linkOff, FP: Fingerprint(raw, hook, seen, unfocused), Rebuilt: true}
 	}
 }
 

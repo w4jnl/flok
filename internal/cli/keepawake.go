@@ -31,15 +31,21 @@ type keepAwakeCmd struct {
 }
 
 func runKeepAwake(_ config.Config, args []string) int {
-	c := keepAwakeCmd{dir: config.StateDir(), supported: awake.Supported(), wait: 1500 * time.Millisecond,
-		out: os.Stdout, errw: os.Stderr}
+	return withNotify(args, func(args []string, out, errw io.Writer) int {
+		return keepAwakeCmd{dir: config.StateDir(), supported: awake.Supported(), wait: 1500 * time.Millisecond,
+			out: out, errw: errw}.run(args)
+	})
+}
+
+// withNotify runs a switch command (keep-awake, link); with --notify among the arguments its
+// result goes to tmux's status line instead of the terminal.
+func withNotify(args []string, run func(args []string, out, errw io.Writer) int) int {
 	rest, notify := stripNotify(args)
 	if !notify {
-		return c.run(rest)
+		return run(rest, os.Stdout, os.Stderr)
 	}
 	var buf bytes.Buffer
-	c.out, c.errw = &buf, &buf
-	rc := c.run(rest)
+	rc := run(rest, &buf, &buf)
 	if msg := firstLine(buf.String()); msg != "" {
 		// the binding runs inside the inner server, so a bare tmux reaches it through $TMUX
 		if err := exec.Command("tmux", "display-message", msg).Run(); err != nil {

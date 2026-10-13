@@ -124,7 +124,7 @@ func TestLocalKeys(t *testing.T) {
 		"bind-key    -T prefix       c                 new-window\n"
 	c := &keysClient{keys: table}
 	installed, conflicts, stale := InstallLocalKeys(c, dir, "/x/flok", "missing", nil)
-	if got := strings.Join(installed, ""); !strings.HasPrefix(got, "aBguAS@NPOF1") || len(installed) != 19 || len(stale) != 0 {
+	if got := strings.Join(installed, ""); !strings.HasPrefix(got, "aBguUAS@NPOF1") || len(installed) != 20 || len(stale) != 0 {
 		t.Fatalf("installed %v", installed)
 	}
 	if len(conflicts) != 2 || conflicts["o"] != "select-pane -t :.+" || conflicts["?"] != "list-keys -N" {
@@ -134,12 +134,12 @@ func TestLocalKeys(t *testing.T) {
 	if !strings.Contains(bind, "bind-key -T prefix a run-shell -b /x/flok next --client '#{client_tty}'") || strings.Contains(bind, "prefix o") || strings.Contains(bind, "prefix b ") {
 		t.Fatalf("bind call %q", bind)
 	}
-	if st := loadLocalKeys(dir); len(st.Installed) != 19 || len(st.Saved) != 0 {
+	if st := loadLocalKeys(dir); len(st.Installed) != 20 || len(st.Saved) != 0 {
 		t.Fatalf("keys.json %+v", st)
 	}
 	// a second sidebar (reload) with the keys now present: nothing new, the record stays
 	c.keys = table + "bind-key    -T prefix       a                 run-shell -b \"/x/flok next --client '#{client_tty}'\"\n"
-	if again, _, _ := InstallLocalKeys(c, dir, "/x/flok", "missing", nil); !strings.HasPrefix(strings.Join(again, ""), "BguAS@") || len(again) != 18 {
+	if again, _, _ := InstallLocalKeys(c, dir, "/x/flok", "missing", nil); !strings.HasPrefix(strings.Join(again, ""), "BguUAS@") || len(again) != 19 {
 		t.Fatalf("second install %v", again)
 	}
 	status := LocalKeyStatus(c, nil)
@@ -213,7 +213,7 @@ func TestLocalKeysReboundWhenTheirFlokIsGone(t *testing.T) {
 	}
 }
 
-const allKeys = "b B g o a u A S @ N P O F1 F2 F3 F4 F5 F6 F7 F8 F9"
+const allKeys = "b B g o a u U A S @ N P O F1 F2 F3 F4 F5 F6 F7 F8 F9"
 
 func TestInstallRebindRestore(t *testing.T) {
 	c := &keysClient{}

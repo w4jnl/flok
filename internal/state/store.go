@@ -197,6 +197,17 @@ func (s *Store) SetKeepAwake(on bool) error { return writeFlag(s.Dir, KeepAwakeF
 // KeepAwakeFile is the keep-awake request marker in the state dir.
 const KeepAwakeFile = "keep-awake"
 
+// LinkOff reports whether `flok link off` switched the phone link off (default false: on when
+// [link] url is set). Unlike keep-awake it outlives the session: a link switched off stays off
+// across flok down/up until `flok link on`.
+func (s *Store) LinkOff() bool { return readFlag(s.Dir, LinkOffFile) == "1" }
+
+// SetLinkOff writes the phone link switch the sidebar watches.
+func (s *Store) SetLinkOff(off bool) error { return writeFlag(s.Dir, LinkOffFile, off) }
+
+// LinkOffFile is the phone link switch in the state dir.
+const LinkOffFile = "link-off"
+
 // TerminalTheme is the terminal theme `flok up` detected ("dark", "light", or "" when unknown) and
 // the background colour it came from ("" when set by hand with `flok theme`).
 func (s *Store) TerminalTheme() (theme, bg string) {

@@ -188,7 +188,7 @@ func New(d Deps) Model {
 	if d.Cfg.Link.URL != "" {
 		hostname, _ := os.Hostname()
 		m.linker = link.New(link.Config{URL: d.Cfg.Link.URL, Token: d.Cfg.Link.Token, Pin: d.Cfg.Link.Pin, Name: d.Cfg.InstanceName(),
-			Version: d.Version, Hostname: hostname, Logf: m.debugf})
+			Off: d.Store != nil && d.Store.LinkOff(), Version: d.Version, Hostname: hostname, Logf: m.debugf})
 		if m.linker != nil {
 			m.linkStatus = m.linker.Status()
 		}
@@ -511,6 +511,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.keep.presenceMoved() {
 			keepChanged = true
 			m.debugf("keep-awake presence=%q", m.keep.presence())
+		}
+		if msg.LinkOff != nil && m.linker != nil { // flok link: the link reports the change itself
+			m.linker.SetOff(*msg.LinkOff)
 		}
 		if msg.Err != nil {
 			m.errText = msg.Err.Error()

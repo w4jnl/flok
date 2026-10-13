@@ -225,6 +225,7 @@ bind b run-shell -b "%[1]s toggle"
 bind B run-shell -b "%[1]s hide"
 bind g run-shell -b "%[1]s focus"                        # keyboard into the sidebar: j/k, enter, esc back
 bind u run-shell -b "%[1]s keep-awake --notify"          # keep the Mac awake, toggles; state on the status line (macOS)
+bind U run-shell -b "%[1]s link --notify"                # phone link off / on again ([link] url); state on the status line
 bind ? run-shell -b "%[1]s keys --open --client '#{client_tty}'"   # popup on tmux 3.2+, a window before
 bind N run-shell -b "%[1]s host next"                     # servers (remote hosts): next / previous / last
 bind P run-shell -b "%[1]s host prev"

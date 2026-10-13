@@ -5,7 +5,9 @@
 // and subscriptions back. The connection is kept up with backoff; nothing here blocks the
 // sidebar: Publish/Event/Screen queue, the latest snapshot and screen win. With [link] pin the
 // frames travel inside TLS to the relay's own key (internal/link/tunnel, the relay's /link/tls),
-// so a proxy that inspects HTTPS reads none of them, the token included.
+// so a proxy that inspects HTTPS reads none of them, the token included. SetOff switches the
+// link off (flok link off): a bye tells the relay it is on purpose, and nothing is sent until it
+// is switched on again.
 package link
 
 import (
@@ -32,7 +34,7 @@ import (
 type State string
 
 const (
-	Off         State = "off"         // no [link] url
+	Off         State = "off"         // switched off (flok link off), or closed
 	Connecting  State = "connecting"  // dialing, or waiting for the hello to be taken
 	Connected   State = "connected"   // frames flow
 	Unreachable State = "unreachable" // dial failed or the connection dropped; retried with backoff
@@ -71,6 +73,7 @@ type Config struct {
 	URL      string // wss://flok.example.net/link; https:// and http:// are taken as wss:// and ws://, an empty path as /link
 	Token    string
 	Pin      string // the relay's key (flok-relay pin): the link goes encrypted to /link/tls; "" = plain /link
+	Off      bool   // start switched off (flok link off); SetOff switches
 	Name     string // this instance's name on the phone
 	Version  string
 	Hostname string
@@ -101,6 +104,9 @@ type Client struct {
 	holdT   *time.Timer
 	wake    chan struct{}
 	lastAll *snapshot.Snapshot // the latest snapshot ever, resent on every connection
+	off     bool               // switched off: no connection, nothing queued
+	flip    chan struct{}      // SetOff changed off
+	abort   context.CancelFunc // ends a dial in progress (SetOff), nil between dials
 }
 
 // holdFor is how long an event waits for the snapshot that carries its state: the sidebar
@@ -128,8 +134,13 @@ func New(cfg Config) *Client {
 			ResponseHeaderTimeout: 20 * time.Second}}
 	}
 	cfg.Pin = strings.TrimSpace(cfg.Pin)
+	st := Connecting
+	if cfg.Off {
+		st = Off
+	}
 	return &Client{cfg: cfg, url: u, msgs: make(chan Msg, 64), done: make(chan struct{}), wake: make(chan struct{}, 1),
-		screens: map[string]string{}, shown: map[string]string{}, status: Status{State: Connecting, Since: time.Now(), URL: u, Encrypted: cfg.Pin != ""}}
+		flip: make(chan struct{}, 1), off: cfg.Off,
+		screens: map[string]string{}, shown: map[string]string{}, status: Status{State: st, Since: time.Now(), URL: u, Encrypted: cfg.Pin != ""}}
 }
 
 // TunnelURL is the relay's encrypted link next to a link URL: /link becomes /link/tls.
@@ -201,6 +212,46 @@ func (c *Client) Start() {
 	go c.run(ctx)
 }
 
+// SetOff switches the link off or on again. Off: the connection ends after a bye, so the relay
+// shows the instance as off rather than offline, a dial in progress is given up, and the events,
+// acks and screens queued or announced meanwhile are dropped (they would arrive stale). On: it
+// connects at once, with the latest snapshot. Switching off and on again reconnects without
+// waiting out a backoff.
+func (c *Client) SetOff(off bool) {
+	c.mu.Lock()
+	changed := c.off != off
+	c.off = off
+	if off {
+		c.dropLocked()
+		if c.abort != nil {
+			c.abort()
+		}
+	}
+	c.mu.Unlock()
+	if changed {
+		select {
+		case c.flip <- struct{}{}:
+		default:
+		}
+	}
+}
+
+// dropLocked forgets what waits to be sent but the snapshot; the caller holds c.mu.
+func (c *Client) dropLocked() {
+	if c.holdT != nil {
+		c.holdT.Stop()
+		c.holdT = nil
+	}
+	c.queue, c.held = nil, nil
+	c.screens = map[string]string{}
+}
+
+func (c *Client) isOff() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.off
+}
+
 // Close ends the link; the relay sees the connection close and marks the instance offline.
 func (c *Client) Close() {
 	if c.cancel == nil {
@@ -227,6 +278,10 @@ func (c *Client) Publish(s snapshot.Snapshot) {
 // Event queues one transition, behind the snapshot that comes with it.
 func (c *Client) Event(e wire.Event) {
 	c.mu.Lock()
+	if c.off {
+		c.mu.Unlock()
+		return
+	}
 	c.held = append(c.held, wire.Frame{Type: wire.TypeEvent, Event: &e})
 	if c.holdT == nil {
 		c.holdT = time.AfterFunc(holdFor, func() {
@@ -255,6 +310,10 @@ func (c *Client) releaseLocked() {
 // Screen queues a captured pane's text; an unchanged screen is not sent again.
 func (c *Client) Screen(pane, text string) {
 	c.mu.Lock()
+	if c.off {
+		c.mu.Unlock()
+		return
+	}
 	c.screens[pane] = text
 	c.mu.Unlock()
 	c.kick()
@@ -275,6 +334,10 @@ func (c *Client) Ack(id, errText string) {
 		return
 	}
 	c.mu.Lock()
+	if c.off {
+		c.mu.Unlock()
+		return
+	}
 	c.queue = append(c.queue, wire.Frame{Type: wire.TypeAck, ID: id, Error: errText})
 	c.trim()
 	c.mu.Unlock()
@@ -334,6 +397,15 @@ func (c *Client) run(ctx context.Context) {
 	defer close(c.done)
 	attempt := 0
 	for {
+		if c.isOff() {
+			c.set(Off, "", time.Time{})
+			select {
+			case <-ctx.Done():
+				return
+			case <-c.flip:
+				continue
+			}
+		}
 		c.set(Connecting, "", time.Time{})
 		start := time.Now()
 		st, detail := c.session(ctx)
@@ -341,6 +413,10 @@ func (c *Client) run(ctx context.Context) {
 			return
 		}
 		c.deliver(Msg{Command: &Command{Kind: "reset"}})
+		if c.isOff() {
+			attempt = 0
+			continue
+		}
 		if time.Since(start) > time.Minute {
 			attempt = 0
 		}
@@ -355,6 +431,9 @@ func (c *Client) run(ctx context.Context) {
 		case <-ctx.Done():
 			t.Stop()
 			return
+		case <-c.flip: // off, or off and on again: no need to wait out the backoff
+			t.Stop()
+			attempt = 0
 		case <-t.C:
 		}
 	}
@@ -376,10 +455,27 @@ func (c *Client) session(ctx context.Context) (State, string) {
 		st     State
 		detail string
 	)
+	c.mu.Lock()
+	if c.off { // switched off between the loop's look and here
+		c.mu.Unlock()
+		return Off, ""
+	}
+	c.abort = stop
+	c.mu.Unlock()
 	if c.cfg.Pin != "" {
 		conn, fr, st, detail = c.dialTunnel(sctx)
 	} else {
 		conn, fr, st, detail = c.dial(sctx)
+	}
+	c.mu.Lock()
+	c.abort = nil
+	off := c.off
+	c.mu.Unlock()
+	if off {
+		if conn != nil {
+			conn.CloseNow()
+		}
+		return Off, ""
 	}
 	if conn == nil {
 		return st, detail
@@ -450,6 +546,13 @@ func (c *Client) session(ctx context.Context) (State, string) {
 	defer ping.Stop()
 	for {
 		select {
+		case <-c.flip:
+			if c.isOff() { // shown at once; the relay hears why before the connection ends
+				c.set(Off, "", time.Time{})
+				_ = write(wire.Frame{Type: wire.TypeBye, Reason: wire.ByeOff})
+				_ = conn.Close(websocket.StatusNormalClosure, "")
+				return Off, ""
+			}
 		case <-c.wake:
 			if err := c.flush(write); err != nil {
 				return Unreachable, shortErr(err)

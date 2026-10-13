@@ -260,8 +260,14 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
   `Manager.Answer`: an `answer` frame and its `ack` in full mode, `send-keys` over ssh in plain
   mode; screens: local and plain-mode panes captured every second from the sidebar, full-mode
   ones by serve on a `capture` frame → `screen` frames, resent after a host reconnects), logs
-  every command to `events.log` and puts the link's state in the footer (after 30 s down) and
-  `snapshot.json` (`link`). `internal/answer` is the allowlist (named keys, ≤ 200 printable
+  every command to `events.log` and puts the link's state in the footer (after 30 s down),
+  `snapshot.json` (`link`) and at the right end of the brand line (`ui/brand.go` `linkMark`).
+  `flok link on|off|toggle` (`cli/link.go`, `prefix U`, flok-bar's "Phone link" row via
+  `bar.LinkRow`) writes the `link-off` marker, which outlives the session (unlike keep-awake);
+  the poller reads it with the other markers (`SnapshotMsg.LinkOff`) and the sidebar calls
+  `link.Client.SetOff`: a `bye` frame (`wire.ByeOff`) then a close, queued events dropped, a
+  dial in progress abandoned; the relay then shows the instance `off` (`wire.Instance.Off`),
+  leaves it out of the badge (`badgeLocked`) and syncs its alerts away. `internal/answer` is the allowlist (named keys, ≤ 200 printable
   chars, `Args` = one `send-keys` invocation, a trailing `;` escaped) every path goes through.
   `internal/relay` is `flok-relay` (`cmd/flok-relay`: serve, tail, token, pin, health): `/link` for
   instances (bearer instance token; the newest connection under a name replaces the older), and
@@ -280,7 +286,10 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
   `flok-request.caf`/`flok-done.caf`), a silent sync push when an agent stops waiting, and Live
   Activities (`relay/live.go`: the overview over all instances, started by push-to-start on an
   idle → busy edge, updated on state changes, ended after a quiet; followed agents; tokens via
-  `PUT /api/devices/{token}/activity`) through `internal/relay/apns` (HTTP/2, ES256 provider token cached 50 min,
+  `PUT /api/devices/{token}/activity`; while a phone runs the overview, done/error go as its
+  update's `alert` instead of a notification (`liveAlert`, `Prefs.finishedInIsland`, a
+  badge-only push for the badge, the notification as fallback; `finished_as_notification`
+  opts out)) through `internal/relay/apns` (HTTP/2, ES256 provider token cached 50 min,
   categories `FLOK_PERMISSION`/`FLOK_QUESTION`/`FLOK_DONE`, badge = unseen over all instances,
   410 forgets the device) to the devices in `devices.json`. `deploy/relay` has the Dockerfile
   (scratch + CA bundle), the Portainer compose with Traefik labels and the example configs; the

@@ -70,7 +70,9 @@ keys. It reads the relay's address and the device token from the keychain group 
 holds the attributes and content the relay pushes, `Shared/LiveViews.swift` the faces.
 `Flok/LiveActivities.swift` hands the relay the push-to-start token and each activity's update
 token, starts the overview itself when the app is open and agents are busy, and follows one
-agent from its screen. A simulator build needs signing (`-allowProvisioningUpdates`, not
+agent from its screen. While the overview runs, a finished or failed agent comes as the
+overview's alert instead of a notification (Settings → Notifications → "Finished agents as
+notifications too" turns that off). A simulator build needs signing (`-allowProvisioningUpdates`, not
 `CODE_SIGNING_ALLOWED=NO`) for a token-pushed activity: ActivityKit wants the APS environment.
 
 ## What the app does, and does not

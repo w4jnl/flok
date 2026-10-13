@@ -147,7 +147,8 @@ const Template = `# flok configuration - https://github.com/w4jnl/flok
 [link]                        # flok on your phone: this flok's name, and the relay it dials out to
 # name = ""                   # "" = the machine's short hostname (home, office, …)
 # url = ""                    # your flok-relay: wss://flok.example.net/link (or https://flok.example.net);
-                              # "" = off. Outbound only, HTTPS_PROXY is honoured.
+                              # "" = off. Outbound only, HTTPS_PROXY is honoured. prefix U (flok link)
+                              # switches it off and on again while flok runs.
 # token = ""                  # one of the relay's instance_tokens
 # pin = ""                    # the relay's key, as flok-relay pin prints it (sha256:…): the link then
                               # runs inside TLS to that key, so a proxy that inspects HTTPS (an office

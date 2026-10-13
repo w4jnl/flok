@@ -6,6 +6,20 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+- **Switch the phone link off and on with `prefix U`.** `flok link` (on, off, toggle, status) or
+  the menu bar's new "Phone link" row does the same. Off, nothing leaves the Mac for the relay:
+  the phone shows that flok as *off* rather than *offline*, its waiting agents leave the badge
+  and the Lock Screen, answers are refused, and what happens meanwhile is not sent later. It
+  stays off across restarts until you switch it on. The state sits quietly at the right end of
+  the sidebar's `[flok]` line: `phone ●` connected, `○` off, `◌` connecting (orange: out of
+  reach), `✗` refused; `flok status` and `flok doctor` mention a link that is off.
+
+- **A finished agent is one thing on the Lock Screen, not two.** While flok shows in the Dynamic
+  Island and on the Lock Screen, a finished or failed agent lights it up, with flok's done sound,
+  instead of arriving as a separate notification beside it; the app badge still counts it.
+  Permission prompts and questions stay notifications (Approve / Deny, the card, Focus). Settings
+  → Notifications → "Finished agents as notifications too" brings the notifications back.
+
 - **An encrypted link for networks whose proxy reads HTTPS.** An office proxy that inspects TLS
   could read everything a flok sends its relay: agent names, screens, your answers, the
   instance token. Set `[link] pin` to the relay's key (`flok-relay pin` prints it) and the link

@@ -3,8 +3,9 @@
 # to it ([link] url/token), the "app" looks through the relay's API and WebSocket (flok-relay
 # tail), a stand-in APNs logs the pushes, an answer typed on the phone lands in the agent pane
 # (local, then on a remote host through the main instance), a subscription streams the screen,
-# the link comes back after the relay restarts, and the encrypted link ([link] pin) carries the
-# same through a tap that reads every byte, which sees neither the token nor an answer.
+# the link comes back after the relay restarts, flok link switches it off (the phone sees off, not
+# offline) and prefix U on again, and the encrypted link ([link] pin) carries the same through a
+# tap that reads every byte, which sees neither the token nor an answer.
 R0=$(cd "$(dirname "$0")/../.." && pwd)
 RELAY=$R0/bin/flok-relay
 FH=$(mktemp -d)
@@ -78,7 +79,10 @@ expect "an unknown instance is refused" 'no instance office' "$(POST /api/answer
 expect "seen through the API is taken" '"ok":true' "$(POST /api/seen '{"instance":"e2e","pane":"'"$AGENT"'"}')"
 hook claude '{"hook_event_name":"PostToolUse","session_id":"ph1","tool_name":"Bash","tool_use_id":"t1"}'
 hook claude '{"hook_event_name":"Stop","session_id":"ph1"}'
-expect_soon "the finish is pushed too, with the done sound" '[|]'"$PROJ"'[|]✓ done[|]FLOK_DONE[|][0-9]*[|]e2e · [^|]+[|]flok-done.caf[|][|]alert$' cat "$APNS_LOG"
+expect_soon "the finish lights up the phone's overview instead of a notification, with the done sound" '^/3/device/e2eoverviewtoken[|][|]'"$PROJ"'[|]✓ done · e2e · [^|]+[|][|][|][|]flok-done.caf[|][|]liveactivity$' cat "$APNS_LOG"
+expect_soon "… and a badge-only push, which shows nothing, keeps the badge" '^/3/device/e2edevicetoken0001[|][|][|][|][|][0-9]+[|][|][|][|]alert$' cat "$APNS_LOG"
+expect "no done notification beside it" '^0$' "$(grep -c '✓ done[|]FLOK_DONE' "$APNS_LOG" || true)"
+expect_soon "the relay logged it as an island alert" 'push: e2e · '"$PROJ"' → e2e phone e2edevic… production in the island \(done\)' cat "$RELAY_LOG"
 expect "the phone marks the finished agent seen" '"ok":true' "$(POST /api/seen '{"instance":"e2e","pane":"'"$AGENT"'"}')"
 expect_soon "… and every phone gets a silent sync to clear its alert and badge" '^/3/device/e2edevicetoken0001[|][|][|][|][|][|][|][|][|]background$' cat "$APNS_LOG"
 expect "the phone mutes the agent" '"ok":true' "$(PUT /api/devices/e2edevicetoken0001/prefs '{"mutes":[{"instance":"e2e","agent":"'"$PROJ"'"}]}')"
@@ -112,6 +116,29 @@ expect_soon -t 20 "the link is back after the relay restarts" '^connected$' json
 expect_soon -t 10 "the instance is online at the new relay, snapshot included" '"name":"e2e","online":true.*"pane_id":"'"$AGENT"'"' GET /api/instances
 expect "the relay logged the instance" 'instance e2e online' "$(cat "$RELAY_LOG")"
 expect "the relay logged the pushes" 'push: e2e · '"$PROJ"' → e2e phone e2edevic… production \(blocked\)' "$(cat "$RELAY_LOG")"
+
+# --- flok link: the phone link switched off and on again (prefix U) ------------------------------
+expect "flok link status says connected" "^phone link: on, connected to 127.0.0.1:$RELAY_PORT\$" "$("$BIN" link status)"
+expect_soon "the sidebar shows the link at the end of its brand line" 'phone ●' capture
+expect "flok link off confirms" '^phone link: off \(flok link on\)$' "$("$BIN" link off)"
+expect_soon -t 10 "the relay shows the instance off, not offline" '"name":"e2e","online":false,"off":true' GET /api/instances
+expect_soon "... and logged why" 'instance e2e switched off \(flok link off there\)' cat "$RELAY_LOG"
+expect_soon "the sidebar's mark turns to a ring" 'phone ○' capture
+expect "an answer from the phone is refused with the reason" 'e2e is switched off \(flok link on there\)' "$(POST /api/answer '{"instance":"e2e","pane":"'"$AGENT"'","text":"x"}')"
+expect "flok status mentions it while off" '^phone link: off \(flok link on\)$' "$("$BIN" status | grep '^phone link' || true)"
+expect "doctor reports it switched off" 'ok +link: switched off since' "$("$BIN" doctor 2>&1 || true)"
+ONLINE=$(grep -c 'instance e2e online' "$RELAY_LOG" || true)
+OLD_PID=$(json "$SNAP" "s['sidebar_pid']")
+"$BIN" reload
+wait_json "$SNAP" "s['sidebar_pid'] != $OLD_PID and s.get('link')" 15 || true
+expect "a reloaded sidebar starts with the link off" '^off$' "$(json "$SNAP" "s['link']['state']")"
+sleep 1   # a negative check: nothing dials the relay meanwhile
+expect "... and never dials the relay" "^$ONLINE\$" "$(grep -c 'instance e2e online' "$RELAY_LOG" || true)"
+OUT send-keys -t "$RIGHT" C-b; sleep 0.3; OUT send-keys -t "$RIGHT" U   # the key the sidebar bound in the inner
+expect_soon -t 10 "prefix U switches it on again" '^connected$' json "$SNAP" "s['link']['state']"
+expect_soon -t 10 "the instance is back online at the relay" '"name":"e2e","online":true' GET /api/instances
+expect "... and no longer off" '^0$' "$(GET /api/instances | grep -c '"off":true' || true)"
+expect "the switch is cleared" '^0$' "$(cat "$T/state/link-off")"
 
 # --- the encrypted link: TLS inside the WebSocket, to the relay's own key -----------------------
 # a tap between the sidebar and the relay keeps every byte, as a proxy that inspects HTTPS would

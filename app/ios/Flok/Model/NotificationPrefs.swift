@@ -65,8 +65,12 @@ struct NotificationPrefs: Codable, Equatable, Sendable {
     var kinds: [String: KindPrefs] = [:]
     var mutes: [Mute] = []
     var noActivity: Bool? // true: no flok overview in the Dynamic Island / on the Lock Screen
+    /// true: finished and failed agents stay notifications while the overview shows; nil: they
+    /// light up the overview instead, one thing on the Lock Screen rather than two.
+    var finishedAsNotification: Bool?
 
     var showsActivity: Bool { noActivity != true }
+    var finishedInIsland: Bool { showsActivity && finishedAsNotification != true }
 
     // MARK: per kind
 

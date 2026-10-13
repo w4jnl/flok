@@ -23,10 +23,11 @@ import (
 )
 
 type fakePush struct {
-	mu   sync.Mutex
-	sent []apns.Notification
-	to   []apns.Device
-	fail error
+	mu     sync.Mutex
+	sent   []apns.Notification
+	to     []apns.Device
+	fail   error
+	failTo map[string]error // by device token, over fail
 }
 
 func (f *fakePush) Send(_ context.Context, d apns.Device, n apns.Notification) error {
@@ -34,6 +35,9 @@ func (f *fakePush) Send(_ context.Context, d apns.Device, n apns.Notification) e
 	defer f.mu.Unlock()
 	f.sent = append(f.sent, n)
 	f.to = append(f.to, d)
+	if err, ok := f.failTo[d.Token]; ok {
+		return err
+	}
 	return f.fail
 }
 

@@ -152,15 +152,25 @@ func (c *Client) Send(ctx context.Context, d Device, n Notification) error {
 	if n.Subtitle != "" {
 		alert["subtitle"] = n.Subtitle
 	}
-	aps := map[string]any{"alert": alert}
+	aps := map[string]any{}
+	if n.Title != "" || n.Body != "" || n.Subtitle != "" { // none: a badge-only push, which shows nothing
+		aps["alert"] = alert
+	}
 	if n.Background { // Apple: content-available and nothing that shows or sounds
 		aps = map[string]any{"content-available": 1}
 	}
+	sound := n.Sound
 	if l := n.Live; l != nil {
 		aps = map[string]any{"timestamp": time.Now().Unix(), "event": l.Event, "content-state": l.ContentState}
 		if l.Event == "start" {
-			aps["attributes-type"], aps["attributes"], aps["alert"] = l.AttributesType, l.Attributes, alert
+			aps["attributes-type"], aps["attributes"] = l.AttributesType, l.Attributes
 			aps["input-push-token"] = 1 // the new activity's update token, to the app at once (iOS 18)
+		}
+		if n.Title != "" || n.Body != "" { // an alert lights the activity up; its sound goes inside it
+			if sound != "" {
+				alert["sound"] = sound
+			}
+			aps["alert"], sound = alert, ""
 		}
 		if !l.Stale.IsZero() {
 			aps["stale-date"] = l.Stale.Unix()
@@ -169,8 +179,8 @@ func (c *Client) Send(ctx context.Context, d Device, n Notification) error {
 			aps["dismissal-date"] = l.Dismissal.Unix()
 		}
 	}
-	if n.Sound != "" {
-		aps["sound"] = n.Sound
+	if sound != "" {
+		aps["sound"] = sound
 	}
 	if n.Badge != nil {
 		aps["badge"] = *n.Badge
