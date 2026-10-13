@@ -149,6 +149,9 @@ const Template = `# flok configuration - https://github.com/w4jnl/flok
 # url = ""                    # your flok-relay: wss://flok.example.net/link (or https://flok.example.net);
                               # "" = off. Outbound only, HTTPS_PROXY is honoured.
 # token = ""                  # one of the relay's instance_tokens
+# pin = ""                    # the relay's key, as flok-relay pin prints it (sha256:…): the link then
+                              # runs inside TLS to that key, so a proxy that inspects HTTPS (an office
+                              # proxy with its own root certificate) reads nothing, the token included
 `
 
 // WriteTemplate creates the config file with Template when it does not exist yet.

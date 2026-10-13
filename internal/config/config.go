@@ -86,6 +86,7 @@ type Link struct {
 	Name  string `toml:"name"`  // "" = the machine's short hostname
 	URL   string `toml:"url"`   // wss://flok.example.net/link (https://flok.example.net works too); "" = off
 	Token string `toml:"token"` // one of the relay's instance_tokens
+	Pin   string `toml:"pin"`   // the relay's key (flok-relay pin): the link goes encrypted inside TLS to it; "" = plain
 }
 
 // KeepAwake tunes `flok keep-awake` (macOS).

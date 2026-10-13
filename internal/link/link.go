@@ -3,7 +3,9 @@
 // any firewall that lets HTTPS out is reachable. It streams the published snapshot, the
 // user-facing events and the screens of panes the phone looks at; it takes answers, seen marks
 // and subscriptions back. The connection is kept up with backoff; nothing here blocks the
-// sidebar: Publish/Event/Screen queue, the latest snapshot and screen win.
+// sidebar: Publish/Event/Screen queue, the latest snapshot and screen win. With [link] pin the
+// frames travel inside TLS to the relay's own key (internal/link/tunnel, the relay's /link/tls),
+// so a proxy that inspects HTTPS reads none of them, the token included.
 package link
 
 import (
@@ -21,6 +23,7 @@ import (
 	"github.com/coder/websocket"
 
 	"github.com/w4jnl/flok/internal/answer"
+	"github.com/w4jnl/flok/internal/link/tunnel"
 	"github.com/w4jnl/flok/internal/link/wire"
 	"github.com/w4jnl/flok/internal/snapshot"
 )
@@ -43,6 +46,8 @@ type Status struct {
 	Since   time.Time `json:"since"`
 	RetryAt time.Time `json:"retry_at,omitzero"`
 	URL     string    `json:"url,omitempty"`
+	// Encrypted: the link runs inside TLS to the relay's pinned key ([link] pin).
+	Encrypted bool `json:"encrypted,omitempty"`
 }
 
 // Command is what the relay asks of the instance, on behalf of the phone. Reset is the link's
@@ -65,6 +70,7 @@ type Msg struct {
 type Config struct {
 	URL      string // wss://flok.example.net/link; https:// and http:// are taken as wss:// and ws://, an empty path as /link
 	Token    string
+	Pin      string // the relay's key (flok-relay pin): the link goes encrypted to /link/tls; "" = plain /link
 	Name     string // this instance's name on the phone
 	Version  string
 	Hostname string
@@ -121,8 +127,19 @@ func New(cfg Config) *Client {
 		cfg.HTTP = &http.Client{Transport: &http.Transport{Proxy: http.ProxyFromEnvironment, TLSHandshakeTimeout: 15 * time.Second,
 			ResponseHeaderTimeout: 20 * time.Second}}
 	}
+	cfg.Pin = strings.TrimSpace(cfg.Pin)
 	return &Client{cfg: cfg, url: u, msgs: make(chan Msg, 64), done: make(chan struct{}), wake: make(chan struct{}, 1),
-		screens: map[string]string{}, shown: map[string]string{}, status: Status{State: Connecting, Since: time.Now(), URL: u}}
+		screens: map[string]string{}, shown: map[string]string{}, status: Status{State: Connecting, Since: time.Now(), URL: u, Encrypted: cfg.Pin != ""}}
+}
+
+// TunnelURL is the relay's encrypted link next to a link URL: /link becomes /link/tls.
+func TunnelURL(s string) string {
+	u, err := url.Parse(NormalizeURL(s))
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	u.Path = strings.TrimSuffix(u.Path, "/") + "/tls"
+	return u.String()
 }
 
 // NormalizeURL turns what the config says into the WebSocket URL of the relay's /link: the
@@ -343,32 +360,31 @@ func (c *Client) run(ctx context.Context) {
 	}
 }
 
+// frames is a connection's frame stream: WebSocket text messages, or lines inside the tunnel.
+type frames struct {
+	read  func(context.Context) ([]byte, error)
+	write func(context.Context, []byte) error
+}
+
 // session is one connection: dial, hello, then frames both ways until something ends it.
 func (c *Client) session(ctx context.Context) (State, string) {
-	dctx, cancel := context.WithTimeout(ctx, c.cfg.Dial)
-	hdr := http.Header{}
-	if c.cfg.Token != "" {
-		hdr.Set("Authorization", "Bearer "+c.cfg.Token)
-	}
-	hdr.Set("User-Agent", "flok/"+c.cfg.Version)
-	conn, resp, err := websocket.Dial(dctx, c.url, &websocket.DialOptions{HTTPClient: c.cfg.HTTP, HTTPHeader: hdr})
-	cancel()
-	if err != nil {
-		if resp != nil {
-			switch resp.StatusCode {
-			case http.StatusUnauthorized, http.StatusForbidden:
-				return Refused, "the relay refused the token ([link] token)"
-			case http.StatusNotFound:
-				return Refused, "nothing answers at " + c.url + " (not a flok relay?)"
-			}
-			return Unreachable, fmt.Sprintf("relay answered %s", resp.Status)
-		}
-		return Unreachable, shortErr(err)
-	}
-	conn.SetReadLimit(wire.MaxAppFrame * 4)
-	defer conn.CloseNow()
 	sctx, stop := context.WithCancel(ctx)
 	defer stop()
+	var (
+		conn   *websocket.Conn
+		fr     frames
+		st     State
+		detail string
+	)
+	if c.cfg.Pin != "" {
+		conn, fr, st, detail = c.dialTunnel(sctx)
+	} else {
+		conn, fr, st, detail = c.dial(sctx)
+	}
+	if conn == nil {
+		return st, detail
+	}
+	defer conn.CloseNow()
 	write := func(f wire.Frame) error {
 		data, err := json.Marshal(f)
 		if err != nil {
@@ -376,7 +392,7 @@ func (c *Client) session(ctx context.Context) (State, string) {
 		}
 		wctx, cancel := context.WithTimeout(sctx, 15*time.Second)
 		defer cancel()
-		return conn.Write(wctx, websocket.MessageText, data)
+		return fr.write(wctx, data)
 	}
 	hello := wire.Frame{Type: wire.TypeHello, Hello: &wire.Hello{Proto: wire.Proto, Name: c.cfg.Name, Version: c.cfg.Version,
 		Hostname: c.cfg.Hostname, Features: wire.InstanceFeatures}}
@@ -394,12 +410,17 @@ func (c *Client) session(ctx context.Context) (State, string) {
 	c.kick()
 	c.set(Connected, "", time.Time{})
 
-	readErr := make(chan error, 1)
+	type ended struct {
+		err  error
+		said string // the relay's last error frame: the reason inside the tunnel
+	}
+	readErr := make(chan ended, 1)
 	go func() {
+		said := ""
 		for {
-			_, data, err := conn.Read(sctx)
+			data, err := fr.read(sctx)
 			if err != nil {
-				readErr <- err
+				readErr <- ended{err, said}
 				return
 			}
 			var f wire.Frame
@@ -421,6 +442,7 @@ func (c *Client) session(ctx context.Context) (State, string) {
 				}
 			case wire.TypeError:
 				c.cfg.Logf("link: relay says: %s", f.Error)
+				said = f.Error
 			}
 		}
 	}()
@@ -439,16 +461,108 @@ func (c *Client) session(ctx context.Context) (State, string) {
 			if err != nil {
 				return Unreachable, "no pong from the relay"
 			}
-		case err := <-readErr:
-			if websocket.CloseStatus(err) == websocket.StatusPolicyViolation {
-				return Refused, "the relay closed the link: " + closeReason(err)
+		case e := <-readErr:
+			why := closeReason(e.err)
+			if e.said != "" {
+				why = e.said
 			}
-			return Unreachable, "connection closed: " + closeReason(err)
+			if websocket.CloseStatus(e.err) == websocket.StatusPolicyViolation {
+				return Refused, "the relay closed the link: " + why
+			}
+			return Unreachable, "connection closed: " + why
 		case <-ctx.Done():
 			_ = conn.Close(websocket.StatusGoingAway, "flok down")
 			return Off, ""
 		}
 	}
+}
+
+// dial opens the plain link: the token in the upgrade's Authorization header.
+func (c *Client) dial(ctx context.Context) (*websocket.Conn, frames, State, string) {
+	dctx, cancel := context.WithTimeout(ctx, c.cfg.Dial)
+	defer cancel()
+	hdr := http.Header{}
+	if c.cfg.Token != "" {
+		hdr.Set("Authorization", "Bearer "+c.cfg.Token)
+	}
+	hdr.Set("User-Agent", "flok/"+c.cfg.Version)
+	conn, resp, err := websocket.Dial(dctx, c.url, &websocket.DialOptions{HTTPClient: c.cfg.HTTP, HTTPHeader: hdr})
+	if err != nil {
+		st, detail := dialFailed(c.url, resp, err)
+		return nil, frames{}, st, detail
+	}
+	conn.SetReadLimit(wire.MaxAppFrame * 4)
+	return conn, frames{
+		read: func(ctx context.Context) ([]byte, error) {
+			_, data, err := conn.Read(ctx)
+			return data, err
+		},
+		write: func(ctx context.Context, data []byte) error { return conn.Write(ctx, websocket.MessageText, data) },
+	}, "", ""
+}
+
+// dialTunnel opens the encrypted link: an upgrade without a token, TLS to the pinned key inside
+// it, then the token as the first frame. ctx is the session's: it ends the tunnel.
+func (c *Client) dialTunnel(ctx context.Context) (*websocket.Conn, frames, State, string) {
+	if !tunnel.ValidPin(c.cfg.Pin) {
+		return nil, frames{}, Refused, "[link] pin is not a pin: sha256:… as flok-relay pin prints it"
+	}
+	u := TunnelURL(c.url)
+	dctx, cancel := context.WithTimeout(ctx, c.cfg.Dial)
+	defer cancel()
+	hdr := http.Header{}
+	hdr.Set("User-Agent", "flok/"+c.cfg.Version)
+	conn, resp, err := websocket.Dial(dctx, u, &websocket.DialOptions{HTTPClient: c.cfg.HTTP, HTTPHeader: hdr})
+	if err != nil {
+		if resp != nil && resp.StatusCode == http.StatusNotFound {
+			return nil, frames{}, Refused, "the relay has no encrypted link (" + u + "): upgrade flok-relay, or remove [link] pin"
+		}
+		st, detail := dialFailed(u, resp, err)
+		return nil, frames{}, st, detail
+	}
+	t, err := tunnel.Client(ctx, conn, c.cfg.Pin, wire.MaxAppFrame*4)
+	if err != nil {
+		conn.CloseNow()
+		if errors.Is(err, tunnel.ErrPinMismatch) {
+			return nil, frames{}, Refused, err.Error() + ": a proxy that replaces it, or the relay's key changed (flok-relay pin)"
+		}
+		return nil, frames{}, Unreachable, "encrypted handshake: " + shortErr(err)
+	}
+	auth, _ := json.Marshal(wire.Frame{Type: wire.TypeAuth, Token: c.cfg.Token})
+	if err := t.Write(dctx, auth); err != nil {
+		conn.CloseNow()
+		return nil, frames{}, Unreachable, shortErr(err)
+	}
+	data, err := t.Read(dctx)
+	var f wire.Frame
+	switch {
+	case err == nil && json.Unmarshal(data, &f) == nil && f.Type == wire.TypeAuth:
+		return conn, frames{read: t.Read, write: t.Write}, "", ""
+	case err == nil && f.Type == wire.TypeError:
+		conn.CloseNow()
+		return nil, frames{}, Refused, "the relay refused the token ([link] token)"
+	case err != nil:
+		conn.CloseNow()
+		return nil, frames{}, Unreachable, shortErr(err)
+	}
+	conn.CloseNow()
+	return nil, frames{}, Refused, "the relay answered the token with " + string(f.Type)
+}
+
+// dialFailed names a failed upgrade.
+func dialFailed(u string, resp *http.Response, err error) (State, string) {
+	if resp != nil {
+		switch resp.StatusCode {
+		case http.StatusUnauthorized:
+			return Refused, "the relay refused the token ([link] token)"
+		case http.StatusForbidden:
+			return Refused, "refused with 403 Forbidden: a relay that takes encrypted links only wants [link] pin (or a proxy said no)"
+		case http.StatusNotFound:
+			return Refused, "nothing answers at " + u + " (not a flok relay?)"
+		}
+		return Unreachable, fmt.Sprintf("relay answered %s", resp.Status)
+	}
+	return Unreachable, shortErr(err)
 }
 
 // flush sends what is queued: the snapshot when it changed, then events and acks in order,

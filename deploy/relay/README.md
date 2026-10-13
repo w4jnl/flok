@@ -39,6 +39,30 @@ token = "<its instance token>"
 footer says when the relay has been out of reach for half a minute. `HTTPS_PROXY` is honoured
 for a machine that must go through a proxy.
 
+### Through a proxy that inspects HTTPS
+
+A proxy with its own root certificate (common in offices) reads the plain link, token included.
+Pin the relay's key and the link runs TLS inside the WebSocket, to that key only:
+
+```sh
+docker logs flok-relay 2>&1 | grep 'link pin'      # logged at every start, or:
+docker exec flok-relay /flok-relay pin             # sha256:…
+```
+
+```toml
+[link]
+url = "https://flok.example.net"
+token = "<its instance token>"
+pin = "sha256:…"                       # the relay's key: the link goes to /link/tls, encrypted
+```
+
+The key is created at the first start in the data dir (`link-key.pem`, keep it with the
+volume: a new key means a new pin for every instance). `flok doctor` then says `…/link/tls …,
+encrypted to the pinned key`, the relay logs `instance office online (…, encrypted)`. A pin
+that does not match is refused with the pin that answered: a proxy replacing the key, or a
+relay whose key changed. Once every instance has its pin, `tunnel_only = true`
+(`FLOK_RELAY_TUNNEL_ONLY=1`) refuses the plain `/link`.
+
 ## See what the phone sees
 
 ```sh
@@ -64,7 +88,7 @@ offline simply reports so. Every answer and seen mark is logged on the instance 
 (`FLOK_RELAY_LISTEN`, `FLOK_RELAY_DATA_DIR`, `FLOK_RELAY_INSTANCE_TOKENS`,
 `FLOK_RELAY_DEVICE_TOKENS`, `FLOK_RELAY_APNS_KEY_FILE`, or `FLOK_RELAY_APNS_KEY_B64` with the
 `.p8` base64-encoded, or `FLOK_RELAY_APNS_KEY` with the PEM itself, `FLOK_RELAY_APNS_KEY_ID`,
-`FLOK_RELAY_APNS_TEAM_ID`, `FLOK_RELAY_APNS_TOPIC`), which wins over
+`FLOK_RELAY_APNS_TEAM_ID`, `FLOK_RELAY_APNS_TOPIC`, `FLOK_RELAY_TUNNEL_ONLY`), which wins over
 the file. There is no sandbox switch: the app registers its token with `sandbox: true` when it
 is a build installed from Xcode, and the relay pushes each phone through the service its token
 belongs to, so development and TestFlight builds share one relay (a leftover

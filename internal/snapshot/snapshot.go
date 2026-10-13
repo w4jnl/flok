@@ -85,6 +85,8 @@ type Link struct {
 	Detail string    `json:"detail,omitempty"`
 	Since  time.Time `json:"since"`
 	URL    string    `json:"url,omitempty"`
+	// Encrypted: the link runs inside TLS to the relay's pinned key ([link] pin).
+	Encrypted bool `json:"encrypted,omitempty"`
 }
 
 // Freshness tells a reader how much to trust a loaded snapshot.

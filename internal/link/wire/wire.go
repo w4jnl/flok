@@ -17,8 +17,11 @@ const Proto = 1
 
 // Frame types. Instance to relay: hello, snap, event, screen, ack. Relay to instance: answer,
 // seen, subscribe. Relay to app: instances, instance, event, screen, ack. App to relay: answer,
-// seen, subscribe. Ping/pong are WebSocket control frames, not these.
+// seen, subscribe. Ping/pong are WebSocket control frames, not these. Inside the encrypted
+// link (/link/tls) the instance's first frame is auth with its token, and the relay answers
+// auth (go on) or error (refused) before the hello.
 const (
+	TypeAuth      = "auth"
 	TypeHello     = "hello"
 	TypeSnap      = "snap"
 	TypeEvent     = "event"
@@ -45,6 +48,7 @@ type Frame struct {
 	Pane     string             `json:"pane,omitempty"` // seen / subscribe: a pane ref (%12, beta:%12)
 	On       bool               `json:"on,omitempty"`   // subscribe: start (true) or stop streaming the pane's screen
 	Error    string             `json:"error,omitempty"`
+	Token    string             `json:"token,omitempty"` // auth: the instance token, only ever inside the tunnel
 	// Instances is the relay's view of every instance (TypeInstances), Inst one of them
 	// (TypeInstance).
 	Instances []Instance `json:"instances,omitempty"`

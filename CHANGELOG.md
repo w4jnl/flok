@@ -4,6 +4,18 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
+## Unreleased
+
+- **An encrypted link for networks whose proxy reads HTTPS.** An office proxy that inspects TLS
+  could read everything a flok sends its relay: agent names, screens, your answers, the
+  instance token. Set `[link] pin` to the relay's key (`flok-relay pin` prints it) and the link
+  runs TLS 1.3 inside the WebSocket, to that key and no other: the proxy sees an upgrade to
+  `/link/tls` and data it cannot read, and a proxy that answers with a key of its own is
+  refused, naming the key that answered. The token only travels inside. The relay creates its
+  key in its data dir at the first start and logs the pin; `tunnel_only`
+  (`FLOK_RELAY_TUNNEL_ONLY=1`) refuses links without one. `flok doctor` and `snapshot.json` say
+  whether the link is encrypted.
+
 ## 0.7.0 (2026-10-13)
 
 - **Notifications on the phone, your way.** A new Settings → Notifications page in the app

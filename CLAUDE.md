@@ -263,8 +263,13 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
   every command to `events.log` and puts the link's state in the footer (after 30 s down) and
   `snapshot.json` (`link`). `internal/answer` is the allowlist (named keys, ≤ 200 printable
   chars, `Args` = one `send-keys` invocation, a trailing `;` escaped) every path goes through.
-  `internal/relay` is `flok-relay` (`cmd/flok-relay`: serve, tail, token, health): `/link` for
-  instances (bearer instance token; the newest connection under a name replaces the older),
+  `internal/relay` is `flok-relay` (`cmd/flok-relay`: serve, tail, token, pin, health): `/link` for
+  instances (bearer instance token; the newest connection under a name replaces the older), and
+  `/link/tls`, the same frames inside TLS 1.3 to the relay's own key (`internal/link/tunnel`:
+  `websocket.NetConn` + `crypto/tls`, lines of JSON inside, `link-key.pem` in the data dir,
+  `flok-relay pin`; the instance pins it with `[link] pin`, sends its token as the first frame
+  inside, and a proxy that inspects HTTPS reads nothing; `relay/linkconn.go` puts both behind
+  `frameConn`; `tunnel_only` refuses the plain path; m11 checks it through a byte-logging tap),
   `/api/*` for the app (bearer device token; `/api/ws` live stream, `/api/answer` waits for the
   instance's ack, `/api/screen` one look at a pane for the expanded notification), subscriptions
   refcounted per instance and pane (a watched pane's last screen is kept, so a second viewer gets

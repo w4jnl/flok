@@ -1,11 +1,13 @@
 # flok-relay configuration (flok-relay serve -config relay.toml). Every value can also come from
 # the environment (FLOK_RELAY_LISTEN, FLOK_RELAY_DATA_DIR, FLOK_RELAY_INSTANCE_TOKENS,
-# FLOK_RELAY_DEVICE_TOKENS, FLOK_RELAY_APNS_KEY_FILE / _KEY_ID / _TEAM_ID / _TOPIC),
-# which wins over the file. Tokens: `flok-relay token`.
+# FLOK_RELAY_DEVICE_TOKENS, FLOK_RELAY_APNS_KEY_FILE / _KEY_ID / _TEAM_ID / _TOPIC,
+# FLOK_RELAY_TUNNEL_ONLY), which wins over the file. Tokens: `flok-relay token`.
 listen = ":8080"              # plain HTTP; TLS and the public name belong to the reverse proxy
-data_dir = "/data"            # devices.json (the phones registered for pushes)
+data_dir = "/data"            # devices.json (the phones registered for pushes) and link-key.pem (the
+                              # relay's key for encrypted links; flok-relay pin prints its pin)
 instance_tokens = []          # one per flok instance; the instance puts it in [link] token
 device_tokens = []            # what the app signs in with
+tunnel_only = false           # true: refuse links without [link] pin (plain /link), once all have it
 
 [apns]                        # pushes; leave key_file empty to run without
 key_file = ""                 # the .p8 from the developer account (Keys, Apple Push Notifications service)
