@@ -4,7 +4,7 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
-## Unreleased
+## 0.7.0 (2026-10-13)
 
 - **Notifications on the phone, your way.** A new Settings → Notifications page in the app
   turns each kind (permission prompt, question, finished, failed) on or off, picks its sound
