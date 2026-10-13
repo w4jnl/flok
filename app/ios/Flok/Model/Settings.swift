@@ -26,7 +26,9 @@ final class Settings {
 
     init() {
         relayURL = defaults.string(forKey: "relayURL") ?? ""
-        deviceToken = Keychain.get("deviceToken") ?? defaults.string(forKey: "deviceToken") ?? ""
+        // -deviceToken on the command line (a scripted start) wins over the keychain's token
+        let launched = defaults.volatileDomain(forName: UserDefaults.argumentDomain)["deviceToken"] as? String
+        deviceToken = launched ?? Keychain.get("deviceToken") ?? defaults.string(forKey: "deviceToken") ?? ""
         fontSize = defaults.object(forKey: "fontSize") as? Double ?? 11
         wrapLines = defaults.bool(forKey: "wrapLines")
         registered = defaults.string(forKey: "registered")
