@@ -118,6 +118,25 @@ func waitState(t *testing.T, states chan link.Status, want link.State) link.Stat
 	}
 }
 
+// waitOnline waits until the relay has the instance office online (the link says connected once
+// its hello is out, before the relay has taken it) or, with want false, offline again.
+func waitOnline(t *testing.T, srv *httptest.Server, want bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		_, out := api(t, srv, "dev-tok", "GET", "/api/instances", nil)
+		insts, _ := out["instances"].([]any)
+		online := len(insts) == 1 && strings.Contains(stringOf(insts[0]), `"online":true`)
+		if online == want && (!want || strings.Contains(stringOf(insts[0]), "secret-agent")) {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the relay never had office online=%v: %v", want, out)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 // answerThrough answers the agent from the app's side and waits for the link to get it.
 func answerThrough(t *testing.T, srv *httptest.Server, cl *link.Client, cmds chan link.Command, text string) {
 	t.Helper()
@@ -151,11 +170,13 @@ func TestEncryptedLinkHidesEverythingFromTheProxy(t *testing.T) {
 	if st := waitState(t, states, link.Connected); st.Encrypted {
 		t.Fatal("a link without a pin says it is encrypted")
 	}
+	waitOnline(t, srv, true)
 	answerThrough(t, srv, cl, cmds, "plain-reply-text")
 	if !plain.saw("inst-secret-token") || !plain.saw("plain-reply-text") {
 		t.Fatal("the tap does not see the plain link: the test proves nothing")
 	}
 	cl.Close()
+	waitOnline(t, srv, false)
 
 	// encrypted: the same work, and none of it on the wire
 	tp := newTap(t, upstream)
@@ -163,17 +184,7 @@ func TestEncryptedLinkHidesEverythingFromTheProxy(t *testing.T) {
 	if st := waitState(t, states, link.Connected); !st.Encrypted {
 		t.Fatal("the pinned link does not say it is encrypted")
 	}
-	deadline := time.Now().Add(3 * time.Second)
-	for {
-		_, out := api(t, srv, "dev-tok", "GET", "/api/instances", nil)
-		if insts, _ := out["instances"].([]any); len(insts) == 1 && strings.Contains(stringOf(insts[0]), "secret-agent") && strings.Contains(stringOf(insts[0]), `"online":true`) {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("the relay never got the snapshot over the encrypted link: %v", out)
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+	waitOnline(t, srv, true) // offline in between, so this is the encrypted link's snapshot
 	answerThrough(t, srv, cl, cmds, "encrypted-reply-text")
 	for _, secret := range []string{"inst-secret-token", "encrypted-reply-text", "secret-agent", "secret-session", "permission:Bash", "office"} {
 		if tp.saw(secret) {
