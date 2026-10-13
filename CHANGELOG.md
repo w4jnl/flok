@@ -4,7 +4,11 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
-## Unreleased
+## 0.7.1 (2026-10-13)
+
+- **flok's popups look like your terminal again.** tmux 3.8 gives popups a grey background of
+  its own; the keybinds help (`prefix ?`) and the host install popup now ask for the terminal's
+  colours, as before. tmux's own menus keep 3.8's look.
 
 - **The card behind a push opens.** A long press on a flok notification showed iOS's plain view:
   the extension that draws flok's card (the agent's screen, keys to answer) did not link the
@@ -34,6 +38,10 @@ updates this file first. Dates are the tag dates.
   key in its data dir at the first start and logs the pin; `tunnel_only`
   (`FLOK_RELAY_TUNNEL_ONLY=1`) refuses links without one. `flok doctor` and `snapshot.json` say
   whether the link is encrypted.
+
+- **A shorter README.** It is the front page now, with a picture of how the parts connect and
+  the phone next to the menu bar; the detail (how it works, remote hosts, the phone, keys, every
+  command and configuration key, troubleshooting) moved to [`docs/`](https://github.com/w4jnl/flok/tree/main/docs).
 
 ## 0.7.0 (2026-10-13)
 
