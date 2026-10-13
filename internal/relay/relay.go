@@ -15,12 +15,14 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/coder/websocket"
 
+	"github.com/w4jnl/flok/internal/agent"
 	"github.com/w4jnl/flok/internal/answer"
 	"github.com/w4jnl/flok/internal/link/wire"
 	"github.com/w4jnl/flok/internal/relay/apns"
@@ -41,7 +43,15 @@ type Config struct {
 	Logf           func(string, ...any)
 	// AnswerWait bounds how long an answer waits for the instance's ack; 0 = 8 s.
 	AnswerWait time.Duration
-	Version    string
+	// SyncDelay gathers the agents that stopped waiting into one silent sync push; 0 = 3 s.
+	SyncDelay time.Duration
+	// LiveDelay gathers snapshot changes into one round of Live Activity pushes; 0 = 1.5 s.
+	LiveDelay time.Duration
+	// QuietEnd ends the overview activity after nothing works, waits or is unseen; 0 = 2 min.
+	QuietEnd time.Duration
+	// AgentLinger keeps a followed agent's finished activity on the Lock Screen; 0 = 10 min.
+	AgentLinger time.Duration
+	Version     string
 }
 
 // Server is one relay.
@@ -53,6 +63,15 @@ type Server struct {
 	devices   *deviceStore
 	started   time.Time
 	closed    bool
+	syncDue   *time.Timer // a sync push is on its way
+
+	// Live Activities (live.go)
+	liveDue        *time.Timer          // a round is on its way
+	liveWasActive  bool                 // something worked or waited in the last round
+	liveQuietSince time.Time            // since when nothing works, waits or is unseen
+	liveSent       map[string]string    // activity token → the content last sent
+	liveWaiting    map[string]int       // activity token → its waiting count last sent (a rise is urgent)
+	liveStarted    map[string]time.Time // device token → a start push the phone has not answered yet
 }
 
 type instance struct {
@@ -63,7 +82,9 @@ type instance struct {
 	online  bool
 	since   time.Time
 	snap    *snapshot.Snapshot
-	subs    map[string]int // pane → how many apps look at it
+	subs    map[string]int         // pane → how many apps look at it
+	screens map[string]wire.Screen // pane → its last screen, while someone looks at it
+	waiting map[string]bool        // pane refs that wait on the user (unseen or blocked), as of the last snapshot
 	out     chan wire.Frame
 	pending map[string]chan string // answer / seen id → outcome ("" = ok)
 	nextID  uint64
@@ -82,11 +103,24 @@ func New(cfg Config) (*Server, error) {
 	if cfg.AnswerWait <= 0 {
 		cfg.AnswerWait = 8 * time.Second
 	}
+	if cfg.SyncDelay <= 0 {
+		cfg.SyncDelay = 3 * time.Second
+	}
+	if cfg.LiveDelay <= 0 {
+		cfg.LiveDelay = 1500 * time.Millisecond
+	}
+	if cfg.QuietEnd <= 0 {
+		cfg.QuietEnd = 2 * time.Minute
+	}
+	if cfg.AgentLinger <= 0 {
+		cfg.AgentLinger = 10 * time.Minute
+	}
 	ds, err := loadDevices(cfg.DataDir)
 	if err != nil {
 		return nil, err
 	}
-	return &Server{cfg: cfg, instances: map[string]*instance{}, apps: map[*app]struct{}{}, devices: ds, started: time.Now()}, nil
+	return &Server{cfg: cfg, instances: map[string]*instance{}, apps: map[*app]struct{}{}, devices: ds, started: time.Now(),
+		liveSent: map[string]string{}, liveWaiting: map[string]int{}, liveStarted: map[string]time.Time{}}, nil
 }
 
 // Handler is the HTTP surface.
@@ -101,6 +135,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/devices", s.withDevice(s.handleDevicesList))
 	mux.HandleFunc("POST /api/devices", s.withDevice(s.handleDeviceAdd))
 	mux.HandleFunc("DELETE /api/devices/{token}", s.withDevice(s.handleDeviceRemove))
+	mux.HandleFunc("PUT /api/devices/{token}/prefs", s.withDevice(s.handleDevicePrefs))
+	mux.HandleFunc("PUT /api/devices/{token}/activity", s.withDevice(s.handleDeviceActivity))
+	mux.HandleFunc("GET /api/screen", s.withDevice(s.handleScreen))
 	return mux
 }
 
@@ -186,14 +223,14 @@ func (s *Server) handleLink(w http.ResponseWriter, r *http.Request) {
 		conn.Close(websocket.StatusPolicyViolation, fmt.Sprintf("protocol %d, this relay speaks %d", hello.Hello.Proto, wire.Proto))
 		return
 	}
-	in, gen, replaced := s.register(*hello.Hello, conn)
+	in, gen, out, replaced := s.register(*hello.Hello, conn)
 	if replaced != nil { // the same name again: the earlier link is stale (a drop the relay had not noticed yet)
 		replaced.Close(websocket.StatusGoingAway, "replaced by a newer link from "+in.name)
 	}
 	s.cfg.Logf("instance %s online (flok %s on %s, %s)", in.name, hello.Hello.Version, hello.Hello.Hostname, r.RemoteAddr)
 	wctx, stop := context.WithCancel(ctx)
 	defer stop()
-	go s.writer(wctx, conn, in.out, gen, in)
+	go s.writer(wctx, conn, out, gen, in)
 	defer func() {
 		conn.CloseNow()
 		if s.offline(in, gen) {
@@ -253,8 +290,8 @@ func (s *Server) writer(ctx context.Context, conn *websocket.Conn, out <-chan wi
 
 // register makes an instance current under its name; a link already up under that name is
 // replaced (the same instance reconnecting after a drop the relay has not noticed yet) and
-// returned for closing.
-func (s *Server) register(h wire.Hello, conn *websocket.Conn) (*instance, uint64, *websocket.Conn) {
+// returned for closing. The link's frame channel is returned too: a later link swaps in.out.
+func (s *Server) register(h wire.Hello, conn *websocket.Conn) (*instance, uint64, chan wire.Frame, *websocket.Conn) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	in := s.instances[h.Name]
@@ -280,8 +317,9 @@ func (s *Server) register(h wire.Hello, conn *websocket.Conn) (*instance, uint64
 			in.out <- wire.Frame{Type: wire.TypeSubscribe, Pane: pane, On: true}
 		}
 	}
+	s.liveSoonLocked() // its agents join the overview
 	s.fanout(wire.Frame{Type: wire.TypeInstance, Instance: in.name, Inst: s.view(in)})
-	return in, in.gen, replaced
+	return in, in.gen, in.out, replaced
 }
 
 // offline marks an instance gone when the connection that ends is still its current one.
@@ -296,6 +334,7 @@ func (s *Server) offline(in *instance, gen uint64) bool {
 		ch <- "the instance went offline"
 		delete(in.pending, id)
 	}
+	s.liveSoonLocked() // its agents leave the overview
 	s.fanout(wire.Frame{Type: wire.TypeInstance, Instance: in.name, Inst: s.view(in)})
 	return true
 }
@@ -311,7 +350,82 @@ func (s *Server) setSnap(in *instance, gen uint64, snap *snapshot.Snapshot) {
 		return
 	}
 	in.snap = snap
+	waiting := waitingIn(snap)
+	for pane := range in.waiting {
+		if !waiting[pane] { // seen or answered, here or on the phone: the phones clear its alert
+			s.syncSoonLocked()
+			break
+		}
+	}
+	in.waiting = waiting
+	s.liveSoonLocked()
 	s.fanout(wire.Frame{Type: wire.TypeInstance, Instance: in.name, Inst: s.view(in)})
+}
+
+// waitingIn is the set of agents in a snapshot that wait on the user: unseen, or blocked.
+func waitingIn(snap *snapshot.Snapshot) map[string]bool {
+	out := map[string]bool{}
+	if snap == nil {
+		return out
+	}
+	for _, a := range snap.Agents {
+		if a.Unseen > 0 || a.State == agent.Blocked {
+			ref := a.PaneID
+			if a.Host != "" {
+				ref = a.Host + ":" + a.PaneID
+			}
+			out[ref] = true
+		}
+	}
+	return out
+}
+
+// syncSoonLocked schedules one silent sync push to every phone (a run of changes is one push;
+// iOS throttles background pushes anyway, and each sync carries the whole state). The caller
+// holds s.mu.
+func (s *Server) syncSoonLocked() {
+	if s.cfg.Push == nil || s.syncDue != nil {
+		return
+	}
+	s.syncDue = time.AfterFunc(s.cfg.SyncDelay, s.sync)
+}
+
+// sync tells every phone which agents still wait on the user and the badge: the app removes
+// the notifications of the others and sets the badge, without showing anything.
+func (s *Server) sync() {
+	s.mu.Lock()
+	s.syncDue = nil
+	badge, waiting := 0, []string{}
+	for _, in := range s.instances {
+		if in.snap != nil {
+			badge += in.snap.Unseen
+		}
+		for pane := range in.waiting {
+			waiting = append(waiting, in.name+":"+pane)
+		}
+	}
+	devices := s.devices.list()
+	s.mu.Unlock()
+	sort.Strings(waiting)
+	if len(waiting) > 200 { // the payload stays far below APNs' 4 KB; the app keeps what it cannot match
+		waiting = waiting[:200]
+	}
+	n := apns.Notification{Background: true, Data: map[string]any{"flok_sync": 1, "waiting": waiting, "badge": badge}}
+	for _, d := range devices {
+		go func(d device) {
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer cancel()
+			switch err := s.cfg.Push.Send(ctx, apns.Device{Token: d.Token, Sandbox: d.Sandbox}, n); {
+			case errors.Is(err, apns.ErrUnregistered):
+				s.cfg.Logf("push: %s is gone, forgotten", d.label())
+				s.devices.remove(d.Token)
+			case err != nil:
+				s.cfg.Logf("push: sync → %s: %v", d.label(), err)
+			default:
+				s.cfg.Logf("push: sync → %s (%d waiting, badge %d)", d.label(), len(waiting), badge)
+			}
+		}(d)
+	}
 }
 
 func (s *Server) screen(in *instance, gen uint64, sc wire.Screen) {
@@ -319,6 +433,12 @@ func (s *Server) screen(in *instance, gen uint64, sc wire.Screen) {
 	defer s.mu.Unlock()
 	if in.gen != gen {
 		return
+	}
+	if in.subs[sc.Pane] > 0 { // kept for the next app that looks: an unchanged screen is not resent
+		if in.screens == nil {
+			in.screens = map[string]wire.Screen{}
+		}
+		in.screens[sc.Pane] = sc
 	}
 	key := [2]string{in.name, sc.Pane}
 	for a := range s.apps {
@@ -368,26 +488,52 @@ func (s *Server) event(in *instance, gen uint64, ev wire.Event) {
 	}
 	devices := s.devices.list()
 	s.mu.Unlock()
+	session := sessionOf(in.snap, ev.Pane)
 	if s.cfg.Push == nil || len(devices) == 0 {
 		return
 	}
-	n := Alert(in.name, ev, badge)
+	n := Alert(in.name, ev, badge, session)
+	kind, now := PushKind(ev), time.Now()
 	for _, d := range devices {
-		go func(d device) {
+		if why := d.Prefs.filtered(in.name, ev, now); why != "" {
+			s.cfg.Logf("push: %s · %s → %s: not sent, %s", in.name, ev.Agent, d.label(), why)
+			continue
+		}
+		n := n // the phone's own sound and interruption level
+		n.Sound, n.TimeSensitive = d.Prefs.Sound(kind), d.Prefs.TimeSensitive(kind)
+		go func(d device, n apns.Notification) {
 			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 			defer cancel()
 			err := s.cfg.Push.Send(ctx, apns.Device{Token: d.Token, Sandbox: d.Sandbox}, n)
 			switch {
 			case errors.Is(err, apns.ErrUnregistered):
-				s.cfg.Logf("push: device %s (%s) is gone, forgotten", short(d.Token), d.Name)
+				s.cfg.Logf("push: %s is gone, forgotten", d.label())
 				s.devices.remove(d.Token)
 			case err != nil:
-				s.cfg.Logf("push: %s (%s, %s): %v", short(d.Token), d.Name, service(d.Sandbox), err)
+				s.cfg.Logf("push: %s · %s → %s: %v", in.name, ev.Agent, d.label(), err)
 			default:
-				s.cfg.Logf("push: %s · %s → %s (%s)", in.name, ev.Agent, d.Name, ev.Kind)
+				s.cfg.Logf("push: %s · %s → %s (%s)", in.name, ev.Agent, d.label(), ev.Kind)
 			}
-		}(d)
+		}(d, n)
 	}
+}
+
+// sessionOf is the session name of the agent in a pane ("beta:%3" for a host's), from the
+// instance's last snapshot; "" when it is not there.
+func sessionOf(snap *snapshot.Snapshot, pane string) string {
+	if snap == nil {
+		return ""
+	}
+	for _, a := range snap.Agents {
+		ref := a.PaneID
+		if a.Host != "" {
+			ref = a.Host + ":" + a.PaneID
+		}
+		if ref == pane {
+			return a.SessionName
+		}
+	}
+	return ""
 }
 
 // Notification categories the app registers actions for.
@@ -397,31 +543,44 @@ const (
 	CategoryDone       = "FLOK_DONE"       // finished or failed: Open
 )
 
-// Alert is the push for an event: the same words as [notify], plus what the app needs to act
-// (instance, pane, kind, reason) and a category for its actions.
-func Alert(instance string, ev wire.Event, badge int) apns.Notification {
-	agent := ev.Agent
+// Alert is the push for an event, worded like the sidebar: the agent as the title, where it runs
+// as the subtitle (instance, host, session), its state with the sidebar's glyph as the body. The
+// data carries what the app and its extensions act on (instance, pane, kind, reason, push_kind,
+// session); the category picks the actions. Sound and interruption level are the defaults
+// here; event sets each phone's own (Prefs).
+func Alert(instance string, ev wire.Event, badge int, session string) apns.Notification {
+	where := instance
 	if ev.Host != "" {
-		agent = ev.Host + "/" + ev.Agent
+		where += " / " + ev.Host
 	}
-	n := apns.Notification{Title: instance + " · " + agent, ThreadID: instance, CollapseID: instance + ":" + ev.Pane, Sound: "default", Badge: &badge,
-		Data: map[string]any{"instance": instance, "pane": ev.Pane, "kind": ev.Kind, "reason": ev.Reason, "agent": ev.Agent, "host": ev.Host}}
-	switch ev.Kind {
-	case "blocked":
-		n.TimeSensitive = true
-		reason := strings.TrimPrefix(ev.Reason, "permission:")
-		switch {
-		case strings.HasPrefix(ev.Reason, "permission"):
-			n.Body, n.Category = "needs you: perm:"+reason, CategoryPermission
-		case ev.Reason != "":
-			n.Body, n.Category = "needs you: "+ev.Reason, CategoryQuestion
-		default:
-			n.Body, n.Category = "needs you", CategoryQuestion
+	if session != "" {
+		where += " · " + session
+	}
+	title := ev.Agent
+	if title == "" {
+		title = ev.Pane
+	}
+	kind := PushKind(ev)
+	var defaults *Prefs
+	n := apns.Notification{Title: title, Subtitle: where, ThreadID: instance, CollapseID: instance + ":" + ev.Pane, Badge: &badge, Mutable: true,
+		Sound: defaults.Sound(kind), TimeSensitive: defaults.TimeSensitive(kind),
+		Data: map[string]any{"instance": instance, "pane": ev.Pane, "kind": ev.Kind, "reason": ev.Reason, "agent": ev.Agent, "host": ev.Host,
+			"session": session, "push_kind": kind}}
+	switch kind {
+	case KindPermission:
+		n.Body, n.Category = "● needs you: perm", CategoryPermission
+		if tool := strings.TrimPrefix(strings.TrimPrefix(ev.Reason, "permission"), ":"); tool != "" {
+			n.Body += ":" + tool
 		}
-	case "error":
-		n.Body, n.Category = "failed", CategoryDone
+	case KindQuestion:
+		n.Body, n.Category = "● needs you", CategoryQuestion
+		if ev.Reason != "" {
+			n.Body += ": " + ev.Reason
+		}
+	case KindError:
+		n.Body, n.Category = "✗ failed", CategoryDone
 	default:
-		n.Body, n.Category = "finished", CategoryDone
+		n.Body, n.Category = "✓ done", CategoryDone
 	}
 	return n
 }
@@ -572,6 +731,9 @@ func (s *Server) handleAppWS(w http.ResponseWriter, r *http.Request) {
 			case f.On && !a.subs[key]:
 				a.subs[key] = true
 				s.subscribeLocked(f.Instance, f.Pane)
+				if sc, ok := s.instances[f.Instance].screens[f.Pane]; ok { // someone else looks already
+					a.send(wire.Frame{Type: wire.TypeScreen, Instance: f.Instance, Screen: &sc})
+				}
 			case !f.On && a.subs[key]:
 				delete(a.subs, key)
 				s.unsubscribeLocked(f.Instance, f.Pane)
@@ -629,6 +791,7 @@ func (s *Server) unsubscribeLocked(name, pane string) {
 	in.subs[pane]--
 	if in.subs[pane] == 0 {
 		delete(in.subs, pane)
+		delete(in.screens, pane)
 		if in.online {
 			select {
 			case in.out <- wire.Frame{Type: wire.TypeSubscribe, Pane: pane, On: false}:
@@ -644,13 +807,14 @@ type deviceReq struct {
 	Token   string `json:"token"`
 	Name    string `json:"name,omitempty"`
 	Sandbox bool   `json:"sandbox,omitempty"`
+	Prefs   *Prefs `json:"prefs,omitempty"`
 }
 
 func (s *Server) handleDevicesList(w http.ResponseWriter, r *http.Request) {
 	list := s.devices.list()
 	out := make([]map[string]any, 0, len(list))
 	for _, d := range list {
-		out = append(out, map[string]any{"token": short(d.Token), "name": d.Name, "sandbox": d.Sandbox, "added": d.Added})
+		out = append(out, map[string]any{"token": short(d.Token), "name": d.Name, "sandbox": d.Sandbox, "added": d.Added, "prefs": d.Prefs})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"devices": out, "push": s.cfg.Push != nil})
 }
@@ -661,12 +825,130 @@ func (s *Server) handleDeviceAdd(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "a device token is needed"})
 		return
 	}
-	if err := s.devices.add(device{Token: req.Token, Name: req.Name, Sandbox: req.Sandbox, Added: time.Now()}); err != nil {
+	if !req.Prefs.valid() {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "prefs: unknown kind or sound, or a mute without instance and agent"})
+		return
+	}
+	req.Prefs.prune(time.Now())
+	d := device{Token: req.Token, Name: req.Name, Sandbox: req.Sandbox, Added: time.Now(), Prefs: req.Prefs}
+	if err := s.devices.add(d); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 		return
 	}
-	s.cfg.Logf("device %s (%s) registered, %s", short(req.Token), req.Name, service(req.Sandbox))
+	s.cfg.Logf("device %s registered", d.label())
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "push": s.cfg.Push != nil})
+}
+
+// handleDevicePrefs replaces a phone's notification settings (the app sends them whole).
+func (s *Server) handleDevicePrefs(w http.ResponseWriter, r *http.Request) {
+	var p Prefs
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&p); err != nil || !p.valid() {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "prefs: not JSON, an unknown kind or sound, or a mute without instance and agent"})
+		return
+	}
+	p.prune(time.Now())
+	tok := r.PathValue("token")
+	found, err := s.devices.setPrefs(tok, &p)
+	switch {
+	case !found:
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": "no such device"})
+		return
+	case err != nil:
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return
+	}
+	s.cfg.Logf("device %s: notification settings, %d kinds set, %d mutes", short(tok), len(p.Kinds), len(p.Mutes))
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+type activityReq struct {
+	Start      string     `json:"start_token,omitempty"`
+	Activities []Activity `json:"activities"`
+}
+
+// handleDeviceActivity takes a phone's Live Activity tokens (sent whole): its push-to-start
+// token and the activities running, overview or agent, with their update tokens.
+func (s *Server) handleDeviceActivity(w http.ResponseWriter, r *http.Request) {
+	var req activityReq
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&req); err != nil || len(req.Activities) > 20 || len(req.Start) > 512 {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "activity: not JSON, or too many"})
+		return
+	}
+	for _, a := range req.Activities {
+		if a.ID == "" || a.Token == "" || len(a.Token) > 512 || (a.Kind != liveOverview && a.Kind != liveAgent) || (a.Kind == liveAgent && (a.Instance == "" || a.Pane == "")) {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "activity: id, token and kind (overview, or agent with instance and pane) are needed"})
+			return
+		}
+	}
+	tok := r.PathValue("token")
+	found, err := s.devices.setActivities(tok, req.Start, req.Activities)
+	switch {
+	case !found:
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": "no such device"})
+		return
+	case err != nil:
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return
+	}
+	s.mu.Lock()
+	delete(s.liveStarted, tok) // the phone answered: what it runs is known now
+	s.liveSoonLocked()         // a new activity gets the current state at once
+	s.mu.Unlock()
+	s.cfg.Logf("device %s: %d live activities, start token %v", short(tok), len(req.Activities), req.Start != "")
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// ScreenWait bounds how long GET /api/screen waits for an instance to send the screen.
+var ScreenWait = 4 * time.Second
+
+// handleScreen is one look at a pane, for a caller without a live stream (the notification's
+// expanded view): it subscribes like an app, answers with the first screen (or the one another
+// app's subscription already holds) and lets go.
+func (s *Server) handleScreen(w http.ResponseWriter, r *http.Request) {
+	inst, pane := r.URL.Query().Get("instance"), r.URL.Query().Get("pane")
+	if inst == "" || pane == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "instance and pane are needed"})
+		return
+	}
+	key := [2]string{inst, pane}
+	a := &app{out: make(chan wire.Frame, 16), subs: map[[2]string]bool{key: true}}
+	s.mu.Lock()
+	in := s.instances[inst]
+	if in == nil || !in.online {
+		s.mu.Unlock()
+		writeJSON(w, http.StatusBadGateway, map[string]any{"error": inst + " is offline"})
+		return
+	}
+	s.apps[a] = struct{}{}
+	s.subscribeLocked(inst, pane)
+	cached, ok := in.screens[pane]
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		delete(s.apps, a)
+		s.unsubscribeLocked(inst, pane)
+		s.mu.Unlock()
+	}()
+	if ok {
+		writeJSON(w, http.StatusOK, map[string]any{"pane": pane, "text": cached.Text})
+		return
+	}
+	timeout := time.NewTimer(ScreenWait)
+	defer timeout.Stop()
+	for {
+		select {
+		case f := <-a.out:
+			if f.Type == wire.TypeScreen && f.Screen != nil && f.Instance == inst && f.Screen.Pane == pane {
+				writeJSON(w, http.StatusOK, map[string]any{"pane": pane, "text": f.Screen.Text})
+				return
+			}
+		case <-timeout.C:
+			writeJSON(w, http.StatusGatewayTimeout, map[string]any{"error": "no screen from " + inst + " in time"})
+			return
+		case <-r.Context().Done():
+			return
+		}
+	}
 }
 
 func (s *Server) handleDeviceRemove(w http.ResponseWriter, r *http.Request) {
@@ -675,7 +957,18 @@ func (s *Server) handleDeviceRemove(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]any{"error": "no such device"})
 		return
 	}
+	s.cfg.Logf("device %s removed", short(tok))
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// label names a device in the log: its name, the start of its token and its APNs service, so
+// two registrations of one phone (an Xcode and a TestFlight build) tell apart.
+func (d device) label() string {
+	name := d.Name
+	if name == "" {
+		name = "device"
+	}
+	return name + " " + short(d.Token) + " " + service(d.Sandbox)
 }
 
 // service names the APNs service a device's token belongs to, for the log.

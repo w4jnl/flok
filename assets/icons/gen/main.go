@@ -11,7 +11,11 @@
 // committed PNGs come from this renderer (`make icons`), which follows the designer's masters
 // (assets/brand/flok-mark.svg, flok-mark-dot.svg).
 //
-//	go run ./assets/icons/gen assets/icons
+// With a second directory it also writes the phone's notification thumbnails there: the waiting
+// icon's composition in colour, a full tile in a state colour of the brand palette with the bird
+// and the cursor in white (tile-attention.png for anything that wants you, tile-done.png).
+//
+//	go run ./assets/icons/gen assets/icons app/ios/FlokNotificationService/Tiles
 package main
 
 import (
@@ -165,10 +169,55 @@ func mark(px int, waiting bool) canvas {
 	return c
 }
 
+// tile is a notification thumbnail at px pixels per side: a rounded tile in fill with the bird
+// and the cursor of the waiting icon in white.
+func tile(px int, fill color.NRGBA) *image.NRGBA {
+	shape, ink := newCanvas(px), newCanvas(px)
+	shape.roundRect(0, 0, box, box, 10)
+	ink.chevron(22, 15.6, 8.6, 8.3, 5.7)
+	ink.bar(15.4, 30.1, 13.2, 4.2)
+	out := image.NewNRGBA(image.Rect(0, 0, px, px))
+	mix := func(c uint8, k float64) uint8 { return uint8(math.Round(float64(c)*(1-k) + 255*k)) }
+	for y := 0; y < px; y++ {
+		for x := 0; x < px; x++ {
+			a, k := shape.NRGBAAt(x, y).A, float64(ink.NRGBAAt(x, y).A)/255
+			if a == 0 {
+				continue
+			}
+			out.SetNRGBA(x, y, color.NRGBA{mix(fill.R, k), mix(fill.G, k), mix(fill.B, k), a})
+		}
+	}
+	return out
+}
+
+// The brand palette's state colours (assets/brand/README.md).
+var (
+	attention = color.NRGBA{0xE8, 0x96, 0x3C, 0xFF} // blocked: attention
+	done      = color.NRGBA{0x5F, 0xC4, 0x7A, 0xFF} // done: success
+)
+
+func writePNG(path string, img image.Image) {
+	f, err := os.Create(path)
+	if err == nil {
+		err = png.Encode(f, img)
+		if cerr := f.Close(); err == nil {
+			err = cerr
+		}
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
 func main() {
 	dir := "."
 	if len(os.Args) > 1 {
 		dir = os.Args[1]
+	}
+	if len(os.Args) > 2 {
+		writePNG(filepath.Join(os.Args[2], "tile-attention.png"), tile(180, attention))
+		writePNG(filepath.Join(os.Args[2], "tile-done.png"), tile(180, done))
 	}
 	for suffix, px := range map[string]int{"": 22, "@2x": 44, "@3x": 66} {
 		for name, waiting := range map[string]bool{"flok": false, "flok-dot": true} {

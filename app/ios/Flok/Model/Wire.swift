@@ -18,6 +18,7 @@ enum Wire {
     static let encoder: JSONEncoder = {
         let e = JSONEncoder()
         e.keyEncodingStrategy = .convertToSnakeCase
+        e.dateEncodingStrategy = .iso8601 // RFC 3339, as Go reads it (a mute's until)
         return e
     }()
 
@@ -194,4 +195,5 @@ struct DeviceBody: Encodable, Sendable {
     var token: String
     var name: String
     var sandbox: Bool
+    var prefs: NotificationPrefs?
 }

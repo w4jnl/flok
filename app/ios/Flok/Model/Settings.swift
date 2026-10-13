@@ -1,6 +1,8 @@
-// What the app remembers: the relay, the device token, the screen font. The simulator can be
-// pointed at a relay without touching the UI: `simctl launch … nl.w4j.flok -relayURL https://…
-// -deviceToken …` (launch arguments land in UserDefaults).
+// What the app remembers: the relay, the device token, the screen font, the notification
+// settings. The simulator can be pointed at a relay without touching the UI: `simctl launch …
+// nl.w4j.flok -relayURL https://… -deviceToken …` (launch arguments land in UserDefaults). The
+// relay's address and the token are mirrored into the shared keychain group for the expanded
+// notification.
 import Foundation
 import Observation
 
@@ -9,12 +11,16 @@ import Observation
 final class Settings {
     static let shared = Settings()
 
-    var relayURL: String { didSet { defaults.set(relayURL, forKey: "relayURL") } }
+    var relayURL: String { didSet { defaults.set(relayURL, forKey: "relayURL"); Keychain.set(relayURL, for: "relayURL") } }
     var deviceToken: String { didSet { Keychain.set(deviceToken, for: "deviceToken") } }
     var fontSize: Double { didSet { defaults.set(fontSize, forKey: "fontSize") } }
     var wrapLines: Bool { didSet { defaults.set(wrapLines, forKey: "wrapLines") } }
     /// "<relay>|<apns token>" of the last device registration, so it is not repeated at every start.
     var registered: String? { didSet { defaults.set(registered, forKey: "registered") } }
+    /// What this phone wants pushed; Relay.updatePrefs changes it and tells the relay.
+    var notificationPrefs: NotificationPrefs {
+        didSet { defaults.set(try? JSONEncoder().encode(notificationPrefs), forKey: "notificationPrefs") }
+    }
 
     private let defaults = UserDefaults.standard
 
@@ -24,38 +30,13 @@ final class Settings {
         fontSize = defaults.object(forKey: "fontSize") as? Double ?? 11
         wrapLines = defaults.bool(forKey: "wrapLines")
         registered = defaults.string(forKey: "registered")
+        notificationPrefs = defaults.data(forKey: "notificationPrefs").flatMap { try? JSONDecoder().decode(NotificationPrefs.self, from: $0) } ?? NotificationPrefs()
+        // Saved again at every start: an item from a build before the shared keychain group moves
+        // into it, and the extension finds the relay even when only the token was in the keychain.
+        Keychain.set(deviceToken, for: "deviceToken")
+        Keychain.set(relayURL, for: "relayURL")
     }
 
     var isConfigured: Bool { baseURL != nil && !deviceToken.isEmpty }
     var baseURL: URL? { RelayURL.base(relayURL) }
-}
-
-enum RelayURL {
-    /// The relay's base URL from what the user typed: a bare host gets https://, a trailing
-    /// slash, /link or /api/ws is dropped. nil when it is not a URL.
-    static func base(_ typed: String) -> URL? {
-        var s = typed.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !s.isEmpty else { return nil }
-        if !s.contains("://") { s = "https://" + s }
-        s = s.replacingOccurrences(of: "wss://", with: "https://").replacingOccurrences(of: "ws://", with: "http://")
-        guard var c = URLComponents(string: s), let host = c.host, !host.isEmpty else { return nil }
-        var path = c.path
-        for suffix in ["/api/ws", "/link"] where path.hasSuffix(suffix) {
-            path.removeLast(suffix.count)
-        }
-        while path.hasSuffix("/") { path.removeLast() }
-        c.path = path
-        c.query = nil
-        return c.url
-    }
-
-    /// The app's live stream for a base URL.
-    static func websocket(_ base: URL) -> URL {
-        var c = URLComponents(url: base, resolvingAgainstBaseURL: false)!
-        c.scheme = c.scheme == "http" ? "ws" : "wss"
-        c.path += "/api/ws"
-        return c.url!
-    }
-
-    static func api(_ base: URL, _ path: String) -> URL { base.appending(path: path) }
 }

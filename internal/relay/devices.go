@@ -16,6 +16,20 @@ type device struct {
 	Name    string    `json:"name,omitempty"`
 	Sandbox bool      `json:"sandbox,omitempty"`
 	Added   time.Time `json:"added"`
+	Prefs   *Prefs    `json:"prefs,omitempty"` // what the phone wants pushed; nil = everything
+	// Live Activities (Dynamic Island, Lock Screen): the token that starts one by push, and
+	// the ones running with their own update tokens; the app reports both (PUT …/activity).
+	ActivityStart string     `json:"activity_start,omitempty"`
+	Activities    []Activity `json:"activities,omitempty"`
+}
+
+// Activity is one Live Activity on a phone.
+type Activity struct {
+	ID       string `json:"id"`
+	Token    string `json:"token"`              // its update token
+	Kind     string `json:"kind"`               // overview | agent
+	Instance string `json:"instance,omitempty"` // agent: which one it follows
+	Pane     string `json:"pane,omitempty"`
 }
 
 // deviceStore keeps the devices in devices.json under the data dir (in memory without one).
@@ -68,6 +82,10 @@ func (ds *deviceStore) add(d device) error {
 	old, had := ds.byTk[d.Token]
 	if had {
 		d.Added = old.Added
+		if d.Prefs == nil { // a registration without settings (curl) keeps the phone's
+			d.Prefs = old.Prefs
+		}
+		d.ActivityStart, d.Activities = old.ActivityStart, old.Activities
 	}
 	ds.byTk[d.Token] = d
 	if err := ds.saveLocked(); err != nil { // a device the file does not hold is not registered
@@ -79,6 +97,64 @@ func (ds *deviceStore) add(d device) error {
 		return err
 	}
 	return nil
+}
+
+// setPrefs replaces a device's settings; false when the token is not registered.
+func (ds *deviceStore) setPrefs(tok string, p *Prefs) (bool, error) {
+	ds.mu.Lock()
+	defer ds.mu.Unlock()
+	old, ok := ds.byTk[tok]
+	if !ok {
+		return false, nil
+	}
+	d := old
+	d.Prefs = p
+	ds.byTk[tok] = d
+	if err := ds.saveLocked(); err != nil {
+		ds.byTk[tok] = old
+		return true, err
+	}
+	return true, nil
+}
+
+// setActivities replaces a device's Live Activity tokens; false when it is not registered.
+func (ds *deviceStore) setActivities(tok, start string, list []Activity) (bool, error) {
+	return ds.update(tok, func(d *device) { d.ActivityStart, d.Activities = start, list })
+}
+
+// dropActivity forgets one activity (ended, or its token refused); start = "" drops none of
+// the start token, start = the token clears it.
+func (ds *deviceStore) dropActivity(tok, activityToken, start string) {
+	_, _ = ds.update(tok, func(d *device) {
+		kept := d.Activities[:0:0]
+		for _, a := range d.Activities {
+			if a.Token != activityToken {
+				kept = append(kept, a)
+			}
+		}
+		d.Activities = kept
+		if start != "" && d.ActivityStart == start {
+			d.ActivityStart = ""
+		}
+	})
+}
+
+func (ds *deviceStore) update(tok string, change func(*device)) (bool, error) {
+	ds.mu.Lock()
+	defer ds.mu.Unlock()
+	old, ok := ds.byTk[tok]
+	if !ok {
+		return false, nil
+	}
+	d := old
+	d.Activities = append([]Activity(nil), old.Activities...)
+	change(&d)
+	ds.byTk[tok] = d
+	if err := ds.saveLocked(); err != nil {
+		ds.byTk[tok] = old
+		return true, err
+	}
+	return true, nil
 }
 
 func (ds *deviceStore) remove(tok string) bool {

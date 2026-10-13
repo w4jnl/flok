@@ -20,7 +20,7 @@ import (
 )
 
 func main() {
-	mode := flag.String("mode", "ntfy", "ntfy: Title|Priority|Authorization|body; apns: path|collapse|title|body|category|badge")
+	mode := flag.String("mode", "ntfy", "ntfy: Title|Priority|Authorization|body; apns: path|collapse|title|body|category|badge|subtitle|sound|interruption-level|push-type")
 	logPath := flag.String("log", "", "file to append one line per POST to")
 	portFile := flag.String("portfile", "", "file to write the chosen port to once listening")
 	listen := flag.String("listen", "127.0.0.1:0", "address to listen on")
@@ -50,11 +50,14 @@ func main() {
 			var p struct {
 				APS struct {
 					Alert struct {
-						Title string `json:"title"`
-						Body  string `json:"body"`
+						Title    string `json:"title"`
+						Subtitle string `json:"subtitle"`
+						Body     string `json:"body"`
 					} `json:"alert"`
 					Category string `json:"category"`
 					Badge    *int   `json:"badge"`
+					Sound    string `json:"sound"`
+					Level    string `json:"interruption-level"`
 				} `json:"aps"`
 			}
 			_ = json.Unmarshal(body, &p)
@@ -62,7 +65,8 @@ func main() {
 			if p.APS.Badge != nil {
 				badge = fmt.Sprint(*p.APS.Badge)
 			}
-			line = strings.Join([]string{r.URL.Path, r.Header.Get("apns-collapse-id"), p.APS.Alert.Title, p.APS.Alert.Body, p.APS.Category, badge}, "|")
+			line = strings.Join([]string{r.URL.Path, r.Header.Get("apns-collapse-id"), p.APS.Alert.Title, p.APS.Alert.Body, p.APS.Category, badge,
+				p.APS.Alert.Subtitle, p.APS.Sound, p.APS.Level, r.Header.Get("apns-push-type")}, "|")
 		default:
 			title := r.Header.Get("Title")
 			if t, err := dec.DecodeHeader(title); err == nil { // RFC 2047, as ntfy reads it

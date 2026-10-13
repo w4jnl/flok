@@ -5,7 +5,7 @@ import UIKit
 enum StateStyle {
     static func glyph(_ s: AgentState) -> String {
         switch s {
-        case .working: "●"
+        case .working: "◐" // StateGlyph turns it
         case .blocked: "●"
         case .done: "✓"
         case .paused: "◍"
@@ -39,6 +39,30 @@ enum StateStyle {
         case .idle: return "idle"
         case .unknown: return ""
         }
+    }
+}
+
+/// A state's glyph; a working agent's turns like the sidebar's spinner (◐ ◓ ◑ ◒, a quarter every
+/// 250 ms, the sidebar's spinner_ms default), and stands still with Reduce Motion.
+struct StateGlyph: View {
+    let state: AgentState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    static let frames = ["◐", "◓", "◑", "◒"]
+    static let frameTime = 0.25
+
+    var body: some View {
+        if state == .working && !reduceMotion {
+            TimelineView(.periodic(from: .now, by: Self.frameTime)) { ctx in
+                Text(Self.frame(at: ctx.date))
+            }
+        } else {
+            Text(StateStyle.glyph(state))
+        }
+    }
+
+    static func frame(at date: Date) -> String {
+        frames[Int(date.timeIntervalSinceReferenceDate / frameTime) % frames.count]
     }
 }
 

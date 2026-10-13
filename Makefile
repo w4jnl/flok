@@ -25,6 +25,13 @@ relay-image:
 # flok for iPhone (app/ios): the Xcode project is generated (brew install xcodegen); the
 # simulator build and tests need no signing.
 IOS_SIM ?= platform=iOS Simulator,name=iPhone 15
+# The App Store Connect API key from Local.xcconfig (FLOK_ASC_KEY_ID, FLOK_ASC_ISSUER_ID) signs in
+# for signing and uploads instead of Xcode's account; without one, Xcode's account is used.
+ios_conf = $(shell sed -n 's/^$(1)[[:space:]]*=[[:space:]]*//p' app/ios/Local.xcconfig 2>/dev/null)
+ASC_KEY_ID ?= $(call ios_conf,FLOK_ASC_KEY_ID)
+ASC_ISSUER_ID ?= $(call ios_conf,FLOK_ASC_ISSUER_ID)
+ASC_KEY_PATH ?= $(HOME)/.appstoreconnect/private_keys/AuthKey_$(ASC_KEY_ID).p8
+ASC_AUTH = $(if $(ASC_KEY_ID),-authenticationKeyPath '$(ASC_KEY_PATH)' -authenticationKeyID $(ASC_KEY_ID) -authenticationKeyIssuerID $(ASC_ISSUER_ID))
 ios-project:
 	@[ -f app/ios/Local.xcconfig ] || printf 'FLOK_TEAM_ID =\nFLOK_ENTITLEMENTS = Flok/Flok.entitlements\n' > app/ios/Local.xcconfig
 	cd app/ios && xcodegen generate
@@ -36,16 +43,17 @@ ios-test: ios-project
 ios-device: ios-project
 	@udid=$$(xcrun devicectl list devices 2>/dev/null | grep -v simulated | grep -E ' connected | available \(paired\) ' | grep -oE '[0-9A-F]{8}-[0-9A-F]{16}' | head -1); \
 	[ -n "$$udid" ] || { echo "ios-device: no iPhone reachable: unlock it, on a cable or on the same Wi-Fi (a locked or absent phone shows as unavailable)"; exit 1; }; \
-	cd app/ios && xcodebuild -project Flok.xcodeproj -scheme Flok -configuration Debug -destination "id=$$udid" -derivedDataPath build/DerivedData -allowProvisioningUpdates build -quiet && \
+	cd app/ios && xcodebuild -project Flok.xcodeproj -scheme Flok -configuration Debug -destination "id=$$udid" -derivedDataPath build/DerivedData -allowProvisioningUpdates $(ASC_AUTH) build -quiet && \
 	xcrun devicectl device install app --device "$$udid" build/DerivedData/Build/Products/Debug-iphoneos/Flok.app >/dev/null && \
 	xcrun devicectl device process launch --terminate-existing --device "$$udid" nl.w4j.flok >/dev/null && echo "ios-device: installed and launched on $$udid"
 
 # TestFlight: archive a Release build and upload it to App Store Connect (the app record for the
-# bundle id must exist there; ExportOptions.plist lets Xcode raise the build number).
+# bundle id must exist there; ExportOptions.plist lets Xcode raise the build number). Signs in with
+# the API key when Local.xcconfig names one.
 ios-testflight: ios-project
 	cd app/ios && rm -rf build/Flok.xcarchive build/export && \
-	xcodebuild -project Flok.xcodeproj -scheme Flok -configuration Release -destination 'generic/platform=iOS' -derivedDataPath build/DerivedData -archivePath build/Flok.xcarchive -allowProvisioningUpdates archive -quiet && \
-	xcodebuild -exportArchive -archivePath build/Flok.xcarchive -exportOptionsPlist ExportOptions.plist -exportPath build/export -allowProvisioningUpdates
+	xcodebuild -project Flok.xcodeproj -scheme Flok -configuration Release -destination 'generic/platform=iOS' -derivedDataPath build/DerivedData -archivePath build/Flok.xcarchive -allowProvisioningUpdates $(ASC_AUTH) archive -quiet && \
+	xcodebuild -exportArchive -archivePath build/Flok.xcarchive -exportOptionsPlist ExportOptions.plist -exportPath build/export -allowProvisioningUpdates $(ASC_AUTH)
 
 # The menu bar companion is the only cgo binary (fyne.io/systray), macOS only.
 build-bar:
@@ -60,7 +68,7 @@ bundle-bar: build-bar
 	codesign --force --sign - dist/$(BIN)-bar.app
 
 icons:
-	go run ./assets/icons/gen assets/icons
+	go run ./assets/icons/gen assets/icons app/ios/FlokNotificationService/Tiles
 
 install: build
 	mkdir -p $(PREFIX)/bin

@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import Testing
 @testable import Flok
 
@@ -60,11 +61,22 @@ struct URLTests {
 }
 
 struct NotificationTests {
+    @Test func aNewTokenTakesTheOldOneOut() {
+        let relay = "https://flok.example.net"
+        #expect(Relay.replacedToken("\(relay)|aaaa1111", relayURL: relay, now: "bbbb2222") == "aaaa1111", "TestFlight replaced the Xcode build")
+        #expect(Relay.replacedToken("\(relay)|aaaa1111", relayURL: relay, now: "aaaa1111") == nil, "the same token stays")
+        #expect(Relay.replacedToken("https://other.example|aaaa1111", relayURL: relay, now: "bbbb2222") == nil, "another relay's list is not ours")
+        #expect(Relay.replacedToken(nil, relayURL: relay, now: "bbbb2222") == nil)
+        #expect(Relay.replacedToken("garbage", relayURL: relay, now: "bbbb2222") == nil)
+    }
+
     @Test func actionsTypeTheRightKeys() {
         #expect(NotificationAction.approve.keys == ["Enter"])
         #expect(NotificationAction.deny.keys == ["Escape"])
-        #expect(NotificationAction.seen.keys == nil)
-        #expect(NotificationCategory.permission.actions.map(\.identifier) == ["APPROVE", "DENY"])
+        #expect(NotificationAction.seen.keys == nil && NotificationAction.mute.keys == nil)
+        #expect(NotificationCategory.permission.actions.map(\.identifier) == ["APPROVE", "DENY", "MUTE_1H"])
+        #expect(NotificationCategory.question.actions.map(\.identifier) == ["MUTE_1H"])
+        #expect(NotificationCategory.done.actions.map(\.identifier) == ["SEEN", "MUTE_1H"])
         #expect(Set(NotificationCategory.all.map(\.identifier)) == ["FLOK_PERMISSION", "FLOK_QUESTION", "FLOK_DONE"])
     }
 
@@ -73,5 +85,184 @@ struct NotificationTests {
         #expect(elapsed(since: t0, now: t0.addingTimeInterval(65)) == "1:05")
         #expect(elapsed(since: t0, now: t0.addingTimeInterval(3725)) == "1:02:05")
         #expect(elapsed(since: nil) == "")
+    }
+}
+
+struct PushTests {
+    @Test func readsWhatTheRelaySends() throws {
+        let p = try #require(PushPayload(["instance": "Home", "pane": "macmini:%1", "agent": "docker", "host": "macmini", "session": "infra",
+                                          "kind": "blocked", "reason": "permission:Bash", "push_kind": "permission"]))
+        #expect(p.place == "Home / macmini · infra")
+        #expect(p.glyph == "●" && p.label == "needs you: perm:Bash" && p.answerable && p.tileName == "tile-attention")
+        #expect(PushPayload(["pane": "%1"]) == nil, "no instance, not a flok push")
+    }
+
+    @Test func anOlderRelayWithoutPushKindIsSortedTheSameWay() throws {
+        #expect(PushPayload(["instance": "Home", "pane": "%1", "kind": "blocked", "reason": "question"])?.pushKind == "question")
+        #expect(PushPayload(["instance": "Home", "pane": "%1", "kind": "blocked", "reason": "permission"])?.label == "needs you: perm")
+        let failed = try #require(PushPayload(["instance": "Home", "pane": "%1", "kind": "error"]))
+        #expect(failed.glyph == "✗" && failed.label == "failed" && !failed.answerable && failed.wantsYou)
+        let done = try #require(PushPayload(["instance": "Home", "pane": "%1", "kind": "done"]))
+        #expect(done.glyph == "✓" && done.tileName == "tile-done" && done.place == "Home")
+    }
+
+    @Test func theCardShowsTheBottomOfTheScreen() {
+        let screen = "line 1\nline 2   \n❯ Allow Bash?\n  1. Yes\n  2. No\n\n\n"
+        #expect(NotificationCard.tail(screen, lines: 3) == "❯ Allow Bash?\n  1. Yes\n  2. No")
+        #expect(NotificationCard.tail("", lines: 3) == "")
+    }
+
+    /// Renders the card for a look by eye: TEST_RUNNER_FLOK_CARD_PNG=/path xcodebuild test …
+    @MainActor @Test func rendersTheCard() throws {
+        guard let path = ProcessInfo.processInfo.environment["FLOK_CARD_PNG"] else { return }
+        let push = PushPayload(instance: "Home", pane: "%36", agent: "dotfiles-revamp", host: "", session: "dotfiles", kind: "blocked", reason: "permission:Bash")
+        let screen = "● Bash(yadm pull --rebase)\n  ⎿  Running…\n\n╭──────────────────────────────╮\n│ Bash command                 │\n│   yadm pull --rebase         │\n│ Do you want to proceed?      │\n│ ❯ 1. Yes                     │\n│   2. Yes, and don't ask again │\n│   3. No, and tell Claude …   │\n╰──────────────────────────────╯\n"
+        let card = NotificationCard(push: push, screen: .text(screen), status: "sent ↵").frame(width: 390)
+        let r = ImageRenderer(content: card)
+        r.scale = 3
+        let image = try #require(r.uiImage)
+        try #require(image.pngData()).write(to: URL(fileURLWithPath: path))
+    }
+}
+
+struct PrefsTests {
+    @Test func kindsBackAtTheirDefaultsAreDropped() {
+        var p = NotificationPrefs()
+        p.setOn(.done, false)
+        p.setSound(.question, .none)
+        p.setTimeSensitive(.permission, false)
+        #expect(!p.isOn(.done) && p.sound(.question) == .none && !p.timeSensitive(.permission) && p.timeSensitive(.question))
+        p.setOn(.done, true)
+        p.setSound(.question, .flok)
+        p.setTimeSensitive(.permission, true)
+        #expect(p.kinds.isEmpty, "all back to the defaults: nothing left to store")
+    }
+
+    @Test func mutesMatchByInstanceHostAndName() {
+        var p = NotificationPrefs()
+        let now = Date()
+        p.mute(instance: "Home", host: "macmini", agent: "docker", until: now.addingTimeInterval(3600))
+        p.mute(instance: "Home", host: nil, agent: "api", until: nil)
+        #expect(p.mute(instance: "Home", host: "macmini", agent: "docker", now: now) != nil)
+        #expect(p.mute(instance: "Home", host: "", agent: "docker", now: now) == nil, "the local docker is another agent")
+        #expect(p.mute(instance: "Home", host: "", agent: "api", now: now) != nil)
+        #expect(p.mute(instance: "Home", host: "macmini", agent: "docker", now: now.addingTimeInterval(7200)) == nil, "expired")
+        p.mute(instance: "Home", host: "macmini", agent: "docker", until: nil)
+        #expect(p.mutes.count == 2, "muting again replaces the earlier mute")
+        p.unmute(instance: "Home", host: "macmini", agent: "docker")
+        #expect(p.mutes.count == 1)
+    }
+
+    @Test func encodesTheWayTheRelayReadsThem() throws {
+        var p = NotificationPrefs()
+        p.setTimeSensitive(.question, false)
+        p.mute(instance: "Home", host: "macmini", agent: "docker", until: Date(timeIntervalSince1970: 1_791_000_000))
+        let json = String(decoding: try Wire.encoder.encode(p), as: UTF8.self)
+        #expect(json.contains(#""time_sensitive":false"#))
+        #expect(json.contains(#""until":"2026-10-03T"#), "RFC 3339, what Go's time parses")
+        #expect(json.contains(#""host":"macmini""#) && json.contains(#""agent":"docker""#))
+    }
+
+    @Test func nextMorningIsTheComingEightOClock() {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "Europe/Amsterdam")!
+        func at(_ day: Int, _ hour: Int, _ minute: Int = 0) -> Date { cal.date(from: DateComponents(year: 2026, month: 10, day: day, hour: hour, minute: minute))! }
+        #expect(NotificationPrefs.nextMorning(from: at(12, 23, 30), calendar: cal) == at(13, 8), "in the evening: tomorrow")
+        #expect(NotificationPrefs.nextMorning(from: at(13, 0, 40), calendar: cal) == at(13, 8), "after midnight: this morning, not the day after")
+        #expect(NotificationPrefs.nextMorning(from: at(13, 7, 30), calendar: cal) == at(14, 8), "less than an hour before: the next day")
+        #expect(NotificationPrefs.untilWords(at(13, 8), now: at(13, 0, 40), calendar: cal).hasPrefix("tomorrow") == false)
+        #expect(NotificationPrefs.untilWords(at(14, 8), now: at(13, 7, 30), calendar: cal).hasPrefix("tomorrow "))
+    }
+
+    @Test func anEndedMuteIsDroppedAndTheNextEndIsKnown() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        var p = NotificationPrefs()
+        p.mute(instance: "Home", host: nil, agent: "flok", until: now.addingTimeInterval(-60))
+        p.mute(instance: "Home", host: nil, agent: "api", until: now.addingTimeInterval(3600))
+        p.mute(instance: "Home", host: nil, agent: "docs", until: nil)
+        #expect(p.mute(instance: "Home", host: nil, agent: "flok", now: now) == nil, "ended at its time")
+        #expect(p.hasExpired(now: now))
+        #expect(p.nextExpiry(after: now) == now.addingTimeInterval(3600))
+        p.prune(now: now)
+        #expect(p.mutes.map(\.agent) == ["api", "docs"])
+        #expect(!p.hasExpired(now: now))
+    }
+
+    @Test func theSpinnerTurnsAQuarterEveryFrame() {
+        let t0 = Date(timeIntervalSinceReferenceDate: 1000)
+        let frames = (0..<5).map { StateGlyph.frame(at: t0.addingTimeInterval(Double($0) * StateGlyph.frameTime)) }
+        #expect(frames == ["◐", "◓", "◑", "◒", "◐"])
+    }
+}
+
+struct SeenTests {
+    @Test func waitingIsUnseenOrBlocked() throws {
+        let json = """
+        {"type":"instances","instances":[{"name":"Home","online":true,"since":"2026-10-13T08:00:00Z","snap":{"unseen":1,"agents":[
+          {"pane_id":"%1","session_id":"$0","session_name":"a","name":"done-unseen","kind":"claude","state":"done","unseen":1},
+          {"pane_id":"%2","session_id":"$0","session_name":"a","name":"asks-seen","kind":"claude","state":"blocked","unseen":0},
+          {"pane_id":"%3","host":"macmini","session_id":"$0","session_name":"a","name":"idle","kind":"claude","state":"idle","unseen":0}]}}]}
+        """
+        let f = try Wire.decoder.decode(Frame.self, from: Data(json.utf8))
+        #expect(Relay.waitingKeys(f.instances ?? []) == ["Home:%1", "Home:%2"], "a block waits until answered, seen or not")
+        #expect(PushPayload(["instance": "Home", "pane": "macmini:%3"])?.key == "Home:macmini:%3", "the relay's name for it")
+    }
+}
+
+struct LiveActivityTests {
+    /// What relay/live.go sends as content-state (LiveState): the names and shapes ActivityKit decodes.
+    @Test func decodesTheRelaysContentState() throws {
+        let json = #"{"working":2,"waiting":1,"done":0,"rows":[{"instance":"Home","host":"macmini","agent":"docker","pane":"macmini:%1","state":"blocked","label":"needs you: perm:Bash","since":1791100000}]}"#
+        let st = try JSONDecoder().decode(FlokActivityAttributes.ContentState.self, from: Data(json.utf8))
+        #expect(st.working == 2 && st.waiting == 1 && st.dominant == "blocked")
+        let r = try #require(st.rows.first)
+        #expect(r.place == "Home / macmini" && r.started == Date(timeIntervalSince1970: 1_791_100_000))
+        let attrs = try JSONDecoder().decode(FlokActivityAttributes.self, from: Data(#"{"kind":"overview","instance":"","pane":"","agent":""}"#.utf8))
+        #expect(attrs.kind == "overview")
+    }
+
+    @Test func overviewRanksLikeTheRelay() throws {
+        let json = """
+        {"type":"instances","instances":[
+         {"name":"Home","online":true,"since":"2026-10-13T08:00:00Z","snap":{"agents":[
+          {"pane_id":"%1","session_id":"$0","session_name":"a","name":"w-old","kind":"claude","state":"working","unseen":0,"state_since":"2026-10-13T09:00:00Z","tool":"Edit"},
+          {"pane_id":"%2","session_id":"$0","session_name":"a","name":"w-new","kind":"claude","state":"working","unseen":0,"state_since":"2026-10-13T09:05:00Z"},
+          {"pane_id":"%3","session_id":"$0","session_name":"a","name":"asks","kind":"claude","state":"blocked","reason":"permission:Bash","unseen":1,"state_since":"2026-10-13T09:07:00Z"},
+          {"pane_id":"%4","session_id":"$0","session_name":"a","name":"done-seen","kind":"claude","state":"done","unseen":0},
+          {"pane_id":"%5","session_id":"$0","session_name":"a","name":"done-unseen","kind":"claude","state":"done","unseen":1,"state_since":"2026-10-13T09:06:00Z"}]}},
+         {"name":"Office","online":false,"since":"2026-10-13T08:00:00Z","snap":{"agents":[
+          {"pane_id":"%1","session_id":"$0","session_name":"a","name":"offline","kind":"claude","state":"working","unseen":0}]}}]}
+        """
+        let f = try Wire.decoder.decode(Frame.self, from: Data(json.utf8))
+        let st = LiveActivities.overview(f.instances ?? [])
+        #expect(st.working == 2 && st.waiting == 1 && st.done == 1, "an offline instance does not count")
+        #expect(st.rows.map(\.agent) == ["asks", "done-unseen", "w-old"])
+        #expect(st.rows[0].label == "needs you: perm:Bash" && st.rows[2].label == "working", "no tool: a tool change is not a push")
+    }
+
+    @Test func linksOpenTheAgent() throws {
+        let r = LiveRow(instance: "Home", host: "macmini", agent: "docker", pane: "macmini:%1", state: "working", label: "working", since: 0)
+        let t = try #require(FlokLink.target(r.link))
+        #expect(t.instance == "Home" && t.pane == "macmini:%1")
+        #expect(FlokLink.target(URL(string: "flok://home")!) == nil)
+    }
+
+    /// Renders the Lock Screen view and the island's parts for a look by eye: TEST_RUNNER_FLOK_LIVE_PNG=/dir
+    @MainActor @Test func rendersTheActivity() throws {
+        guard let dir = ProcessInfo.processInfo.environment["FLOK_LIVE_PNG"] else { return }
+        let now = Date().timeIntervalSince1970
+        let st = FlokActivityAttributes.ContentState(working: 2, waiting: 1, done: 1, rows: [
+            LiveRow(instance: "Home", host: "", agent: "dotfiles-revamp", pane: "%36", state: "blocked", label: "needs you: perm:Bash", since: now - 95),
+            LiveRow(instance: "Home", host: "", agent: "api", pane: "%39", state: "done", label: "done", since: now - 30),
+            LiveRow(instance: "Home", host: "macmini", agent: "docker", pane: "macmini:%1", state: "working", label: "working", since: now - 724),
+        ])
+        func save<V: View>(_ v: V, _ name: String, width: CGFloat, bg: Color) throws {
+            let r = ImageRenderer(content: v.frame(width: width).background(bg))
+            r.scale = 3
+            try #require(r.uiImage?.pngData()).write(to: URL(fileURLWithPath: dir).appending(path: name))
+        }
+        try save(LiveLockScreen(attributes: .overview, state: st), "lock.png", width: 370, bg: Brand.ground)
+        try save(LiveExpandedBottom(state: st).padding(12), "expanded.png", width: 370, bg: .black)
+        try save(HStack { LiveCompactLeading(state: st); Spacer(); LiveCompactTrailing(attributes: .overview, state: st) }.padding(8), "compact.png", width: 230, bg: .black)
     }
 }

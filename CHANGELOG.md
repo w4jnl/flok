@@ -4,6 +4,40 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
+## Unreleased
+
+- **Notifications on the phone, your way.** A new Settings → Notifications page in the app
+  turns each kind (permission prompt, question, finished, failed) on or off, picks its sound
+  (flok's, the iOS default, silent) and whether it breaks through Focus, and lists the muted
+  agents. Mute an agent from its screen (1 hour, until tomorrow, always) or with **Mute 1 h** on
+  the notification; a mute survives the agent's restart. The relay holds each phone's settings
+  (`PUT /api/devices/{token}/prefs`) and decides before every push, logging what it held back.
+- **Notifications look like flok.** flok's own sounds; the agent as the title, instance / host ·
+  session under it, the sidebar's glyph and words (`● needs you: perm:Bash`, `✓ done`); a
+  state tile in the brand colours as the thumbnail; and a long press opens a flok-styled card
+  with the agent's screen as it is now (fetched from the relay, never sent through Apple) and
+  keys (1 2 3 y n ↵ esc) that answer from the notification. Time-sensitive alerts now really
+  break through Focus (the app has the entitlement).
+- **Working agents spin** in the app's list and on the agent screen, like the sidebar's ◐◓◑◒.
+- **flok in the Dynamic Island and on the Lock Screen.** A Live Activity, the phone's menu bar:
+  what works (◐), what waits on you (●) and what finished unseen (✓) over every instance, the
+  most urgent agents with their running time, in the brand's dress. The relay starts it when
+  the first agent starts working or asking, keeps it current while the app sleeps, and ends it
+  when all has been quiet for two minutes; a tap opens the agent. Follow one agent on its own
+  from its screen (⋯ → Follow in Dynamic Island); it goes away a while after the agent finished.
+  Switch the overview off in Settings → Notifications.
+- **Seen on the phone is seen.** Opening an agent in the app, or answering it (from its screen,
+  the lock screen or the notification card), marks it seen like focusing its pane in tmux. And
+  when an agent stops waiting on you anywhere, its notification leaves the Lock Screen and the
+  badge follows: the relay sends the phones a silent sync push.
+- **The app's reply row no longer overlaps itself.** The quick keys have their own row; the
+  reply row holds the fold arrow, the text field, a hide-keyboard button while typing, and send.
+- **The relay's log tells a phone's registrations apart.** Every push, failed push and
+  registration names the device, the start of its token and its Apple service
+  (`iPhone 04344cb7… production`), and the app takes the token it registered before out of the
+  relay when it registers a new one, so a TestFlight build that replaces an Xcode build leaves
+  no stale entry behind.
+
 ## 0.6.1 (2026-10-12)
 
 - **One relay for Xcode and TestFlight builds.** `flok-relay` sends each phone's pushes

@@ -45,9 +45,33 @@ entitlement, and nothing else changes.
    build installed this way is a development build and registers a sandbox token; a TestFlight
    build (`make ios-testflight`, after creating the app record for `nl.w4j.flok` in App Store
    Connect; or Product → Archive → Distribute) a production one. The relay pushes each phone through
-   the service its token belongs to, so both kinds work side by side.
+   the service its token belongs to, so both kinds work side by side. Both sign in with Xcode's
+   account, whose App Store Connect session expires now and then ("Failed to Use Accounts"); an
+   App Store Connect API key (Users and Access → Integrations, role Admin) in `Local.xcconfig`
+   (`FLOK_ASC_KEY_ID`, `FLOK_ASC_ISSUER_ID`, the `.p8` in `~/.appstoreconnect/private_keys/`)
+   takes its place.
 4. In the app: Settings → relay and device token → Save and connect → Enable notifications.
    The APNs token is handed to the relay (`/api/devices`) and shows as registered.
+
+## Notifications
+
+Settings → Notifications decides what this phone gets: each kind on or off, its sound (flok's
+two, bundled from `Flok/Sounds`, the iOS default, or silent), whether it breaks through Focus,
+and the muted agents. The relay keeps a copy per phone and filters before every push. Two
+extensions dress the push: `FlokNotificationService` adds the state tile (`Tiles/`, rendered by
+`make icons`), `FlokNotificationContent` is the expanded card (`Shared/NotificationCard.swift`,
+JetBrains Mono from `Shared/Fonts`) that fetches the screen from the relay and answers with
+keys. It reads the relay's address and the device token from the keychain group the app shares
+(`keychain-access-groups` in both entitlements), so it works once the app ran after an update.
+
+## Live Activity
+
+`FlokWidgets` is the Live Activity (Dynamic Island, Lock Screen): `Shared/FlokActivity.swift`
+holds the attributes and content the relay pushes, `Shared/LiveViews.swift` the faces.
+`Flok/LiveActivities.swift` hands the relay the push-to-start token and each activity's update
+token, starts the overview itself when the app is open and agents are busy, and follows one
+agent from its screen. A simulator build needs signing (`-allowProvisioningUpdates`, not
+`CODE_SIGNING_ALLOWED=NO`) for a token-pushed activity: ActivityKit wants the APS environment.
 
 ## What the app does, and does not
 

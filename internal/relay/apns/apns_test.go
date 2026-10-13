@@ -57,8 +57,8 @@ func TestSendOverHTTP2WithProviderToken(t *testing.T) {
 		t.Fatal(err)
 	}
 	badge := 2
-	err = c.Send(context.Background(), Device{Token: "abc123"}, Notification{Title: "home · api", Body: "needs you: perm:Bash", Category: "FLOK_PERMISSION",
-		ThreadID: "home", CollapseID: "home:%1", Badge: &badge, Sound: "default", TimeSensitive: true, Data: map[string]any{"pane": "%1", "aps": "ignored"}})
+	err = c.Send(context.Background(), Device{Token: "abc123"}, Notification{Title: "api", Subtitle: "home · Hugo", Body: "● needs you: perm:Bash", Category: "FLOK_PERMISSION",
+		ThreadID: "home", CollapseID: "home:%1", Badge: &badge, Sound: "flok-request.caf", TimeSensitive: true, Mutable: true, Data: map[string]any{"pane": "%1", "aps": "ignored"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +68,8 @@ func TestSendOverHTTP2WithProviderToken(t *testing.T) {
 	}
 	aps := g.body["aps"].(map[string]any)
 	alert := aps["alert"].(map[string]any)
-	if alert["title"] != "home · api" || aps["category"] != "FLOK_PERMISSION" || aps["badge"].(float64) != 2 || aps["interruption-level"] != "time-sensitive" || g.body["pane"] != "%1" {
+	if alert["title"] != "api" || alert["subtitle"] != "home · Hugo" || aps["category"] != "FLOK_PERMISSION" || aps["badge"].(float64) != 2 ||
+		aps["interruption-level"] != "time-sensitive" || aps["sound"] != "flok-request.caf" || aps["mutable-content"].(float64) != 1 || g.body["pane"] != "%1" {
 		t.Fatalf("payload: %+v", g.body)
 	}
 	// the provider token: ES256 over header.claims, verifiable with the key's public half
@@ -96,6 +97,27 @@ func TestSendOverHTTP2WithProviderToken(t *testing.T) {
 	_ = c.Send(context.Background(), Device{Token: "abc123"}, Notification{Title: "x", Body: "y"})
 	if g3 := <-rec; g3.auth == g.auth {
 		t.Fatal("an hour-old token must be refreshed")
+	}
+	// a silent sync: content-available only, push type background at priority 5
+	_ = c.Send(context.Background(), Device{Token: "abc123"}, Notification{Background: true, Data: map[string]any{"flok_sync": 1}})
+	if g4 := <-rec; g4.pushType != "background" || g4.body["aps"].(map[string]any)["content-available"].(float64) != 1 || g4.body["aps"].(map[string]any)["alert"] != nil || g4.body["flok_sync"].(float64) != 1 {
+		t.Fatalf("background: %+v", g4)
+	}
+	// a Live Activity: its own push type and topic, the content state, start fields only on a start
+	_ = c.Send(context.Background(), Device{Token: "act1"}, Notification{Title: "flok", Body: "1 working", Live: &Live{Event: "start", ContentState: map[string]int{"working": 1},
+		AttributesType: "FlokActivityAttributes", Attributes: map[string]string{"kind": "overview"}, Urgent: true}})
+	g5 := <-rec
+	aps5 := g5.body["aps"].(map[string]any)
+	if g5.pushType != "liveactivity" || g5.topic != "nl.w4j.flok.push-type.liveactivity" || aps5["event"] != "start" || aps5["attributes-type"] != "FlokActivityAttributes" ||
+		aps5["content-state"].(map[string]any)["working"].(float64) != 1 || aps5["alert"].(map[string]any)["body"] != "1 working" || aps5["timestamp"].(float64) < 1e9 {
+		t.Fatalf("live start: %+v", g5)
+	}
+	end := time.Unix(1_800_000_000, 0)
+	_ = c.Send(context.Background(), Device{Token: "act1"}, Notification{Live: &Live{Event: "end", ContentState: map[string]int{}, Dismissal: end}})
+	g6 := <-rec
+	aps6 := g6.body["aps"].(map[string]any)
+	if aps6["event"] != "end" || aps6["dismissal-date"].(float64) != 1_800_000_000 || aps6["alert"] != nil || aps6["attributes"] != nil {
+		t.Fatalf("live end: %+v", g6)
 	}
 	status = http.StatusGone
 	if err := c.Send(context.Background(), Device{Token: "abc123"}, Notification{Title: "x", Body: "y"}); err != ErrUnregistered {

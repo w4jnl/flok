@@ -22,7 +22,7 @@ struct InstancesView: View {
                     }
                     ForEach(agents) { a in
                         NavigationLink(value: Target(instance: inst.name, pane: a.paneRef)) {
-                            AgentRow(agent: a)
+                            AgentRow(agent: a, muted: settings.notificationPrefs.mute(instance: inst.name, host: a.host, agent: a.name) != nil)
                         }
                     }
                 } header: {
@@ -92,12 +92,13 @@ struct InstanceHeader: View {
 
 struct AgentRow: View {
     let agent: Agent
+    var muted = false
     @State private var now = Date()
     private let tick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Text(StateStyle.glyph(agent.state))
+            StateGlyph(state: agent.state)
                 .foregroundStyle(StateStyle.color(agent.state))
                 .font(.system(.body, design: .monospaced))
                 .frame(width: 16)
@@ -107,6 +108,9 @@ struct AgentRow: View {
                         Text(h).foregroundStyle(Palette.purple).font(.caption)
                     }
                     Text(agent.name).fontWeight(agent.unseen > 0 ? .semibold : .regular)
+                    if muted {
+                        Image(systemName: "bell.slash").font(.caption2).foregroundStyle(.secondary).accessibilityLabel("muted")
+                    }
                 }
                 HStack(spacing: 6) {
                     Text(StateStyle.label(agent)).foregroundStyle(StateStyle.color(agent.state))

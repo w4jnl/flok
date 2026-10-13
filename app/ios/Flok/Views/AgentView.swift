@@ -7,6 +7,7 @@ struct AgentView: View {
     @Environment(Settings.self) private var settings
     @Environment(\.verticalSizeClass) private var vClass
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var phase
     @State private var input = ""
     @State private var notice: String?
     @State private var confirmInterrupt = false
@@ -30,13 +31,15 @@ struct AgentView: View {
                 .onTapGesture { typing = false } // a tap on the screen puts the keyboard away
             Divider()
             if inputShown {
-                HStack(spacing: 0) {
-                    KeyBar { key in Task { await send(text: key.text, keys: key.keys) } }
-                    Button { inputChoice = false; typing = false } label: { Image(systemName: "chevron.down") }
-                        .buttonStyle(.bordered).padding(.trailing, 8)
-                        .accessibilityLabel("Hide the keys")
-                }
+                // The keys get the whole row and the controls sit in the reply row, each in its
+                // own place: nothing floats over anything (the keyboard's own toolbar did, over
+                // the send button, on iOS 26 and later).
+                KeyBar { key in Task { await send(text: key.text, keys: key.keys) } }
+                    .clipped()
                 HStack(spacing: 8) {
+                    Button { inputChoice = false; typing = false } label: { Image(systemName: "chevron.down").fontWeight(.semibold) }
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel("Hide the keys and the reply field")
                     TextField("type a reply, Enter sends it", text: $input, axis: .vertical)
                         .textFieldStyle(.roundedBorder)
                         .lineLimit(1...4)
@@ -44,6 +47,11 @@ struct AgentView: View {
                         .textInputAutocapitalization(.never)
                         .focused($typing)
                         .onSubmit { Task { await sendInput() } }
+                    if typing {
+                        Button { typing = false } label: { Image(systemName: "keyboard.chevron.compact.down") }
+                            .buttonStyle(.bordered)
+                            .accessibilityLabel("Hide the keyboard")
+                    }
                     Button { Task { await sendInput() } } label: { Image(systemName: "paperplane.fill") }
                         .buttonStyle(.borderedProminent)
                         .disabled(input.isEmpty)
@@ -67,18 +75,21 @@ struct AgentView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(compact ? .hidden : .visible, for: .navigationBar)
         .toolbar {
-            ToolbarItemGroup(placement: .keyboard) {
-                Spacer()
-                Button { typing = false } label: { Label("Hide keyboard", systemImage: "keyboard.chevron.compact.down") }
-            }
             ToolbarItem(placement: .topBarTrailing) { textMenu }
             ToolbarItem(placement: .topBarTrailing) { actionMenu }
         }
         .confirmationDialog("Send Ctrl-C to \(found?.1.name ?? "the agent")?", isPresented: $confirmInterrupt, titleVisibility: .visible) {
             Button("Interrupt", role: .destructive) { Task { await send(keys: ["C-c"]) } }
         }
-        .task(id: target) { relay.subscribe(target) }
+        .task(id: target) {
+            relay.subscribe(target)
+            await seenIfUnseen()
+        }
         .onDisappear { relay.unsubscribe(target) }
+        // Looking at the agent here is looking at it: as focusing its pane in tmux, it is marked
+        // seen when it opens, when it finishes while open, and when the app comes back to it.
+        .onChange(of: found?.1.unseen ?? 0) { _, n in if n > 0 { Task { await seenIfUnseen() } } }
+        .onChange(of: phase) { _, p in if p == .active { Task { await seenIfUnseen() } } }
         .onChange(of: compact) { _, _ in inputChoice = nil } // a turn of the phone goes back to that orientation's default
     }
 
@@ -86,7 +97,7 @@ struct AgentView: View {
     @ViewBuilder private var header: some View {
         if let (inst, a) = found {
             HStack(spacing: 10) {
-                Text(StateStyle.glyph(a.state)).foregroundStyle(StateStyle.color(a.state)).font(.system(.title3, design: .monospaced))
+                StateGlyph(state: a.state).foregroundStyle(StateStyle.color(a.state)).font(.system(.title3, design: .monospaced))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(StateStyle.label(a)).foregroundStyle(StateStyle.color(a.state)).font(.subheadline.weight(.medium))
                     HStack(spacing: 6) {
@@ -115,7 +126,7 @@ struct AgentView: View {
             Button { dismiss() } label: { Image(systemName: "chevron.left").fontWeight(.semibold) }
                 .buttonStyle(.borderless)
             if let (inst, a) = found {
-                Text(StateStyle.glyph(a.state)).foregroundStyle(StateStyle.color(a.state)).font(.system(.body, design: .monospaced))
+                StateGlyph(state: a.state).foregroundStyle(StateStyle.color(a.state)).font(.system(.body, design: .monospaced))
                 Text(a.name).fontWeight(.semibold)
                 Text(StateStyle.label(a)).foregroundStyle(StateStyle.color(a.state))
                 Text("\(inst.name)\(a.host.map { " / " + $0 } ?? "") · \(a.paneId)").foregroundStyle(.secondary)
@@ -145,9 +156,59 @@ struct AgentView: View {
             Button { Task { await send(keys: ["Enter"]) } } label: { Label("Approve (Enter)", systemImage: "checkmark") }
             Button { Task { await send(keys: ["Escape"]) } } label: { Label("Deny (Esc)", systemImage: "xmark") }
             Button { Task { await seen() } } label: { Label("Mark seen", systemImage: "eye") }
+            muteMenu
+            followButton
             Divider()
             Button(role: .destructive) { confirmInterrupt = true } label: { Label("Interrupt (Ctrl-C)", systemImage: "stop.circle") }
         } label: { Image(systemName: "ellipsis.circle") }
+    }
+
+    /// Mutes this agent's notifications in the settings the relay filters with: matched by
+    /// instance, host and name, so a restarted agent stays muted.
+    @ViewBuilder private var muteMenu: some View {
+        if let (inst, a) = found {
+            if let m = settings.notificationPrefs.mute(instance: inst.name, host: a.host, agent: a.name) {
+                Button {
+                    relay.updatePrefs { $0.unmute(instance: inst.name, host: a.host, agent: a.name) }
+                    flash("notifications on")
+                } label: {
+                    Label(m.until.map { "Unmute (muted until \(NotificationPrefs.untilWords($0)))" } ?? "Unmute", systemImage: "bell")
+                }
+            } else {
+                let morning = NotificationPrefs.nextMorning()
+                Menu {
+                    Button("For 1 hour") { mute(inst.name, a, until: .now.addingTimeInterval(3600)) }
+                    Button("Until \(NotificationPrefs.untilWords(morning))") { mute(inst.name, a, until: morning) }
+                    Button("Always") { mute(inst.name, a, until: nil) }
+                } label: { Label("Mute notifications", systemImage: "bell.slash") }
+            }
+        }
+    }
+
+    /// Follows this agent in the Dynamic Island and on the Lock Screen until it finishes.
+    @ViewBuilder private var followButton: some View {
+        if let (inst, a) = found {
+            if LiveActivities.shared.following(target) {
+                Button {
+                    LiveActivities.shared.unfollow(target)
+                    flash("not following")
+                } label: { Label("Stop following", systemImage: "rectangle.portrait.slash") }
+            } else {
+                Button {
+                    do {
+                        try LiveActivities.shared.follow(target, instance: inst, agent: a)
+                        flash("following in the Dynamic Island")
+                    } catch {
+                        flash(LiveActivities.shared.enabled ? error.localizedDescription : "Live Activities are off for flok in Settings")
+                    }
+                } label: { Label("Follow in Dynamic Island", systemImage: "capsule.portrait") }
+            }
+        }
+    }
+
+    private func mute(_ instance: String, _ a: Agent, until: Date?) {
+        relay.updatePrefs { $0.mute(instance: instance, host: a.host, agent: a.name, until: until) }
+        flash("muted")
     }
 
     private func sendInput() async {
@@ -157,9 +218,15 @@ struct AgentView: View {
         await send(text: text, keys: ["Enter"])
     }
 
+    private func seenIfUnseen() async {
+        guard phase == .active, let (_, a) = found, a.unseen > 0 else { return }
+        try? await relay.markSeen(target)
+    }
+
     private func send(text: String? = nil, keys: [String]? = nil) async {
         do {
             try await relay.answer(target, text: text, keys: keys)
+            await seenIfUnseen()
             flash("sent")
         } catch {
             flash(error.localizedDescription)
