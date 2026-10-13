@@ -42,6 +42,9 @@ func runStatus(cfg config.Config, args []string) int {
 		return report(enc.Encode(statusJSON{Snapshot: s, KeepAwake: keep.on, KeepAwakePresence: string(keep.presence)}))
 	}
 	printStatus(os.Stdout, s, keep)
+	if l := readLink(config.StateDir()); cfg.Link.URL != "" && l.off { // like keep-awake, said only when it is not the default
+		fmt.Println(l)
+	}
 	return 0
 }
 

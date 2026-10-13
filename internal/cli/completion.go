@@ -15,6 +15,7 @@ var commands = []command{
 	{"up", "start or re-attach the sidebar session", []string{"--detach"}},
 	{"down", "stop the outer session", nil},
 	{"keep-awake", "keep the Mac awake while flok runs", nil},
+	{"link", "switch the phone link off and on", nil},
 	{"status", "print sessions and agents once", []string{"--json"}},
 	{"jump", "switch to the newest agent needing input", []string{"--client"}},
 	{"next", "next agent pane", []string{"--client"}},
@@ -81,7 +82,7 @@ func bashCompletion() string {
 	fmt.Fprintf(&b, "        COMPREPLY=( $(compgen -W \"%s\" -- \"$cur\") )\n        return 0\n    fi\n", strings.Join(commandNames(), " "))
 	b.WriteString("    case \"$cmd\" in\n")
 	b.WriteString("        completion) COMPREPLY=( $(compgen -W \"bash zsh\" -- \"$cur\") ) ;;\n")
-	b.WriteString("        keep-awake) COMPREPLY=( $(compgen -W \"on off toggle status\" -- \"$cur\") ) ;;\n")
+	b.WriteString("        keep-awake|link) COMPREPLY=( $(compgen -W \"on off toggle status\" -- \"$cur\") ) ;;\n")
 	b.WriteString("        explain) COMPREPLY=( $(compgen -W \"$(tmux list-panes -a -F '#{pane_id}' 2>/dev/null)\" -- \"$cur\") ) ;;\n")
 	b.WriteString("        jump|next|prev)\n            if [ \"$prev\" = --client ]; then\n")
 	b.WriteString("                COMPREPLY=( $(compgen -W \"$(tmux list-clients -F '#{client_tty}' 2>/dev/null)\" -- \"$cur\") )\n")
@@ -144,6 +145,7 @@ func zshCompletion() string {
 	b.WriteString("    case ${words[2]} in\n")
 	b.WriteString("        completion) _values 'shell' bash zsh ;;\n")
 	b.WriteString("        keep-awake) _values 'keep-awake' on off toggle status ;;\n")
+	b.WriteString("        link) _values 'link' on off toggle status ;;\n")
 	b.WriteString("        explain)\n            local -a panes\n            panes=(${(f)\"$(tmux list-panes -a -F '#{pane_id}' 2>/dev/null)\"})\n            _describe -t panes 'pane' panes ;;\n")
 	b.WriteString("        jump|next|prev)\n            _arguments '--client[inner client tty to drive]:tty:($(tmux list-clients -F \"#{client_tty}\" 2>/dev/null))' ;;\n")
 	b.WriteString("        keys)\n            _arguments '--print[dump the help as text]' '--filter[keep bindings matching a substring]:filter' ;;\n")

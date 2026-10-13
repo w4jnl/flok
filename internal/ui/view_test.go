@@ -10,6 +10,7 @@ import (
 
 	"github.com/w4jnl/flok/internal/agent"
 	"github.com/w4jnl/flok/internal/config"
+	"github.com/w4jnl/flok/internal/link"
 	"github.com/w4jnl/flok/internal/merge"
 	"github.com/w4jnl/flok/internal/tmux"
 )
@@ -165,5 +166,29 @@ func TestFooterWrapsMessagesAboveTheStatusLine(t *testing.T) {
 	}
 	if got := wrapWords("one two three four five six", 9, 2); !reflect.DeepEqual(got, []string{"one two", "three fo…"}) {
 		t.Fatalf("wrapWords capped: %q", got)
+	}
+}
+
+// The phone link's state sits quietly at the right end of the brand line, the dot alone on the
+// rail, on the first header when the brand is off, and nowhere without [link] url.
+func TestLinkMark(t *testing.T) {
+	m := brandModel(t)
+	if lines := render(m, 28, 30); strings.TrimSpace(lines[0]) != "[flok]" {
+		t.Fatalf("no link, no mark: %q", lines[0])
+	}
+	m.linker = link.New(link.Config{URL: "ws://127.0.0.1:1/link"}) // never started
+	for st, glyph := range map[link.State]string{link.Connected: "●", link.Off: "○", link.Connecting: "◌", link.Unreachable: "◌", link.Refused: "✗"} {
+		m.linkStatus = link.Status{State: st}
+		if l := render(m, 28, 30)[0]; !strings.HasPrefix(l, "[flok]") || !strings.HasSuffix(l, "phone "+glyph) || len([]rune(l)) != 28 {
+			t.Errorf("%s: wide brand line %q", st, l)
+		}
+		if l := render(m, 6, 30)[0]; l != " ⌈⩓⌉ "+glyph {
+			t.Errorf("%s: rail mark %q", st, l)
+		}
+	}
+	m.linkStatus = link.Status{State: link.Off}
+	m.d.Cfg.Sidebar.Brand = false
+	if l := render(m, 28, 30)[0]; !strings.HasPrefix(l, "sessions") || !strings.HasSuffix(l, "phone ○") {
+		t.Errorf("no brand: the mark goes on the first header: %q", l)
 	}
 }

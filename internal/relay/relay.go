@@ -88,6 +88,8 @@ type instance struct {
 	conn    frameConn // the current link, while online
 	gen     uint64
 	online  bool
+	bye     bool // the current link said bye: switched off there (flok link off)
+	off     bool // offline because it was switched off: out of the badge, its alerts cleared
 	since   time.Time
 	snap    *snapshot.Snapshot
 	subs    map[string]int         // pane → how many apps look at it
@@ -290,7 +292,10 @@ func (s *Server) serveLink(ctx context.Context, conn frameConn, remote, how stri
 	go s.writer(wctx, conn, out, gen, in)
 	defer func() {
 		conn.CloseNow()
-		if s.offline(in, gen) {
+		switch gone, off := s.offline(in, gen); {
+		case off:
+			s.cfg.Logf("instance %s switched off (flok link off there)", in.name)
+		case gone:
 			s.cfg.Logf("instance %s offline", in.name)
 		}
 	}()
@@ -318,6 +323,14 @@ func (s *Server) serveLink(ctx context.Context, conn frameConn, remote, how stri
 			}
 		case wire.TypeAck:
 			s.ack(in, f.ID, f.Error)
+		case wire.TypeBye:
+			if f.Reason == wire.ByeOff {
+				s.mu.Lock()
+				if in.gen == gen {
+					in.bye = true
+				}
+				s.mu.Unlock()
+			}
 		}
 	}
 }
@@ -363,6 +376,7 @@ func (s *Server) register(h wire.Hello, conn frameConn) (*instance, uint64, chan
 	in.gen++
 	in.conn = conn
 	in.hello, in.online, in.since = h, true, time.Now()
+	in.bye, in.off = false, false
 	in.out = make(chan wire.Frame, 256)
 	for id, ch := range in.pending { // whoever waited on the previous connection
 		ch <- "the instance reconnected"
@@ -379,25 +393,52 @@ func (s *Server) register(h wire.Hello, conn frameConn) (*instance, uint64, chan
 	return in, in.gen, in.out, replaced
 }
 
-// offline marks an instance gone when the connection that ends is still its current one.
-func (s *Server) offline(in *instance, gen uint64) bool {
+// offline marks an instance gone when the connection that ends is still its current one; off
+// when it said bye first. Switched off, its agents stop counting on the phone: they leave the
+// badge, and a sync push clears the notifications of those that waited.
+func (s *Server) offline(in *instance, gen uint64) (gone, off bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if in.gen != gen {
-		return false
+		return false, false
 	}
-	in.online, in.since, in.conn = false, time.Now(), nil
+	in.online, in.since, in.conn, in.off = false, time.Now(), nil, in.bye
 	for id, ch := range in.pending {
 		ch <- "the instance went offline"
 		delete(in.pending, id)
 	}
+	if in.off && len(in.waiting) > 0 {
+		in.waiting = nil
+		s.syncSoonLocked()
+	}
 	s.liveSoonLocked() // its agents leave the overview
 	s.fanout(wire.Frame{Type: wire.TypeInstance, Instance: in.name, Inst: s.view(in)})
-	return true
+	return true, in.off
 }
 
 func (s *Server) view(in *instance) *wire.Instance {
-	return &wire.Instance{Name: in.name, Online: in.online, Since: in.since, Version: in.hello.Version, Hostname: in.hello.Hostname, Snap: in.snap}
+	return &wire.Instance{Name: in.name, Online: in.online, Off: in.off, Since: in.since, Version: in.hello.Version, Hostname: in.hello.Hostname,
+		Snap: in.snap}
+}
+
+// gone says why an instance cannot take a request; the caller holds s.mu.
+func gone(in *instance) string {
+	if in.off {
+		return in.name + " is switched off (flok link on there)"
+	}
+	return in.name + " is offline"
+}
+
+// badgeLocked is the app's badge: what waits unseen over every instance not switched off. The
+// caller holds s.mu.
+func (s *Server) badgeLocked() int {
+	n := 0
+	for _, in := range s.instances {
+		if in.snap != nil && !in.off {
+			n += in.snap.Unseen
+		}
+	}
+	return n
 }
 
 func (s *Server) setSnap(in *instance, gen uint64, snap *snapshot.Snapshot) {
@@ -452,11 +493,8 @@ func (s *Server) syncSoonLocked() {
 func (s *Server) sync() {
 	s.mu.Lock()
 	s.syncDue = nil
-	badge, waiting := 0, []string{}
+	badge, waiting := s.badgeLocked(), []string{}
 	for _, in := range s.instances {
-		if in.snap != nil {
-			badge += in.snap.Unseen
-		}
 		for pane := range in.waiting {
 			waiting = append(waiting, in.name+":"+pane)
 		}
@@ -537,12 +575,7 @@ func (s *Server) event(in *instance, gen uint64, ev wire.Event) {
 		return
 	}
 	s.fanout(wire.Frame{Type: wire.TypeEvent, Instance: in.name, Event: &ev})
-	badge := 0
-	for _, i := range s.instances {
-		if i.snap != nil {
-			badge += i.snap.Unseen
-		}
-	}
+	badge := s.badgeLocked()
 	devices := s.devices.list()
 	s.mu.Unlock()
 	session := sessionOf(in.snap, ev.Pane)
@@ -694,11 +727,12 @@ func (s *Server) request(instance string, f wire.Frame) error {
 	s.mu.Lock()
 	in := s.instances[instance]
 	if in == nil || !in.online {
-		s.mu.Unlock()
-		if in == nil {
-			return errors.New("no instance " + instance)
+		why := "no instance " + instance
+		if in != nil {
+			why = gone(in)
 		}
-		return errors.New(instance + " is offline")
+		s.mu.Unlock()
+		return errors.New(why)
 	}
 	in.nextID++
 	id := fmt.Sprintf("%d-%d", in.gen, in.nextID)
@@ -994,8 +1028,12 @@ func (s *Server) handleScreen(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	in := s.instances[inst]
 	if in == nil || !in.online {
+		why := inst + " is offline"
+		if in != nil {
+			why = gone(in)
+		}
 		s.mu.Unlock()
-		writeJSON(w, http.StatusBadGateway, map[string]any{"error": inst + " is offline"})
+		writeJSON(w, http.StatusBadGateway, map[string]any{"error": why})
 		return
 	}
 	s.apps[a] = struct{}{}

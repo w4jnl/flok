@@ -211,16 +211,18 @@ func (m Model) viewFull() string {
 	t, w, lay := m.theme, m.width, m.layout()
 	hdr := lipgloss.NewStyle().Foreground(t.Purple).Bold(true)
 	dim := lipgloss.NewStyle().Foreground(t.Comment)
-	plain := lipgloss.NewStyle()
 	blank := strings.Repeat(" ", w)
 
 	lines := make([]string, 0, m.height)
+	mark := m.linkMark(false) // the phone link: on the brand line, else on the first header
 	if lay.brandRows > 0 {
-		lines = append(lines, pad(m.brandWordmark(), w, plain))
+		lines = append(lines, joinLR(m.brandWordmark(), mark, w))
+		mark = ""
 	}
 	sessions := "sessions"
 	if lay.hostsRows > 0 {
-		lines = append(lines, pad(hdr.Render("servers"), w, plain))
+		lines = append(lines, joinLR(hdr.Render("servers"), mark, w))
+		mark = ""
 		for r := 0; r < lay.hostsRows; r++ {
 			if i := m.offset[panelHosts] + r; i < m.hostRowCount() {
 				lines = append(lines, m.hostRow(i, w))
@@ -231,7 +233,7 @@ func (m Model) viewFull() string {
 		lines = append(lines, blank)
 		sessions = "sessions · " + hostLabel(m.front)
 	}
-	lines = append(lines, pad(hdr.Render(sessions), w, plain))
+	lines = append(lines, joinLR(hdr.Render(sessions), mark, w))
 	for r := 0; r < lay.spacesRows; r++ {
 		if i := m.offset[panelSpaces] + r; i < len(m.snap.Spaces) {
 			lines = append(lines, m.spaceRow(i, w))

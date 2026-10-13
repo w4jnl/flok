@@ -12,7 +12,7 @@ import (
 )
 
 // WatchStore pushes a (coalesced) signal whenever a hook record, seen mark or request changes,
-// or the sidebar-hidden, terminal-theme or keep-awake marker flips. The state dir root also sees the
+// or the sidebar-hidden, terminal-theme, keep-awake or link-off marker flips. The state dir root also sees the
 // sidebar's own snapshot.json writes; those are ignored by name.
 func WatchStore(dir string, ch chan struct{}) {
 	w, err := watchStore(dir)
@@ -52,13 +52,13 @@ func watchLoop(w *fsnotify.Watcher, dir string, ch chan struct{}) {
 
 // StoreEventWanted filters fsnotify events: hook records and seen marks under agents/ and seen/,
 // plus the sidebar-hidden marker in the root (un-hide must resume the spinner at once), the
-// terminal-theme record, the keep-awake marker (`flok keep-awake` waits for the snapshot to
-// confirm) and hosts.json (the sidebar reconciles its remote hosts); everything else in the root (the sidebar's own snapshot.json temp+rename writes,
+// terminal-theme record, the keep-awake and link-off markers (`flok keep-awake` and `flok link`
+// wait for the snapshot to confirm) and hosts.json (the sidebar reconciles its remote hosts); everything else in the root (the sidebar's own snapshot.json temp+rename writes,
 // terminal-focus, which the next poll reads anyway, events.log, pid files) is noise.
 func StoreEventWanted(root, name string) bool {
 	base := filepath.Base(name)
 	if filepath.Dir(name) == root {
-		return base == "sidebar-hidden" || base == "terminal-theme" || base == state.KeepAwakeFile || base == hosts.File
+		return base == "sidebar-hidden" || base == "terminal-theme" || base == state.KeepAwakeFile || base == state.LinkOffFile || base == hosts.File
 	}
 	return strings.HasSuffix(base, ".json")
 }

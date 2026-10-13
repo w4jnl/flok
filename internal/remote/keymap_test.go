@@ -66,7 +66,7 @@ func TestMappedKeysLocalAndRemote(t *testing.T) {
 	for _, call := range h.calls {
 		all += strings.Join(call, " ") + "\n"
 	}
-	if !strings.Contains(all, "bind-key -T prefix Tab set-option -g @flok-request last session") || !strings.Contains(all, `bind-key -T prefix \; set-option -g @flok-request last pane`) || !strings.Contains(all, "keys b B g o a u A S @ N P O F1 F2 F3 F4 F5 F6 F7 F8 F9 semicolon Tab") || !strings.Contains(all, "set-option -g @flok-orig-semicolon semicolon") {
+	if !strings.Contains(all, "bind-key -T prefix Tab set-option -g @flok-request last session") || !strings.Contains(all, `bind-key -T prefix \; set-option -g @flok-request last pane`) || !strings.Contains(all, "keys b B g o a u U A S @ N P O F1 F2 F3 F4 F5 F6 F7 F8 F9 semicolon Tab") || !strings.Contains(all, "set-option -g @flok-orig-semicolon semicolon") {
 		t.Fatalf("host install:\n%s", all)
 	}
 	n := len(h.calls)

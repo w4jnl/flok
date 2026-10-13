@@ -23,6 +23,8 @@ usage: flok <command>
   down        stop the outer session (your tmux server keeps running)
   keep-awake  [on|off|toggle|status] [--notify]: keep the Mac awake with the display on while flok runs
               (off by default, no argument toggles; macOS only)
+  link        [on|off|toggle|status] [--notify]: switch the phone link ([link] url) off and on
+              again (no argument toggles; it stays off across restarts until on)
   sidebar     run the sidebar UI in the current pane (used by up)
   status      print sessions and agents once (--json for machine output)
   jump        switch the inner client to the newest agent needing input (else newest done)
@@ -51,7 +53,7 @@ usage: flok <command>
               install (put flok on the host from here), reconnect (flok host --help)
   serve       --stdio: run headless on this host for a flok on another machine (started over
               ssh by that flok; --hello prints the greeting and exits)
-  relay       <toggle|hide|focus|jump|next|keep-awake|menu …|host …>: a flok key pressed inside
+  relay       <toggle|hide|focus|jump|next|keep-awake|link|menu …|host …>: a flok key pressed inside
               a served host's tmux (bound there by flok while connected)
   hook        hook receiver used by the agents (stdin JSON; never call by hand)
   completion  print a bash or zsh completion script (flok completion bash|zsh)
@@ -79,6 +81,8 @@ func Main(args []string) int {
 		return report(launcher.Down(cfg))
 	case "keep-awake":
 		return runKeepAwake(cfg, args[1:])
+	case "link":
+		return runLink(cfg, args[1:])
 	case "sidebar":
 		return runSidebar(cfg)
 	case "status":

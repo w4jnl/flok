@@ -38,11 +38,11 @@ type menuBar struct {
 	dir  string
 	flok string // the flok CLI used for clicks
 
-	header, show, keepAwake, edit, reload, quit, about, repo *systray.MenuItem
-	slots                                                    []*slot
-	hostSlots                                                []*slot           // the servers (local, then the hosts), under the agents; hidden without a host
-	hostsGap, hostsHead                                      *systray.MenuItem // a blank row and a "servers" caption over the host rows
-	hostsHeadShown                                           bool
+	header, show, keepAwake, phone, edit, reload, quit, about, repo *systray.MenuItem
+	slots                                                           []*slot
+	hostSlots                                                       []*slot           // the servers (local, then the hosts), under the agents; hidden without a host
+	hostsGap, hostsHead                                             *systray.MenuItem // a blank row and a "servers" caption over the host rows
+	hostsHeadShown                                                  bool
 
 	mu          sync.Mutex
 	snap        snapshot.Snapshot
@@ -57,6 +57,8 @@ type menuBar struct {
 	showOn      bool
 	keepChecked bool // "Keep awake" row as pushed to AppKit
 	keepEnabled bool
+	phoneRow    [3]string // "Phone link" row as pushed to AppKit: title, tooltip, checked ("1")
+	phoneShown  bool
 	lastTip     string
 	cfgMtime    time.Time
 }
@@ -118,6 +120,8 @@ func (b *menuBar) onReady() {
 	b.show = systray.AddMenuItem("Show flok", "bring the flok terminal window to the front")
 	b.keepAwake = systray.AddMenuItemCheckbox("Keep awake", "keep the Mac awake with the display on while flok runs (flok keep-awake)", false)
 	b.keepEnabled = true
+	b.phone = systray.AddMenuItemCheckbox("Phone link", "the phone app reaches this flok through your relay (flok link)", false)
+	b.phone.Hide() // shown while the sidebar runs a phone link
 	b.edit = systray.AddMenuItem("Edit config…", "open ~/.config/flok/config.toml; the bar re-reads it, the sidebar needs Reload")
 	b.reload = systray.AddMenuItem("Reload sidebar", "restart the sidebar pane to apply config.toml changes")
 	systray.AddSeparator()
@@ -307,6 +311,41 @@ func (b *menuBar) render(now time.Time) {
 		b.showOn = on
 	}
 	b.renderKeepAwake(f == snapshot.Fresh, f == snapshot.Fresh && s.KeepAwake, s.KeepAwakePresence)
+	b.renderPhone(bar.LinkRow(s, f))
+}
+
+// renderPhone mirrors the phone link on its row (bar.LinkRow); AppKit is told only what changed.
+func (b *menuBar) renderPhone(title, tip string, checked, shown bool) {
+	if shown != b.phoneShown {
+		if shown {
+			b.phone.Show()
+		} else {
+			b.phone.Hide()
+		}
+		b.phoneShown = shown
+	}
+	on := ""
+	if checked {
+		on = "1"
+	}
+	row := [3]string{title, tip, on}
+	if row == b.phoneRow {
+		return
+	}
+	if row[0] != b.phoneRow[0] {
+		b.phone.SetTitle(title)
+	}
+	if row[1] != b.phoneRow[1] {
+		b.phone.SetTooltip(tip)
+	}
+	if row[2] != b.phoneRow[2] {
+		if checked {
+			b.phone.Check()
+		} else {
+			b.phone.Uncheck()
+		}
+	}
+	b.phoneRow = row
 }
 
 // renderKeepAwake mirrors what the sidebar holds on the "Keep awake" row and in the tooltip; the
@@ -477,6 +516,8 @@ func (b *menuBar) staticClicks() {
 			b.goto_("")
 		case <-b.keepAwake.ClickedCh:
 			b.run("keep-awake", "toggle") // the row follows once the sidebar confirms via the snapshot
+		case <-b.phone.ClickedCh:
+			b.run("link", "toggle")
 		case <-b.edit.ClickedCh:
 			b.run("edit-config")
 		case <-b.reload.ClickedCh:

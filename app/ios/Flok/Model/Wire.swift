@@ -55,12 +55,15 @@ struct Frame: Decodable, Sendable {
 struct InstanceState: Decodable, Sendable, Identifiable {
     var name: String
     var online: Bool
+    /// Offline because its link was switched off there (`flok link off`), not an outage.
+    var off: Bool?
     var since: Date
     var version: String?
     var hostname: String?
     var snap: Snapshot?
 
     var id: String { name }
+    var switchedOff: Bool { !online && off == true }
     var agents: [Agent] { snap?.agents ?? [] }
     var unseen: Int { snap?.unseen ?? 0 }
 }

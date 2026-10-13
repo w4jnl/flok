@@ -282,3 +282,33 @@ func elapsed(since, now time.Time) string {
 	}
 	return fmt.Sprintf("%d:%02d", m, s)
 }
+
+// LinkRow is the "Phone link" row: shown while a live sidebar runs a phone link ([link] url),
+// checked unless it is switched off (flok link off), with what is wrong in the title
+// (connecting, out of reach, refused) and the detail in the tooltip.
+func LinkRow(s snapshot.Snapshot, f snapshot.Freshness) (title, tip string, checked, shown bool) {
+	l := s.Link
+	if f != snapshot.Fresh || l == nil {
+		return "Phone link", "", false, false
+	}
+	title, tip, checked = "Phone link", "the phone app reaches this flok through your relay (flok link)", l.State != "off"
+	switch l.State {
+	case "off":
+		tip = "switched off: the phone shows this flok as off (flok link on)"
+	case "connected":
+		tip = "connected to your relay"
+		if l.Encrypted {
+			tip += ", encrypted"
+		}
+	case "connecting":
+		title += " · connecting"
+	case "unreachable":
+		title += " · out of reach"
+	case "refused":
+		title += " · refused"
+	}
+	if l.Detail != "" {
+		tip = l.Detail
+	}
+	return title, tip, checked, true
+}

@@ -61,8 +61,13 @@ sides; additions keep the protocol compatible.
 `Instance`:
 
 ```
-{"name","online":bool,"since":time,"version"?,"hostname"?,"snap":Snapshot?}
+{"name","online":bool,"off"?:true,"since":time,"version"?,"hostname"?,"snap":Snapshot?}
 ```
+
+`off` (with `online` false) means the instance's link was switched off there (`flok link off`),
+on purpose: show it as *off*, quietly, not as *offline* (out of reach), and expect it back only
+when it is switched on. Its agents are out of the badge and a sync push clears their
+notifications; an answer is refused with `<name> is switched off (flok link on there)`.
 
 `Snapshot` is the sidebar's own published view (`snapshot.json`), kept while the instance is
 offline:
@@ -88,6 +93,7 @@ The relay sends one alert per event to every registered device whose `prefs` wan
 like the sidebar: title = the agent, subtitle `<instance>[ / <host>][ · <session>]`, body with
 the sidebar's glyph, `● needs you: perm:Bash` / `● needs you: <reason>` / `✓ done` / `✗ failed`;
 `thread-id` = instance, `collapse-id` = `<instance>:<pane>`, badge = unseen over all instances
+not switched off
 (muted or not), `mutable-content` (the iOS service extension adds the state tile), and the
 custom keys `instance`, `pane`, `kind`, `reason`, `agent`, `host`, `session`, `push_kind` for
 the app to act on. Categories: `FLOK_PERMISSION` (a permission prompt; the iOS app offers

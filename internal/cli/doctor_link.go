@@ -37,6 +37,10 @@ func doctorLink(cfg config.Config, add func(level, format string, args ...any)) 
 		ws, how = link.TunnelURL(u), ", encrypted to the pinned key"
 	}
 	if s, f := snapshot.Load(config.StateDir(), time.Now()); f == snapshot.Fresh && s.Link != nil && s.SidebarAlive() {
+		if link.State(s.Link.State) == link.Off {
+			add("ok", "link: switched off since %s (flok link on connects %q to %s again)", s.Link.Since.Local().Format("15:04:05"), name, ws)
+			return
+		}
 		level := "ok"
 		if s.Link.State != "connected" {
 			level = "warn"
@@ -47,6 +51,9 @@ func doctorLink(cfg config.Config, add func(level, format string, args ...any)) 
 		}
 		add(level, "link: %s to %s as %q%s%s (since %s)", s.Link.State, ws, name, how, detail, s.Link.Since.Local().Format("15:04:05"))
 		return
+	}
+	if readLink(config.StateDir()).off {
+		add("ok", "link: switched off (flok link on); it stays off when flok starts")
 	}
 	health := link.HealthURL(u)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

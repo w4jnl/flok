@@ -157,3 +157,30 @@ func TestIconColor(t *testing.T) {
 		}
 	}
 }
+
+func TestLinkRow(t *testing.T) {
+	withLink := func(st, detail string) snapshot.Snapshot {
+		return snapshot.Snapshot{Link: &snapshot.Link{State: st, Detail: detail, Encrypted: true}}
+	}
+	if _, _, _, shown := LinkRow(snapshot.Snapshot{}, snapshot.Fresh); shown {
+		t.Error("a sidebar without [link] url shows the row")
+	}
+	if _, _, _, shown := LinkRow(withLink("connected", ""), snapshot.Stale); shown {
+		t.Error("a stale snapshot shows the row")
+	}
+	for _, c := range []struct {
+		st, detail, title, tip string
+		checked                bool
+	}{
+		{"connected", "", "Phone link", "connected to your relay, encrypted", true},
+		{"off", "", "Phone link", "switched off: the phone shows this flok as off (flok link on)", false},
+		{"connecting", "", "Phone link · connecting", "the phone app reaches this flok through your relay (flok link)", true},
+		{"unreachable", "no pong from the relay", "Phone link · out of reach", "no pong from the relay", true},
+		{"refused", "the relay refused the token ([link] token)", "Phone link · refused", "the relay refused the token ([link] token)", true},
+	} {
+		title, tip, checked, shown := LinkRow(withLink(c.st, c.detail), snapshot.Fresh)
+		if !shown || title != c.title || tip != c.tip || checked != c.checked {
+			t.Errorf("%s: %q %q checked=%v shown=%v", c.st, title, tip, checked, shown)
+		}
+	}
+}

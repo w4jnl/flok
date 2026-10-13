@@ -15,7 +15,7 @@ import (
 // Proto is the protocol version an instance's hello carries.
 const Proto = 1
 
-// Frame types. Instance to relay: hello, snap, event, screen, ack. Relay to instance: answer,
+// Frame types. Instance to relay: hello, snap, event, screen, ack, bye. Relay to instance: answer,
 // seen, subscribe. Relay to app: instances, instance, event, screen, ack. App to relay: answer,
 // seen, subscribe. Ping/pong are WebSocket control frames, not these. Inside the encrypted
 // link (/link/tls) the instance's first frame is auth with its token, and the relay answers
@@ -27,6 +27,7 @@ const (
 	TypeEvent     = "event"
 	TypeScreen    = "screen"
 	TypeAck       = "ack"
+	TypeBye       = "bye" // instance to relay, before it closes on purpose: Reason says why ("off")
 	TypeAnswer    = "answer"
 	TypeSeen      = "seen"
 	TypeSubscribe = "subscribe"
@@ -48,7 +49,8 @@ type Frame struct {
 	Pane     string             `json:"pane,omitempty"` // seen / subscribe: a pane ref (%12, beta:%12)
 	On       bool               `json:"on,omitempty"`   // subscribe: start (true) or stop streaming the pane's screen
 	Error    string             `json:"error,omitempty"`
-	Token    string             `json:"token,omitempty"` // auth: the instance token, only ever inside the tunnel
+	Token    string             `json:"token,omitempty"`  // auth: the instance token, only ever inside the tunnel
+	Reason   string             `json:"reason,omitempty"` // bye: ByeOff
 	// Instances is the relay's view of every instance (TypeInstances), Inst one of them
 	// (TypeInstance).
 	Instances []Instance `json:"instances,omitempty"`
@@ -80,11 +82,16 @@ type Screen struct {
 	Text string `json:"text"`
 }
 
+// ByeOff: the link was switched off on the instance (flok link off); it stays away until it is
+// switched on again, which is not an outage.
+const ByeOff = "off"
+
 // Instance is what the app sees of one flok: its name, whether its link is up, and its last
 // snapshot (kept while offline, so the app can show what was there).
 type Instance struct {
 	Name     string             `json:"name"`
 	Online   bool               `json:"online"`
+	Off      bool               `json:"off,omitempty"`      // offline because its link was switched off there (flok link off)
 	Since    time.Time          `json:"since"`              // when it came online, or went offline
 	Version  string             `json:"version,omitempty"`  // flok version on the instance
 	Hostname string             `json:"hostname,omitempty"` // the machine

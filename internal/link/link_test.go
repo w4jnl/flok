@@ -210,3 +210,69 @@ func TestLinkRefused(t *testing.T) {
 		t.Fatal("no url: no link")
 	}
 }
+
+// flok link off and on: started off it never dials; off says bye and goes quiet, and what is
+// announced meanwhile is dropped, not delivered late; on starts over with the latest snapshot.
+func TestLinkSwitch(t *testing.T) {
+	r := newRelay(t, false)
+	c := New(Config{URL: r.srv.URL, Token: "t0k", Name: "home", Version: "test", Off: true, BackoffMax: 300 * time.Millisecond})
+	if st := c.Status(); st.State != Off {
+		t.Fatalf("started off: %+v", st)
+	}
+	c.Publish(snapshot.Snapshot{Agents: []snapshot.Agent{{PaneID: "%1", Name: "api", State: agent.Working}}})
+	c.Start()
+	defer c.Close()
+	time.Sleep(150 * time.Millisecond)
+	r.mu.Lock()
+	dialled := r.conns
+	r.mu.Unlock()
+	if dialled != 0 {
+		t.Fatalf("a link started off dialled the relay %d times", dialled)
+	}
+
+	c.SetOff(false)
+	r.next(t, wire.TypeHello)
+	r.next(t, wire.TypeSnap)
+	waitMsg(t, c, func(m Msg) bool { return m.Status != nil && m.Status.State == Connected })
+
+	c.SetOff(true)
+	if f := r.next(t, wire.TypeBye); f.Reason != wire.ByeOff {
+		t.Fatalf("bye: %+v", f)
+	}
+	waitMsg(t, c, func(m Msg) bool { return m.Status != nil && m.Status.State == Off })
+	c.Event(wire.Event{Pane: "%1", Agent: "api", Kind: "done"})
+	c.Screen("%1", "while off\n")
+	c.Ack("a1", "")
+	c.Publish(snapshot.Snapshot{Agents: []snapshot.Agent{{PaneID: "%1", Name: "api", State: agent.Done, Unseen: 1}}})
+	time.Sleep(300 * time.Millisecond) // past the event hold: nothing may be waiting to go
+
+	c.SetOff(false)
+	r.next(t, wire.TypeHello)
+	if f := r.next(t, wire.TypeSnap); len(f.Snap.Agents) != 1 || f.Snap.Agents[0].State != agent.Done {
+		t.Fatalf("the snapshot after switching on is not the latest: %+v", f.Snap)
+	}
+	select {
+	case f := <-r.got:
+		t.Fatalf("sent after switching on, though announced while off: %+v", f)
+	case <-time.After(300 * time.Millisecond):
+	}
+}
+
+// Switched off while a dial hangs (a proxy that never answers), the link gives the dial up at
+// once instead of after its timeout.
+func TestLinkSwitchedOffWhileDialling(t *testing.T) {
+	hang := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) { <-hang }))
+	defer srv.Close()
+	defer close(hang)
+	c := New(Config{URL: srv.URL, Dial: time.Minute})
+	c.Start()
+	defer c.Close()
+	time.Sleep(100 * time.Millisecond) // into the dial (connecting is the state it starts in, not a message)
+	start := time.Now()
+	c.SetOff(true)
+	waitMsg(t, c, func(m Msg) bool { return m.Status != nil && m.Status.State == Off })
+	if d := time.Since(start); d > time.Second {
+		t.Fatalf("switching off took %v while a dial hung", d)
+	}
+}
