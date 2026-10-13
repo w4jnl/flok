@@ -163,12 +163,29 @@ struct PrefsTests {
         #expect(json.contains(#""host":"macmini""#) && json.contains(#""agent":"docker""#))
     }
 
-    @Test func tomorrowMorningIsEightTheNextDay() {
+    @Test func nextMorningIsTheComingEightOClock() {
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = TimeZone(identifier: "Europe/Amsterdam")!
-        let evening = cal.date(from: DateComponents(year: 2026, month: 10, day: 12, hour: 23, minute: 30))!
-        let c = cal.dateComponents([.day, .hour, .minute], from: NotificationPrefs.tomorrowMorning(from: evening, calendar: cal))
-        #expect(c.day == 13 && c.hour == 8 && c.minute == 0)
+        func at(_ day: Int, _ hour: Int, _ minute: Int = 0) -> Date { cal.date(from: DateComponents(year: 2026, month: 10, day: day, hour: hour, minute: minute))! }
+        #expect(NotificationPrefs.nextMorning(from: at(12, 23, 30), calendar: cal) == at(13, 8), "in the evening: tomorrow")
+        #expect(NotificationPrefs.nextMorning(from: at(13, 0, 40), calendar: cal) == at(13, 8), "after midnight: this morning, not the day after")
+        #expect(NotificationPrefs.nextMorning(from: at(13, 7, 30), calendar: cal) == at(14, 8), "less than an hour before: the next day")
+        #expect(NotificationPrefs.untilWords(at(13, 8), now: at(13, 0, 40), calendar: cal).hasPrefix("tomorrow") == false)
+        #expect(NotificationPrefs.untilWords(at(14, 8), now: at(13, 7, 30), calendar: cal).hasPrefix("tomorrow "))
+    }
+
+    @Test func anEndedMuteIsDroppedAndTheNextEndIsKnown() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        var p = NotificationPrefs()
+        p.mute(instance: "Home", host: nil, agent: "flok", until: now.addingTimeInterval(-60))
+        p.mute(instance: "Home", host: nil, agent: "api", until: now.addingTimeInterval(3600))
+        p.mute(instance: "Home", host: nil, agent: "docs", until: nil)
+        #expect(p.mute(instance: "Home", host: nil, agent: "flok", now: now) == nil, "ended at its time")
+        #expect(p.hasExpired(now: now))
+        #expect(p.nextExpiry(after: now) == now.addingTimeInterval(3600))
+        p.prune(now: now)
+        #expect(p.mutes.map(\.agent) == ["api", "docs"])
+        #expect(!p.hasExpired(now: now))
     }
 
     @Test func theSpinnerTurnsAQuarterEveryFrame() {

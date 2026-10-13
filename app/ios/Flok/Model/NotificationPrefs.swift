@@ -117,9 +117,29 @@ struct NotificationPrefs: Codable, Equatable, Sendable {
         mutes.removeAll { m in m.until.map { $0 <= now } ?? false }
     }
 
-    /// The next morning at 8, for "until tomorrow".
-    static func tomorrowMorning(from now: Date = .now, calendar: Calendar = .current) -> Date {
-        let start = calendar.startOfDay(for: calendar.date(byAdding: .day, value: 1, to: now) ?? now)
-        return calendar.date(byAdding: .hour, value: 8, to: start) ?? start
+    /// Whether a mute's time is up, so prune would change something.
+    func hasExpired(now: Date = .now) -> Bool {
+        mutes.contains { m in m.until.map { $0 <= now } ?? false }
+    }
+
+    /// When the next mute ends; nil when none has an end.
+    func nextExpiry(after now: Date = .now) -> Date? {
+        mutes.compactMap(\.until).filter { $0 > now }.min()
+    }
+
+    /// 8:00 the next morning: today's when it is still more than an hour away (muted after
+    /// midnight), else tomorrow's.
+    static func nextMorning(from now: Date = .now, calendar: Calendar = .current) -> Date {
+        let today = calendar.date(bySettingHour: 8, minute: 0, second: 0, of: now) ?? now
+        if today.timeIntervalSince(now) > 3600 { return today }
+        return calendar.date(byAdding: .day, value: 1, to: today) ?? today
+    }
+
+    /// "8:00", "tomorrow 8:00" or "Wed 8:00": when a mute ends, in words.
+    static func untilWords(_ d: Date, now: Date = .now, calendar: Calendar = .current) -> String {
+        let time = d.formatted(.dateTime.hour().minute())
+        if calendar.isDate(d, inSameDayAs: now) { return time }
+        if let tomorrow = calendar.date(byAdding: .day, value: 1, to: now), calendar.isDate(d, inSameDayAs: tomorrow) { return "tomorrow " + time }
+        return d.formatted(.dateTime.weekday().hour().minute())
     }
 }

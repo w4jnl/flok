@@ -18,6 +18,7 @@ struct FlokApp: App {
             switch now {
             case .active:
                 Relay.shared.connect()
+                Relay.shared.expireMutes()
                 Task { await Notifications.shared.refreshAuthorization() }
                 LiveActivities.shared.reportSoon()
             case .background:

@@ -172,12 +172,13 @@ struct AgentView: View {
                     relay.updatePrefs { $0.unmute(instance: inst.name, host: a.host, agent: a.name) }
                     flash("notifications on")
                 } label: {
-                    Label(m.until.map { "Unmute (muted until \($0.formatted(date: .omitted, time: .shortened)))" } ?? "Unmute", systemImage: "bell")
+                    Label(m.until.map { "Unmute (muted until \(NotificationPrefs.untilWords($0)))" } ?? "Unmute", systemImage: "bell")
                 }
             } else {
+                let morning = NotificationPrefs.nextMorning()
                 Menu {
                     Button("For 1 hour") { mute(inst.name, a, until: .now.addingTimeInterval(3600)) }
-                    Button("Until tomorrow 8:00") { mute(inst.name, a, until: NotificationPrefs.tomorrowMorning()) }
+                    Button("Until \(NotificationPrefs.untilWords(morning))") { mute(inst.name, a, until: morning) }
                     Button("Always") { mute(inst.name, a, until: nil) }
                 } label: { Label("Mute notifications", systemImage: "bell.slash") }
             }

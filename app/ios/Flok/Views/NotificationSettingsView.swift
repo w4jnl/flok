@@ -60,7 +60,7 @@ struct NotificationSettingsView: View {
                         HStack(spacing: 6) {
                             Text(m.place)
                             Text("·")
-                            Text(m.until.map { "until " + $0.formatted(Calendar.current.isDateInToday($0) ? .dateTime.hour().minute() : .dateTime.weekday().hour().minute()) } ?? "always")
+                            Text(m.until.map { "until " + NotificationPrefs.untilWords($0) } ?? "always")
                         }
                         .font(.footnote).foregroundStyle(.secondary)
                     }
@@ -84,7 +84,7 @@ struct NotificationSettingsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             now = .now
-            settings.notificationPrefs.prune()
+            relay.expireMutes()
         }
     }
 }

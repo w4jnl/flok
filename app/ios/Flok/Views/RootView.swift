@@ -17,6 +17,7 @@ struct RootView: View {
         .onAppear {
             if !settings.isConfigured { showSettings = true }
             relay.connect()
+            relay.expireMutes()
             // development: `simctl launch … -open Home:%12` opens a pane straight away
             if let o = UserDefaults.standard.string(forKey: "open"), let i = o.firstIndex(of: ":") {
                 path = [Target(instance: String(o[..<i]), pane: String(o[o.index(after: i)...]))]

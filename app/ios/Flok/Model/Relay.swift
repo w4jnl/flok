@@ -47,6 +47,7 @@ final class Relay {
     /// The last failure to hand the notification settings to the relay; nil once they got there.
     private(set) var prefsError: String?
     private var prefsSync: Task<Void, Never>?
+    private var muteExpiry: Task<Void, Never>?
 
     private var session: URLSession
     private var task: URLSessionWebSocketTask?
@@ -291,6 +292,7 @@ final class Relay {
     /// toggles is one request).
     func updatePrefs(_ change: (inout NotificationPrefs) -> Void) {
         change(&settings.notificationPrefs)
+        expireMutes()
         prefsSync?.cancel()
         prefsSync = Task {
             try? await Task.sleep(for: .milliseconds(600))
@@ -302,8 +304,23 @@ final class Relay {
     /// Changes the settings and sends them at once: a lock-screen action waits for it.
     func updatePrefsNow(_ change: (inout NotificationPrefs) -> Void) async {
         change(&settings.notificationPrefs)
+        expireMutes()
         prefsSync?.cancel()
         await syncPrefs()
+    }
+
+    /// Drops the mutes whose time is up and wakes at the next one's end to drop it too, so a
+    /// screen showing "muted" turns back when the mute ends (the relay ignores an ended mute by
+    /// itself). Called at start, on every change and when the app comes to the front.
+    func expireMutes() {
+        if settings.notificationPrefs.hasExpired() { settings.notificationPrefs.prune() }
+        muteExpiry?.cancel()
+        guard let next = settings.notificationPrefs.nextExpiry() else { return }
+        muteExpiry = Task {
+            try? await Task.sleep(for: .seconds(max(1, next.timeIntervalSinceNow)))
+            guard !Task.isCancelled else { return }
+            self.expireMutes()
+        }
     }
 
     /// Sends the settings now. Before the phone registered
