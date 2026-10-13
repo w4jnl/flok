@@ -2,7 +2,8 @@
 # Captures assets/phone-screens.jpg, the README's phone screenshots: a local flok-relay with two
 # made-up instances (assets/demo/phoneinst: home with a remote host, office), the app in the
 # iPhone 15 Pro simulator pointed at it, and the FlokScreens UI test (make ios-screens) walking
-# it: the list, an agent's screen, a push and its card, the Lock Screen with the Live Activity.
+# it: the list, an agent's screen, a push and its card, the Lock Screen with the Live Activity;
+# the README shows two of them (phones.html picks), next to the menu bar.
 # Pushes reach the simulator only through `simctl push`, so the test asks for one with a file.
 # phones.html frames the shots and headless Chrome renders them (fonts from Google Fonts: needs
 # network). Needs Xcode, xcodegen and signing (Local.xcconfig): the Live Activity wants it.
@@ -50,13 +51,13 @@ APNS
 PUSHER=$!
 
 make ios-screens RELAY="http://127.0.0.1:$PORT" TOKEN="$DT" SHOTS="$W/shots" IOS_SCREENS_SIM="platform=iOS Simulator,id=$U" || true
-for s in list agent card lock; do
+for s in list card; do
   [ -s "$W/shots/$s.png" ] || { echo "phone.sh: no $s screenshot (see the FlokScreens test output above)" >&2; exit 1; }
 done
 
 cp assets/demo/phones.html "$W/phones.html"
 CHROME=${CHROME:-"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"}
 "$CHROME" --headless=new --disable-gpu --hide-scrollbars --force-device-scale-factor=2 \
-  --window-size=1280,712 --virtual-time-budget=10000 --screenshot="$W/phones.png" "file://$W/phones.html" 2>/dev/null
+  --window-size=680,712 --virtual-time-budget=10000 --screenshot="$W/phones.png" "file://$W/phones.html" 2>/dev/null
 sips -s format jpeg -s formatOptions 82 "$W/phones.png" --out assets/phone-screens.jpg >/dev/null
 sips -g pixelWidth -g pixelHeight assets/phone-screens.jpg | tail -2 | tr '\n' ' '; ls -l assets/phone-screens.jpg | awk '{print $5" bytes"}'

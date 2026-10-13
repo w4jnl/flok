@@ -41,7 +41,7 @@ jobs:
             name=flok_${ver}_${os}_${arch}; d=dist/$name; mkdir -p "$d"
             CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath \
               -ldflags "-s -w -X github.com/w4jnl/flok/internal/cli.Version=$TAG" -o "$d/flok" ./cmd/flok
-            cp README.md LICENSE LICENSE-APACHE NOTICE "$d/"
+            cp README.md LICENSE LICENSE-APACHE NOTICE "$d/" && cp -R docs "$d/"
             tar -C dist -czf "$d.tar.gz" "$name" && rm -r "$d"
           done
           (cd dist && sha256sum *.tar.gz > sha256sums.txt && cat sha256sums.txt)

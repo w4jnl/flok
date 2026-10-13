@@ -8,8 +8,10 @@ A herdr-like agent sidebar for tmux, written in Go (single binary, no cgo). It r
 **outer** tmux server (socket `flok`, prefix None, no status bar) with two panes: the Bubble Tea
 sidebar on the left and a plain `tmux attach` to the user's normal **inner** server on the right.
 The sidebar never modifies the inner server's config; it only drives the inner client with
-`switch-client`. The README is accurate and detailed; read it for user-facing behaviour, keys
-and config keys.
+`switch-client`. The README is the front page; `docs/` holds the detail (how it works, remote
+hosts, the phone, the menu bar, keys, `reference.md` with every command and config key,
+troubleshooting, development). Both are accurate; read them for user-facing behaviour, and keep
+them in step with a change.
 
 ## Commands
 
