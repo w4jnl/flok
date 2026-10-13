@@ -30,6 +30,8 @@ updates this file first. Dates are the tag dates.
   the lock screen or the notification card), marks it seen like focusing its pane in tmux. And
   when an agent stops waiting on you anywhere, its notification leaves the Lock Screen and the
   badge follows: the relay sends the phones a silent sync push.
+- **The app's reply row no longer overlaps itself.** The quick keys have their own row; the
+  reply row holds the fold arrow, the text field, a hide-keyboard button while typing, and send.
 - **The relay's log tells a phone's registrations apart.** Every push, failed push and
   registration names the device, the start of its token and its Apple service
   (`iPhone 04344cb7… production`), and the app takes the token it registered before out of the
