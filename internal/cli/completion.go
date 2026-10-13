@@ -15,7 +15,7 @@ var commands = []command{
 	{"up", "start or re-attach the sidebar session", []string{"--detach"}},
 	{"down", "stop the outer session", nil},
 	{"keep-awake", "keep the Mac awake while flok runs", nil},
-	{"link", "switch the phone link off and on", nil},
+	{"link", "switch the relay link off and on", nil},
 	{"status", "print sessions and agents once", []string{"--json"}},
 	{"jump", "switch to the newest agent needing input", []string{"--client"}},
 	{"next", "next agent pane", []string{"--client"}},

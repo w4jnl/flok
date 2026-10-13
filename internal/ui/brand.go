@@ -2,6 +2,7 @@ package ui
 
 import (
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 
@@ -11,7 +12,7 @@ import (
 // The sidebar's brand line, the text form of assets/brand: the [flok] wordmark on top of the
 // wide layout, and on the rail the mark's top half — the chevron ⩓ of the brand's ASCII lockup
 // (internal/cli/brand.go) under ⌈ ⌉ — above a separator. Like the icon, the frame takes the brand
-// accent and the name and chevron the foreground. With [link] url the phone link's state sits at
+// accent and the name and chevron the foreground. With [link] url the relay link's state sits at
 // the right end of the line (linkMark).
 
 // brandRows is how many lines the brand takes: one on the wide layout, two on the rail, none
@@ -48,35 +49,36 @@ func (m Model) brandRail() []string {
 	frame, ink := m.brandStyles()
 	sep := lipgloss.NewStyle().Foreground(m.theme.Comment).Render(strings.Repeat("─", m.width))
 	mark := " " + frame.Render("⌈") + ink.Render("⩓") + frame.Render("⌉")
-	if dot := m.linkMark(true); dot != "" {
-		mark = joinLR(mark, dot, m.width)
+	if lm := m.linkMark(); lm != "" {
+		mark = joinLR(mark, lm, m.width)
 	}
 	return []string{mark, sep}
 }
 
-// linkMark is the phone link's state, quiet unless something is wrong: "phone" and a dot, green
-// while connected, a grey ring when switched off (flok link off), a dotted one while connecting
-// (orange while the relay is out of reach), a red cross when it refuses; dot alone gives the
-// rail's form. "" without [link] url.
-func (m Model) linkMark(dotAlone bool) string {
+// linkMark is the relay link's state in one cell, no word: the two-way arrow ⇄, green while
+// connected, blinking grey and green while it connects (linkBlinks keeps the animation tick
+// going), orange while the relay is out of reach, red when it refuses; a grey dash when switched
+// off (flok link off): nothing flows. "" without [link] url.
+func (m Model) linkMark() string {
 	if m.linker == nil {
 		return ""
 	}
 	t := m.theme
-	glyph, col := "◌", t.Comment
+	glyph, col := "⇄", t.Green
 	switch m.linkStatus.State {
-	case link.Connected:
-		glyph, col = "●", t.Green
 	case link.Off:
-		glyph = "○"
+		glyph, col = "–", t.Comment
+	case link.Connecting:
+		if time.Now().UnixMilli()/500%2 == 0 { // half a second grey, half green
+			col = t.Comment
+		}
 	case link.Unreachable:
 		col = t.Orange
 	case link.Refused:
-		glyph, col = "✗", t.Red
+		col = t.Red
 	}
-	dot := lipgloss.NewStyle().Foreground(col).Render(glyph)
-	if dotAlone {
-		return dot
-	}
-	return lipgloss.NewStyle().Foreground(t.Comment).Render("phone ") + dot
+	return lipgloss.NewStyle().Foreground(col).Render(glyph)
 }
+
+// linkBlinks reports that the relay link's mark blinks (connecting), so the animation tick runs.
+func (m Model) linkBlinks() bool { return m.linker != nil && m.linkStatus.State == link.Connecting }

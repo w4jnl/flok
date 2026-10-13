@@ -87,7 +87,7 @@ func TestLinkCommands(t *testing.T) {
 	}
 	// the footer: refused at once, unreachable only after a while
 	m.linkStatus = link.Status{State: link.Refused, Detail: "the relay refused the token"}
-	if w := m.linkWarning(); !strings.HasPrefix(w, "phone link: the relay refused") {
+	if w := m.linkWarning(); !strings.HasPrefix(w, "relay link: the relay refused") {
 		t.Fatalf("warning: %q", w)
 	}
 	m.linkStatus = link.Status{State: link.Unreachable, Detail: "connection refused", Since: time.Now()}
@@ -99,7 +99,7 @@ func TestLinkCommands(t *testing.T) {
 		t.Fatal("the warning is due once")
 	}
 	m.refederate()
-	if len(m.snap.Warnings) == 0 || !strings.Contains(m.snap.Warnings[len(m.snap.Warnings)-1], "phone link: connection refused") {
+	if len(m.snap.Warnings) == 0 || !strings.Contains(m.snap.Warnings[len(m.snap.Warnings)-1], "relay link: connection refused") {
 		t.Fatalf("footer: %v", m.snap.Warnings)
 	}
 }

@@ -11,7 +11,7 @@ import (
 	"github.com/w4jnl/flok/internal/snapshot"
 )
 
-// doctorLink reports the phone link: the running sidebar's own state when it publishes one,
+// doctorLink reports the relay link: the running sidebar's own state when it publishes one,
 // else a GET of the relay's /healthz (through HTTPS_PROXY like the link itself).
 func doctorLink(cfg config.Config, add func(level, format string, args ...any)) {
 	u := cfg.Link.URL

@@ -214,7 +214,7 @@ func (m Model) viewFull() string {
 	blank := strings.Repeat(" ", w)
 
 	lines := make([]string, 0, m.height)
-	mark := m.linkMark(false) // the phone link: on the brand line, else on the first header
+	mark := m.linkMark() // the relay link: on the brand line, else on the first header
 	if lay.brandRows > 0 {
 		lines = append(lines, joinLR(m.brandWordmark(), mark, w))
 		mark = ""

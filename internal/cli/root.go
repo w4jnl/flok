@@ -23,7 +23,7 @@ usage: flok <command>
   down        stop the outer session (your tmux server keeps running)
   keep-awake  [on|off|toggle|status] [--notify]: keep the Mac awake with the display on while flok runs
               (off by default, no argument toggles; macOS only)
-  link        [on|off|toggle|status] [--notify]: switch the phone link ([link] url) off and on
+  link        [on|off|toggle|status] [--notify]: switch the relay link ([link] url) off and on
               again (no argument toggles; it stays off across restarts until on)
   sidebar     run the sidebar UI in the current pane (used by up)
   status      print sessions and agents once (--json for machine output)

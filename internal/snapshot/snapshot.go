@@ -76,7 +76,7 @@ type Snapshot struct {
 	KeepAwakePresence string `json:"keep_awake_presence,omitempty"`
 	Hosts             []Host `json:"hosts,omitempty"` // remote hosts, in registry order
 	FrontHost         string `json:"front_host,omitempty"`
-	Link              *Link  `json:"link,omitempty"` // the phone link ([link] url), absent without one
+	Link              *Link  `json:"link,omitempty"` // the relay link ([link] url), absent without one
 }
 
 // Link is the state of the instance's connection to its relay (flok on the phone).

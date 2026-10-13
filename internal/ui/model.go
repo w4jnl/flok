@@ -401,9 +401,10 @@ func (m Model) rebuild(reloadStore bool) tea.Cmd {
 	return func() tea.Msg { return snapshotMsg{SnapshotMsg: f()} }
 }
 
-// animCmd starts the spinner when an agent works and someone can see it.
+// animCmd starts the animation tick when an agent works or the relay link's mark blinks, and
+// someone can see it.
 func (m *Model) animCmd() tea.Cmd {
-	if m.anyWorking() && !m.animating && !m.idle() {
+	if (m.anyWorking() || m.linkBlinks()) && !m.animating && !m.idle() {
 		m.animating = true
 		return m.anim()
 	}
@@ -476,7 +477,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case screenTickMsg:
 		return m, tea.Batch(m.pollScreen(), m.screenTick())
 	case animMsg:
-		if !m.anyWorking() || m.idle() { // nothing spins, or nobody can see it: stop until the next poll
+		if !(m.anyWorking() || m.linkBlinks()) || m.idle() { // nothing moves, or nobody can see it: stop until the next poll
 			m.animating = false
 			return m, nil
 		}

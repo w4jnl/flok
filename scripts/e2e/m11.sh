@@ -117,15 +117,15 @@ expect_soon -t 10 "the instance is online at the new relay, snapshot included" '
 expect "the relay logged the instance" 'instance e2e online' "$(cat "$RELAY_LOG")"
 expect "the relay logged the pushes" 'push: e2e · '"$PROJ"' → e2e phone e2edevic… production \(blocked\)' "$(cat "$RELAY_LOG")"
 
-# --- flok link: the phone link switched off and on again (prefix U) ------------------------------
-expect "flok link status says connected" "^phone link: on, connected to 127.0.0.1:$RELAY_PORT\$" "$("$BIN" link status)"
-expect_soon "the sidebar shows the link at the end of its brand line" 'phone ●' capture
-expect "flok link off confirms" '^phone link: off \(flok link on\)$' "$("$BIN" link off)"
+# --- flok link: the relay link switched off and on again (prefix U) ------------------------------
+expect "flok link status says connected" "^relay link: on, connected to 127.0.0.1:$RELAY_PORT\$" "$("$BIN" link status)"
+expect_soon "the sidebar shows the link at the end of its brand line" '\[flok\] +⇄' capture
+expect "flok link off confirms" '^relay link: off \(flok link on\)$' "$("$BIN" link off)"
 expect_soon -t 10 "the relay shows the instance off, not offline" '"name":"e2e","online":false,"off":true' GET /api/instances
 expect_soon "... and logged why" 'instance e2e switched off \(flok link off there\)' cat "$RELAY_LOG"
-expect_soon "the sidebar's mark turns to a ring" 'phone ○' capture
+expect_soon "the sidebar's mark turns to a dash" '\[flok\] +–' capture
 expect "an answer from the phone is refused with the reason" 'e2e is switched off \(flok link on there\)' "$(POST /api/answer '{"instance":"e2e","pane":"'"$AGENT"'","text":"x"}')"
-expect "flok status mentions it while off" '^phone link: off \(flok link on\)$' "$("$BIN" status | grep '^phone link' || true)"
+expect "flok status mentions it while off" '^relay link: off \(flok link on\)$' "$("$BIN" status | grep '^relay link' || true)"
 expect "doctor reports it switched off" 'ok +link: switched off since' "$("$BIN" doctor 2>&1 || true)"
 ONLINE=$(grep -c 'instance e2e online' "$RELAY_LOG" || true)
 OLD_PID=$(json "$SNAP" "s['sidebar_pid']")

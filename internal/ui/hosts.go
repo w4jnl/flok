@@ -281,7 +281,7 @@ func (m *Model) refederate() {
 			}
 		}
 	}
-	if w := m.linkWarning(); w != "" { // the phone link is down: say so, after the hosts
+	if w := m.linkWarning(); w != "" { // the relay link is down: say so, after the hosts
 		m.snap.Warnings = append(append([]string(nil), m.snap.Warnings...), w)
 	}
 	if len(m.d.Notices) > 0 { // after the hosts' warnings; a fresh slice, m.fed is what gets published
@@ -1001,7 +1001,7 @@ func (m Model) publishedSnapshot() snapshot.Snapshot {
 	return s
 }
 
-// Close ends the remote connections (their serve sessions end on EOF) and the phone link.
+// Close ends the remote connections (their serve sessions end on EOF) and the relay link.
 func (m Model) Close() {
 	if m.remote != nil {
 		m.remote.Close()
