@@ -70,7 +70,7 @@ type SnapshotMsg struct {
 	Unfocused bool
 	Hidden    bool
 	KeepAwake *bool
-	LinkOff   *bool // the phone link switch (flok link)
+	LinkOff   *bool // the relay link switch (flok link)
 	Theme     string
 	Rebuilt   bool // produced by Rebuild from cached tmux data, not by a tmux poll
 	Err       error

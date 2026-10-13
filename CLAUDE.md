@@ -262,7 +262,7 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
   ones by serve on a `capture` frame → `screen` frames, resent after a host reconnects), logs
   every command to `events.log` and puts the link's state in the footer (after 30 s down),
   `snapshot.json` (`link`) and at the right end of the brand line (`ui/brand.go` `linkMark`).
-  `flok link on|off|toggle` (`cli/link.go`, `prefix U`, flok-bar's "Phone link" row via
+  `flok link on|off|toggle` (`cli/link.go`, `prefix U`, flok-bar's "Relay link" row via
   `bar.LinkRow`) writes the `link-off` marker, which outlives the session (unlike keep-awake);
   the poller reads it with the other markers (`SnapshotMsg.LinkOff`) and the sidebar calls
   `link.Client.SetOff`: a `bye` frame (`wire.ByeOff`) then a close, queued events dropped, a

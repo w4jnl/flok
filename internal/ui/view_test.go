@@ -169,17 +169,18 @@ func TestFooterWrapsMessagesAboveTheStatusLine(t *testing.T) {
 	}
 }
 
-// The phone link's state sits quietly at the right end of the brand line, the dot alone on the
-// rail, on the first header when the brand is off, and nowhere without [link] url.
+// The relay link's state is one quiet cell at the right end of the brand line (the rail's too),
+// on the first header when the brand is off, and nowhere without [link] url: the arrow ⇄ while
+// on, whatever its health (the colour says it), a dash when switched off.
 func TestLinkMark(t *testing.T) {
 	m := brandModel(t)
 	if lines := render(m, 28, 30); strings.TrimSpace(lines[0]) != "[flok]" {
 		t.Fatalf("no link, no mark: %q", lines[0])
 	}
 	m.linker = link.New(link.Config{URL: "ws://127.0.0.1:1/link"}) // never started
-	for st, glyph := range map[link.State]string{link.Connected: "●", link.Off: "○", link.Connecting: "◌", link.Unreachable: "◌", link.Refused: "✗"} {
+	for st, glyph := range map[link.State]string{link.Connected: "⇄", link.Connecting: "⇄", link.Unreachable: "⇄", link.Refused: "⇄", link.Off: "–"} {
 		m.linkStatus = link.Status{State: st}
-		if l := render(m, 28, 30)[0]; !strings.HasPrefix(l, "[flok]") || !strings.HasSuffix(l, "phone "+glyph) || len([]rune(l)) != 28 {
+		if l := render(m, 28, 30)[0]; !strings.HasPrefix(l, "[flok]") || !strings.HasSuffix(l, " "+glyph) || len([]rune(l)) != 28 {
 			t.Errorf("%s: wide brand line %q", st, l)
 		}
 		if l := render(m, 6, 30)[0]; l != " ⌈⩓⌉ "+glyph {
@@ -188,7 +189,28 @@ func TestLinkMark(t *testing.T) {
 	}
 	m.linkStatus = link.Status{State: link.Off}
 	m.d.Cfg.Sidebar.Brand = false
-	if l := render(m, 28, 30)[0]; !strings.HasPrefix(l, "sessions") || !strings.HasSuffix(l, "phone ○") {
+	if l := render(m, 28, 30)[0]; !strings.HasPrefix(l, "sessions") || !strings.HasSuffix(l, " –") {
 		t.Errorf("no brand: the mark goes on the first header: %q", l)
+	}
+}
+
+// While the link connects its mark blinks, so the animation tick runs even with no agent working,
+// and stops once it is connected.
+func TestLinkMarkBlinksWhileConnecting(t *testing.T) {
+	m := brandModel(t)
+	m.snap.Agents = nil // nothing works: only the link can want the tick
+	m.linker = link.New(link.Config{URL: "ws://127.0.0.1:1/link"})
+	m.linkStatus = link.Status{State: link.Connected}
+	if m.animCmd() != nil {
+		t.Fatal("a connected link animates")
+	}
+	cmd := m.onLink(link.Msg{Status: &link.Status{State: link.Connecting}})
+	if cmd == nil || !m.animating {
+		t.Fatal("connecting does not start the tick")
+	}
+	m.linkStatus = link.Status{State: link.Connected}
+	next, cmd := m.Update(animMsg{})
+	if m = next.(Model); cmd != nil || m.animating {
+		t.Fatal("the tick goes on after the link connected")
 	}
 }

@@ -18,7 +18,7 @@ import (
 // the same keys as the local tmux snippet, `?` excepted (tmux's own list-keys stays there).
 type KeyCommand struct{ Key, Cmd string }
 
-// KeyCommands in binding order: the agent keys (u keep-awake, U the phone link), the three menus
+// KeyCommands in binding order: the agent keys (u keep-awake, U the relay link), the three menus
 // (A agents, S sessions, @ servers), then the server keys (N/P next and previous server, O the
 // last one, F1…F9 a server by position, local first).
 var KeyCommands = append([]KeyCommand{

@@ -15,7 +15,7 @@ import (
 	"github.com/w4jnl/flok/internal/tmux"
 )
 
-// The phone link. link.Client keeps the WebSocket to the relay; the sidebar feeds it what it
+// The relay link. link.Client keeps the WebSocket to the relay; the sidebar feeds it what it
 // publishes anyway (publish, notePush) and acts on what comes back: an answer typed into an
 // agent pane (checked against the federated view, local panes through the inner server, a
 // host's through its connection), a seen mark, a subscription to a pane's screen (captured once
@@ -63,7 +63,7 @@ func (m *Model) onLink(msg link.Msg) tea.Cmd {
 		}
 		m.refederate()
 		m.publish()
-		return nil
+		return m.animCmd() // connecting blinks the mark
 	}
 	if msg.Command != nil {
 		return m.linkCommand(*msg.Command)
@@ -80,14 +80,14 @@ func (m Model) linkWarning() string {
 	st := m.linkStatus
 	switch st.State {
 	case link.Refused:
-		return "phone link: " + st.Detail
+		return "relay link: " + st.Detail
 	case link.Unreachable:
 		if time.Since(st.Since) >= linkWarnAfter {
 			d := st.Detail
 			if d == "" {
 				d = "relay out of reach"
 			}
-			return "phone link: " + d
+			return "relay link: " + d
 		}
 	}
 	return ""

@@ -172,11 +172,11 @@ func TestLinkRow(t *testing.T) {
 		st, detail, title, tip string
 		checked                bool
 	}{
-		{"connected", "", "Phone link", "connected to your relay, encrypted", true},
-		{"off", "", "Phone link", "switched off: the phone shows this flok as off (flok link on)", false},
-		{"connecting", "", "Phone link · connecting", "the phone app reaches this flok through your relay (flok link)", true},
-		{"unreachable", "no pong from the relay", "Phone link · out of reach", "no pong from the relay", true},
-		{"refused", "the relay refused the token ([link] token)", "Phone link · refused", "the relay refused the token ([link] token)", true},
+		{"connected", "", "Relay link", "connected to your relay, encrypted", true},
+		{"off", "", "Relay link", "switched off: the phone shows this flok as off (flok link on)", false},
+		{"connecting", "", "Relay link · connecting", "this flok's connection to your relay, for the phone app (flok link)", true},
+		{"unreachable", "no pong from the relay", "Relay link · out of reach", "no pong from the relay", true},
+		{"refused", "the relay refused the token ([link] token)", "Relay link · refused", "the relay refused the token ([link] token)", true},
 	} {
 		title, tip, checked, shown := LinkRow(withLink(c.st, c.detail), snapshot.Fresh)
 		if !shown || title != c.title || tip != c.tip || checked != c.checked {

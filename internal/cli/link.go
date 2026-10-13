@@ -14,7 +14,7 @@ import (
 
 const linkUsage = `usage: flok link [on|off|toggle|status] [--notify]
 
-Switches the phone link ([link] url) off and on again (no argument toggles). Off, nothing leaves
+Switches the relay link ([link] url) off and on again (no argument toggles). Off, nothing leaves
 this machine for the relay: the phone shows this flok as off, gets no notifications from it and
 cannot answer its agents. It stays off across flok down and up until flok link on. --notify
 shows the result on tmux's status line instead of printing it, for key bindings (prefix U).`
@@ -53,30 +53,30 @@ func readLink(dir string) linkState {
 func (l linkState) String() string {
 	switch {
 	case !l.running && l.off:
-		return "phone link: off (it stays off when flok starts; flok link on)"
+		return "relay link: off (it stays off when flok starts; flok link on)"
 	case !l.running:
-		return "phone link: on (flok is not running)"
+		return "relay link: on (flok is not running)"
 	case l.link == nil:
-		return "phone link: the running sidebar has none (flok reload after setting [link] url)"
+		return "relay link: the running sidebar has none (flok reload after setting [link] url)"
 	}
 	k, relay := l.link, linkHost(l.link.URL)
 	switch link.State(k.State) {
 	case link.Off:
-		return "phone link: off (flok link on)"
+		return "relay link: off (flok link on)"
 	case link.Connected:
 		if k.Encrypted {
-			return "phone link: on, connected to " + relay + ", encrypted"
+			return "relay link: on, connected to " + relay + ", encrypted"
 		}
-		return "phone link: on, connected to " + relay
+		return "relay link: on, connected to " + relay
 	case link.Connecting:
-		return "phone link: on, connecting to " + relay
+		return "relay link: on, connecting to " + relay
 	case link.Refused:
-		return "phone link: on, refused by " + relay + ": " + k.Detail
+		return "relay link: on, refused by " + relay + ": " + k.Detail
 	}
 	if k.Detail != "" {
-		return "phone link: on, " + relay + " out of reach: " + k.Detail
+		return "relay link: on, " + relay + " out of reach: " + k.Detail
 	}
-	return "phone link: on, " + relay + " out of reach"
+	return "relay link: on, " + relay + " out of reach"
 }
 
 // linkHost is the relay's host in a link URL, the URL itself when it has none.
@@ -103,10 +103,10 @@ func (c linkCmd) run(args []string) int {
 		fmt.Fprintf(c.errw, "flok link: unknown argument %q\n%s\n", action, linkUsage)
 		return 2
 	case c.url == "" && action == "status":
-		fmt.Fprintln(c.out, "phone link: none ([link] url in config.toml connects flok to your relay)")
+		fmt.Fprintln(c.out, "relay link: none ([link] url in config.toml connects flok to your relay)")
 		return 0
 	case c.url == "":
-		fmt.Fprintln(c.errw, "flok link: no phone link to switch; [link] url in config.toml connects flok to your relay")
+		fmt.Fprintln(c.errw, "flok link: no relay link to switch; [link] url in config.toml connects flok to your relay")
 		return 1
 	}
 	cur := readLink(c.dir)

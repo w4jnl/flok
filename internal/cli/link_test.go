@@ -71,7 +71,7 @@ func TestLinkArguments(t *testing.T) {
 		t.Error("a refused off must not leave the marker set")
 	}
 	c, out, _ = linkTest(dir, "")
-	if rc := c.run([]string{"status"}); rc != 0 || !strings.Contains(out.String(), "phone link: none") {
+	if rc := c.run([]string{"status"}); rc != 0 || !strings.Contains(out.String(), "relay link: none") {
 		t.Errorf("status without a link: rc=%d out=%q", rc, out)
 	}
 }
@@ -80,14 +80,14 @@ func TestLinkArguments(t *testing.T) {
 func TestLinkSwitchWithoutFlok(t *testing.T) {
 	dir := t.TempDir()
 	c, out, _ := linkTest(dir, testLinkURL)
-	if rc := c.run(nil); rc != 0 || !strings.Contains(out.String(), "phone link: off (it stays off when flok starts") {
+	if rc := c.run(nil); rc != 0 || !strings.Contains(out.String(), "relay link: off (it stays off when flok starts") {
 		t.Fatalf("toggle off: rc=%d out=%q", rc, out)
 	}
 	if !state.New(dir).LinkOff() {
 		t.Fatal("the marker is not set")
 	}
 	c, out, _ = linkTest(dir, testLinkURL)
-	if rc := c.run(nil); rc != 0 || strings.TrimSpace(out.String()) != "phone link: on (flok is not running)" {
+	if rc := c.run(nil); rc != 0 || strings.TrimSpace(out.String()) != "relay link: on (flok is not running)" {
 		t.Fatalf("toggle on: rc=%d out=%q", rc, out)
 	}
 }
@@ -103,14 +103,14 @@ func TestLinkRoundTrip(t *testing.T) {
 		}
 		return strings.TrimSpace(out.String())
 	}
-	on := "phone link: on, connected to flok.example.net, encrypted"
+	on := "relay link: on, connected to flok.example.net, encrypted"
 	if got := run("status"); got != on {
 		t.Fatalf("initial status %q", got)
 	}
-	if got := run(); got != "phone link: off (flok link on)" { // bare toggles
+	if got := run(); got != "relay link: off (flok link on)" { // bare toggles
 		t.Fatalf("toggle off: %q", got)
 	}
-	if got := run("off"); got != "phone link: off (flok link on)" { // off when off: a no-op
+	if got := run("off"); got != "relay link: off (flok link on)" { // off when off: a no-op
 		t.Fatalf("off again: %q", got)
 	}
 	if got := run("toggle"); got != on {
@@ -137,11 +137,11 @@ func TestLinkStateWording(t *testing.T) {
 		return linkState{running: true, link: &snapshot.Link{State: st, Detail: detail, URL: "wss://relay.example/link"}}
 	}
 	for st, want := range map[linkState]string{
-		l("connecting", ""):                                        "phone link: on, connecting to relay.example",
-		l("unreachable", "no pong from relay"):                     "phone link: on, relay.example out of reach: no pong from relay",
-		l("unreachable", ""):                                       "phone link: on, relay.example out of reach",
-		l("refused", "the relay refused the token ([link] token)"): "phone link: on, refused by relay.example: the relay refused the token ([link] token)",
-		{running: true}:                                            "phone link: the running sidebar has none (flok reload after setting [link] url)",
+		l("connecting", ""):                                        "relay link: on, connecting to relay.example",
+		l("unreachable", "no pong from relay"):                     "relay link: on, relay.example out of reach: no pong from relay",
+		l("unreachable", ""):                                       "relay link: on, relay.example out of reach",
+		l("refused", "the relay refused the token ([link] token)"): "relay link: on, refused by relay.example: the relay refused the token ([link] token)",
+		{running: true}:                                            "relay link: the running sidebar has none (flok reload after setting [link] url)",
 	} {
 		if got := st.String(); got != want {
 			t.Errorf("%+v: %q, want %q", st.link, got, want)
