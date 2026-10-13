@@ -70,7 +70,7 @@ type Features struct {
 	TerminalFeatures   bool // 3.2  terminal-features
 	BorderLines        bool // 3.2  pane-border-lines
 	Passthrough        bool // 3.3  allow-passthrough
-	PopupBorder        bool // 3.3  display-popup -b/-T/-e
+	PopupBorder        bool // 3.3  display-popup -b/-T/-e/-s/-S
 	BorderIndicators   bool // 3.3  pane-border-indicators
 	FocusHooks         bool // 3.3  client-focus-in/out hooks
 	ResizedHook        bool // 3.3  window-resized hook (client-resized before)

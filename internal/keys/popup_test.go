@@ -16,7 +16,7 @@ func TestPopupArgsByVersion(t *testing.T) {
 		t.Fatalf("3.2: %q", el9)
 	}
 	full := strings.Join(PopupArgs(tmux.FeaturesFor(tmux.ParseVersion("3.7c")), "", "flok keys"), " ")
-	if !strings.Contains(full, "-b rounded -T  keybinds  flok keys") {
-		t.Fatalf("3.3+: %q", full)
+	if !strings.Contains(full, "-b rounded -T  keybinds  -s fg=default,bg=default -S fg=default,bg=default flok keys") {
+		t.Fatalf("3.3+: %q (the terminal's colours, not tmux 3.8's grey popup)", full)
 	}
 }
