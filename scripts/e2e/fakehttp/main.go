@@ -2,6 +2,8 @@
 // (-mode ntfy, what [notify] url posts to) or the APNs provider API (-mode apns, what flok-relay
 // pushes to). It listens on 127.0.0.1 on a free port, writes the port to -portfile once it
 // accepts connections, and appends one line per POST to -log in a fixed shape the suites grep.
+// -mode tap is a man in the middle instead: every connection is passed on to -upstream and every
+// byte both ways goes to -log, what a proxy that inspects HTTPS reads once it has decrypted it.
 // Pure Go on purpose: Python's HTTPServer did a reverse lookup at start that stalled for half a
 // minute on a CI Mac, and every push in that window was lost.
 package main
@@ -24,6 +26,7 @@ func main() {
 	logPath := flag.String("log", "", "file to append one line per POST to")
 	portFile := flag.String("portfile", "", "file to write the chosen port to once listening")
 	listen := flag.String("listen", "127.0.0.1:0", "address to listen on")
+	upstream := flag.String("upstream", "", "tap: the address every connection is passed on to")
 	flag.Parse()
 	if *logPath == "" {
 		fmt.Fprintln(os.Stderr, "fakehttp: -log is needed")
@@ -41,6 +44,10 @@ func main() {
 		_ = os.Rename(tmp, *portFile)
 	}
 	var mu sync.Mutex
+	if *mode == "tap" {
+		tap(ln, *upstream, *logPath, &mu)
+		return
+	}
 	dec := new(mime.WordDecoder)
 	h := func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
@@ -84,3 +91,38 @@ func main() {
 	}
 	_ = http.Serve(ln, http.HandlerFunc(h))
 }
+
+// tap passes connections on to upstream and appends what flows both ways to logPath.
+func tap(ln net.Listener, upstream, logPath string, mu *sync.Mutex) {
+	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "fakehttp:", err)
+		os.Exit(1)
+	}
+	logw := writerFunc(func(p []byte) (int, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		return f.Write(p)
+	})
+	for {
+		c, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		u, err := net.Dial("tcp", upstream)
+		if err != nil {
+			c.Close()
+			continue
+		}
+		pipe := func(dst, src net.Conn) {
+			_, _ = io.Copy(io.MultiWriter(dst, logw), src)
+			dst.Close()
+		}
+		go pipe(u, c)
+		go pipe(c, u)
+	}
+}
+
+type writerFunc func([]byte) (int, error)
+
+func (w writerFunc) Write(p []byte) (int, error) { return w(p) }

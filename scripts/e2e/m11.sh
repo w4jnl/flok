@@ -3,7 +3,8 @@
 # to it ([link] url/token), the "app" looks through the relay's API and WebSocket (flok-relay
 # tail), a stand-in APNs logs the pushes, an answer typed on the phone lands in the agent pane
 # (local, then on a remote host through the main instance), a subscription streams the screen,
-# and the link comes back after the relay restarts.
+# the link comes back after the relay restarts, and the encrypted link ([link] pin) carries the
+# same through a tap that reads every byte, which sees neither the token nor an answer.
 R0=$(cd "$(dirname "$0")/../.." && pwd)
 RELAY=$R0/bin/flok-relay
 FH=$(mktemp -d)
@@ -33,7 +34,7 @@ start_relay
 E2E_EXTRA_CONFIG=$(printf '[link]\nname = "e2e"\nurl = "http://127.0.0.1:%s"\ntoken = "%s"\n' "$RELAY_PORT" "$INST_TOK")
 export E2E_EXTRA_CONFIG
 source "$(dirname "$0")/lib.sh"
-m11_cleanup() { kill "${RELAY_PID:-}" "${APNS_PID:-}" "${TAIL_PID:-}" 2>/dev/null || true; rm -rf "$FH" "$RELAY_LOG" "$RELAY_DATA" "$APNS_KEY" "$T/tail.out" 2>/dev/null || true; }
+m11_cleanup() { kill "${RELAY_PID:-}" "${APNS_PID:-}" "${TAIL_PID:-}" "${TAP_PID:-}" 2>/dev/null || true; rm -rf "$FH" "$RELAY_LOG" "$RELAY_DATA" "$APNS_KEY" "$T/tail.out" 2>/dev/null || true; }
 trap 'm11_cleanup; cleanup' EXIT
 api() { curl -s -m 5 -H "Authorization: Bearer $DEV_TOK" "$@" "http://127.0.0.1:$RELAY_PORT${API_PATH}"; }
 GET() { API_PATH=$1 api; }
@@ -111,6 +112,29 @@ expect_soon -t 20 "the link is back after the relay restarts" '^connected$' json
 expect_soon -t 10 "the instance is online at the new relay, snapshot included" '"name":"e2e","online":true.*"pane_id":"'"$AGENT"'"' GET /api/instances
 expect "the relay logged the instance" 'instance e2e online' "$(cat "$RELAY_LOG")"
 expect "the relay logged the pushes" 'push: e2e · '"$PROJ"' → e2e phone e2edevic… production \(blocked\)' "$(cat "$RELAY_LOG")"
+
+# --- the encrypted link: TLS inside the WebSocket, to the relay's own key -----------------------
+# a tap between the sidebar and the relay keeps every byte, as a proxy that inspects HTTPS would
+PIN=$("$RELAY" pin -data "$RELAY_DATA")
+expect "the relay logged the pin of its key at start" "link pin $PIN" "$(cat "$RELAY_LOG")"
+"$FH/fakehttp" -mode tap -upstream "127.0.0.1:$RELAY_PORT" -log "$FH/tap.log" -portfile "$FH/tapport" &
+TAP_PID=$!
+for _ in $(seq 1 100); do [ -s "$FH/tapport" ] && break; sleep 0.1; done
+sed -i.bak "s#127.0.0.1:$RELAY_PORT#127.0.0.1:$(cat "$FH/tapport")#" "$FLOK_CONFIG" && rm -f "$FLOK_CONFIG.bak"
+printf 'pin = "%s"\n' "$PIN" >> "$FLOK_CONFIG"   # [link] is the config's last table
+"$BIN" reload
+expect_soon -t 20 "the sidebar links in again, encrypted, through the tap" '^connected True$' json "$SNAP" "s['link']['state'] + ' ' + str(s['link'].get('encrypted'))"
+expect_soon -t 10 "the relay logged the encrypted link" 'instance e2e online \(flok [^)]*, encrypted\)' cat "$RELAY_LOG"
+expect_soon -t 10 "the snapshot reaches the relay inside the tunnel" '"name":"e2e","online":true.*"pane_id":"'"$AGENT"'"' GET /api/instances
+expect "an answer goes through the tunnel" '"ok":true' "$(POST /api/answer '{"instance":"e2e","pane":"'"$AGENT"'","text":"tunnelreply"}')"
+expect_soon "the pane shows it" 'tunnelreply' IN capture-pane -p -t "$AGENT"
+expect "the link went through the tap, to the encrypted path" 'GET /link/tls' "$(cat "$FH/tap.log")"
+expect "the tap never saw the instance token" '^0$' "$(grep -c -a -F "$INST_TOK" "$FH/tap.log" || true)"
+expect "the tap never saw the answer" '^0$' "$(grep -c -a -F tunnelreply "$FH/tap.log" || true)"
+expect "flok doctor reports the encrypted link" 'link: connected to ws://127.0.0.1:[0-9]+/link/tls as "e2e", encrypted to the pinned key' "$("$BIN" doctor 2>&1)"
+sed -i.bak "s#^pin = .*#pin = \"sha256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\"#" "$FLOK_CONFIG" && rm -f "$FLOK_CONFIG.bak"
+"$BIN" reload
+expect_soon -t 20 "a key other than the pinned one is refused" "^refused: the relay's key does not match \[link\] pin \(it is $PIN\)" json "$SNAP" "s['link']['state'] + ': ' + s['link'].get('detail', '')"
 hook claude '{"hook_event_name":"SessionEnd","session_id":"ph1","reason":"exit"}'
 m11_cleanup
 finish

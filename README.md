@@ -448,6 +448,17 @@ stream as JSON lines, which is the quickest way to see what the phone would. Tok
 the sidebar is not running), the footer says when the relay has been out of reach for half a
 minute, and `snapshot.json` carries the link's state.
 
+**Behind a proxy that reads HTTPS.** An office proxy that inspects TLS (it signs with the
+company's own root certificate) reads the plain link: agent names, screens, your answers and
+the instance token. `[link] pin` closes that: the link then runs TLS 1.3 *inside* the
+WebSocket, to the relay's own key (`flok-relay pin` prints its pin, `sha256:…`), and flok trusts
+that key and nothing else, so a proxy that answers with a key of its own is refused instead of
+read. The token travels only inside; the proxy sees an upgrade to `/link/tls` and binary
+messages. The relay still reads everything (it is yours), so pushes, the badge and the Live
+Activity work as before. `tunnel_only` on the relay refuses links without a pin. The tunnel is
+not disguised as anything else: a proxy that blocks or flags data it cannot read will do so,
+and asking for the relay's name to be exempt from inspection is then the straight route.
+
 The app is [`app/ios`](app/ios): SwiftUI, iOS 17 and later, every instance in one list, the
 agents that need you, the live screen of an agent with a key bar and a reply field, Approve and
 Deny from the lock screen, the badge counting what waits. It is built from `project.yml` with
@@ -885,6 +896,7 @@ events = ["blocked", "done", "error"]
 name = ""                   # "" = the machine's short hostname
 url = ""                    # your flok-relay: wss://flok.example.net/link (https://flok.example.net works too); "" = off
 token = ""                  # one of the relay's instance_tokens (flok-relay token prints one)
+pin = ""                    # the relay's key (flok-relay pin): the link runs inside TLS to it, unreadable to a proxy that inspects HTTPS
 
 [theme]                     # Dracula by default; state tokens may name a colour or a hex value
 mode = "auto"               # auto: follow the terminal's background, asked at `flok up` | dark | light

@@ -7,6 +7,7 @@
 #   FLOK_RELAY_APNS_KEY_ID       10-character key id of the .p8
 #   FLOK_RELAY_APNS_TEAM_ID      Apple team id
 #   FLOK_RELAY_APNS_TOPIC        the app's bundle id
+#   FLOK_RELAY_TUNNEL_ONLY       1: refuse links without [link] pin (default: take both)
 #   FLOK_HOST                    the public name, flok.example.net
 #   TRAEFIK_NETWORK              the Docker network Traefik watches (default traefik)
 #   TRAEFIK_ENTRYPOINT           Traefik's HTTPS entrypoint (default websecure)
@@ -15,7 +16,8 @@
 # `flok-relay token` prints a fresh token. Leave FLOK_RELAY_APNS_KEY_B64 empty for a relay
 # without pushes (the app still works while open); nothing is mounted from the stack directory.
 # One key serves Xcode and TestFlight builds alike: each phone tells the relay which APNs service
-# its token belongs to.
+# its token belongs to. The relay's own key for encrypted links lives in the volume
+# (link-key.pem); `docker exec flok-relay /flok-relay pin` prints the pin for [link] pin.
 services:
   flok-relay:
     image: ${FLOK_RELAY_IMAGE:-ghcr.io/w4jnl/flok-relay:latest}
@@ -28,6 +30,7 @@ services:
       FLOK_RELAY_APNS_KEY_ID: ${FLOK_RELAY_APNS_KEY_ID:-}
       FLOK_RELAY_APNS_TEAM_ID: ${FLOK_RELAY_APNS_TEAM_ID:-}
       FLOK_RELAY_APNS_TOPIC: ${FLOK_RELAY_APNS_TOPIC:-}
+      FLOK_RELAY_TUNNEL_ONLY: ${FLOK_RELAY_TUNNEL_ONLY:-}
     volumes:
       - flok-relay-data:/data
     networks:

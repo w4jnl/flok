@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -15,6 +16,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -23,6 +25,7 @@ import (
 	"github.com/coder/websocket"
 
 	"github.com/w4jnl/flok/internal/link"
+	"github.com/w4jnl/flok/internal/link/tunnel"
 	"github.com/w4jnl/flok/internal/link/wire"
 	"github.com/w4jnl/flok/internal/relay"
 	"github.com/w4jnl/flok/internal/relay/apns"
@@ -38,6 +41,7 @@ usage: flok-relay <command>
   serve    run the relay (-config relay.toml, -listen :8080, -data /data; env FLOK_RELAY_*)
   tail     connect as the app and print what it would see (-url, -token, -subscribe inst:%12)
   token    print a fresh random token for the config
+  pin      print the pin of the relay's key for [link] pin (-data /data; created when missing)
   health   GET /healthz and exit 0 when the relay answers (-url)
   version  print the version
 `
@@ -47,6 +51,7 @@ type fileConfig struct {
 	DataDir        string   `toml:"data_dir"`
 	InstanceTokens []string `toml:"instance_tokens"`
 	DeviceTokens   []string `toml:"device_tokens"`
+	TunnelOnly     bool     `toml:"tunnel_only"` // refuse links without [link] pin
 	APNS           struct {
 		KeyFile string `toml:"key_file"`
 		KeyID   string `toml:"key_id"`
@@ -69,6 +74,8 @@ func main() {
 		rc = runTail(os.Args[2:])
 	case "token":
 		fmt.Println(relay.NewToken())
+	case "pin":
+		rc = runPin(os.Args[2:])
 	case "health":
 		rc = runHealth(os.Args[2:])
 	case "version", "--version", "-V":
@@ -129,6 +136,9 @@ func runServe(args []string) int {
 	if v := env("DEVICE_TOKENS", ""); v != "" {
 		fc.DeviceTokens = splitList(v)
 	}
+	if v := env("TUNNEL_ONLY", ""); v != "" {
+		fc.TunnelOnly = v == "1" || strings.EqualFold(v, "true")
+	}
 	if len(fc.InstanceTokens) == 0 || len(fc.DeviceTokens) == 0 {
 		fmt.Fprintln(os.Stderr, "flok-relay: instance_tokens and device_tokens are both needed (flok-relay token prints one)")
 		return 1
@@ -166,8 +176,22 @@ func runServe(args []string) int {
 	} else {
 		logger.Printf("push: off (no APNs key)")
 	}
+	var linkKey *tls.Certificate
+	if *data == "" {
+		logger.Printf("link: no encrypted link (no data dir to keep the relay's key in)")
+	} else if k, err := tunnel.LoadOrCreate(filepath.Join(*data, linkKeyFile)); err != nil {
+		logger.Printf("link: no encrypted link: %v", err)
+	} else {
+		linkKey = &k
+		pin, _ := tunnel.PinOf(k)
+		logger.Printf("link pin %s (for [link] pin; links without it are %s)", pin, map[bool]string{true: "refused", false: "taken too"}[fc.TunnelOnly])
+	}
+	if fc.TunnelOnly && linkKey == nil {
+		fmt.Fprintln(os.Stderr, "flok-relay: tunnel_only needs the relay's key, which needs a data dir")
+		return 1
+	}
 	srv, err := relay.New(relay.Config{InstanceTokens: fc.InstanceTokens, DeviceTokens: fc.DeviceTokens, DataDir: *data, Push: pusher,
-		Logf: logger.Printf, Version: version})
+		Logf: logger.Printf, Version: version, LinkKey: linkKey, TunnelOnly: fc.TunnelOnly})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "flok-relay:", err)
 		return 1
@@ -187,6 +211,30 @@ func runServe(args []string) int {
 		return 1
 	}
 	srv.Close()
+	return 0
+}
+
+// linkKeyFile holds the relay's key and self-signed certificate for the encrypted link.
+const linkKeyFile = "link-key.pem"
+
+// runPin prints the pin of the relay's key, creating the key the way serve would.
+func runPin(args []string) int {
+	fs := flag.NewFlagSet("flok-relay pin", flag.ContinueOnError)
+	data := fs.String("data", env("DATA_DIR", "/data"), "the relay's data dir")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	k, err := tunnel.LoadOrCreate(filepath.Join(*data, linkKeyFile))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "flok-relay:", err)
+		return 1
+	}
+	pin, err := tunnel.PinOf(k)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "flok-relay:", err)
+		return 1
+	}
+	fmt.Println(pin)
 	return 0
 }
 

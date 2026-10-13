@@ -1,5 +1,6 @@
 // Package relay is flok-relay: the small service between flok instances and the phone. Each
-// instance dials in over a WebSocket (/link, bearer instance token) and streams its snapshot,
+// instance dials in over a WebSocket (/link, bearer instance token; or /link/tls, the same frames
+// inside TLS to the relay's own key, for a network whose proxy reads HTTPS) and streams its snapshot,
 // events and captured screens; the app connects the same way (/api/ws, bearer device token) or
 // calls the HTTP API, sees every instance in one place, answers prompts and gets pushes through
 // APNs. The relay keeps the last snapshot per instance for an instant first paint and never
@@ -10,6 +11,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -24,6 +26,7 @@ import (
 
 	"github.com/w4jnl/flok/internal/agent"
 	"github.com/w4jnl/flok/internal/answer"
+	"github.com/w4jnl/flok/internal/link/tunnel"
 	"github.com/w4jnl/flok/internal/link/wire"
 	"github.com/w4jnl/flok/internal/relay/apns"
 	"github.com/w4jnl/flok/internal/snapshot"
@@ -51,7 +54,11 @@ type Config struct {
 	QuietEnd time.Duration
 	// AgentLinger keeps a followed agent's finished activity on the Lock Screen; 0 = 10 min.
 	AgentLinger time.Duration
-	Version     string
+	// LinkKey is the relay's own key for the encrypted link (/link/tls, tunnel.LoadOrCreate);
+	// nil = no encrypted link. TunnelOnly refuses the plain /link.
+	LinkKey    *tls.Certificate
+	TunnelOnly bool
+	Version    string
 }
 
 // Server is one relay.
@@ -77,7 +84,7 @@ type Server struct {
 type instance struct {
 	name    string
 	hello   wire.Hello
-	conn    *websocket.Conn // the current link, while online
+	conn    frameConn // the current link, while online
 	gen     uint64
 	online  bool
 	since   time.Time
@@ -128,6 +135,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 	mux.HandleFunc("GET /link", s.handleLink)
+	mux.HandleFunc("GET /link/tls", s.handleLinkTunnel)
 	mux.HandleFunc("GET /api/ws", s.withDevice(s.handleAppWS))
 	mux.HandleFunc("GET /api/instances", s.withDevice(s.handleInstances))
 	mux.HandleFunc("POST /api/answer", s.withDevice(s.handleAnswer))
@@ -201,6 +209,10 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 // --- instances -------------------------------------------------------------------------------
 
 func (s *Server) handleLink(w http.ResponseWriter, r *http.Request) {
+	if s.cfg.TunnelOnly {
+		http.Error(w, "this relay takes encrypted links only: set [link] pin (flok-relay pin prints it)", http.StatusForbidden)
+		return
+	}
 	if !tokenIn(bearer(r), s.cfg.InstanceTokens) {
 		http.Error(w, "an instance token is needed", http.StatusUnauthorized)
 		return
@@ -210,10 +222,54 @@ func (s *Server) handleLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	conn.SetReadLimit(wire.MaxFrame)
+	s.serveLink(r.Context(), wsConn{conn}, r.RemoteAddr, "")
+}
+
+// handleLinkTunnel is the encrypted link: the WebSocket carries TLS to the relay's own key, and
+// everything, the token included, travels inside it. The upgrade itself needs no token, so a
+// proxy that reads the outer HTTPS sees none.
+func (s *Server) handleLinkTunnel(w http.ResponseWriter, r *http.Request) {
+	if s.cfg.LinkKey == nil {
+		http.Error(w, "this relay has no encrypted link (no data dir for its key)", http.StatusNotFound)
+		return
+	}
+	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+	if err != nil {
+		return
+	}
 	ctx := r.Context()
+	t, err := tunnel.Server(ctx, conn, *s.cfg.LinkKey, wire.MaxFrame)
+	if err != nil {
+		conn.CloseNow()
+		s.cfg.Logf("link: encrypted handshake from %s failed: %v", r.RemoteAddr, err)
+		return
+	}
+	tc := tunnelConn{conn, t}
+	actx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	data, err := t.Read(actx)
+	cancel()
+	var auth wire.Frame
+	if err != nil || json.Unmarshal(data, &auth) != nil || auth.Type != wire.TypeAuth || !tokenIn(auth.Token, s.cfg.InstanceTokens) {
+		tc.Close(websocket.StatusPolicyViolation, "an instance token is needed")
+		return
+	}
+	ok, _ := json.Marshal(wire.Frame{Type: wire.TypeAuth})
+	wctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	err = t.Write(wctx, ok)
+	cancel()
+	if err != nil {
+		conn.CloseNow()
+		return
+	}
+	s.serveLink(ctx, tc, r.RemoteAddr, ", encrypted")
+}
+
+// serveLink runs an instance's link once it is authenticated: the hello, then its frames until
+// the connection ends.
+func (s *Server) serveLink(ctx context.Context, conn frameConn, remote, how string) {
 	hctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	var hello wire.Frame
-	_, data, err := conn.Read(hctx)
+	data, err := conn.Read(hctx)
 	cancel()
 	if err != nil || json.Unmarshal(data, &hello) != nil || hello.Type != wire.TypeHello || hello.Hello == nil || hello.Hello.Name == "" {
 		conn.Close(websocket.StatusPolicyViolation, "a hello frame with a name comes first")
@@ -227,7 +283,7 @@ func (s *Server) handleLink(w http.ResponseWriter, r *http.Request) {
 	if replaced != nil { // the same name again: the earlier link is stale (a drop the relay had not noticed yet)
 		replaced.Close(websocket.StatusGoingAway, "replaced by a newer link from "+in.name)
 	}
-	s.cfg.Logf("instance %s online (flok %s on %s, %s)", in.name, hello.Hello.Version, hello.Hello.Hostname, r.RemoteAddr)
+	s.cfg.Logf("instance %s online (flok %s on %s, %s%s)", in.name, hello.Hello.Version, hello.Hello.Hostname, remote, how)
 	wctx, stop := context.WithCancel(ctx)
 	defer stop()
 	go s.writer(wctx, conn, out, gen, in)
@@ -238,7 +294,7 @@ func (s *Server) handleLink(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 	for {
-		_, data, err := conn.Read(ctx)
+		data, err := conn.Read(ctx)
 		if err != nil {
 			return
 		}
@@ -267,7 +323,7 @@ func (s *Server) handleLink(w http.ResponseWriter, r *http.Request) {
 
 // writer drains an instance's or an app's outgoing queue onto its connection; a queue that
 // stays full (a stalled consumer) ends the connection.
-func (s *Server) writer(ctx context.Context, conn *websocket.Conn, out <-chan wire.Frame, gen uint64, in *instance) {
+func (s *Server) writer(ctx context.Context, conn frameConn, out <-chan wire.Frame, gen uint64, in *instance) {
 	for {
 		select {
 		case f := <-out:
@@ -276,7 +332,7 @@ func (s *Server) writer(ctx context.Context, conn *websocket.Conn, out <-chan wi
 				continue
 			}
 			wctx, cancel := context.WithTimeout(ctx, 20*time.Second)
-			err = conn.Write(wctx, websocket.MessageText, data)
+			err = conn.Write(wctx, data)
 			cancel()
 			if err != nil {
 				conn.CloseNow()
@@ -291,7 +347,7 @@ func (s *Server) writer(ctx context.Context, conn *websocket.Conn, out <-chan wi
 // register makes an instance current under its name; a link already up under that name is
 // replaced (the same instance reconnecting after a drop the relay has not noticed yet) and
 // returned for closing. The link's frame channel is returned too: a later link swaps in.out.
-func (s *Server) register(h wire.Hello, conn *websocket.Conn) (*instance, uint64, chan wire.Frame, *websocket.Conn) {
+func (s *Server) register(h wire.Hello, conn frameConn) (*instance, uint64, chan wire.Frame, frameConn) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	in := s.instances[h.Name]
@@ -299,7 +355,7 @@ func (s *Server) register(h wire.Hello, conn *websocket.Conn) (*instance, uint64
 		in = &instance{name: h.Name, subs: map[string]int{}}
 		s.instances[h.Name] = in
 	}
-	var replaced *websocket.Conn
+	var replaced frameConn
 	if in.online {
 		replaced = in.conn
 	}
@@ -700,7 +756,7 @@ func (s *Server) handleAppWS(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	wctx, stop := context.WithCancel(ctx)
 	defer stop()
-	go s.writer(wctx, conn, a.out, 0, nil)
+	go s.writer(wctx, wsConn{conn}, a.out, 0, nil)
 	defer func() {
 		conn.CloseNow()
 		s.mu.Lock()

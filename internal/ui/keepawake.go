@@ -87,7 +87,7 @@ func (m Model) publish() {
 	if m.linker != nil { // the relay gets the same view flok-bar reads, and the link's own state rides in the file
 		m.linker.Publish(s)
 		st := m.linkStatus
-		s.Link = &snapshot.Link{State: string(st.State), Detail: st.Detail, Since: st.Since, URL: st.URL}
+		s.Link = &snapshot.Link{State: string(st.State), Detail: st.Detail, Since: st.Since, URL: st.URL, Encrypted: st.Encrypted}
 	}
 	if m.publisher != nil {
 		_, _ = m.publisher.Publish(s, time.Now())

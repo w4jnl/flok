@@ -187,8 +187,8 @@ func New(d Deps) Model {
 	m.linkSubs = map[string]bool{}
 	if d.Cfg.Link.URL != "" {
 		hostname, _ := os.Hostname()
-		m.linker = link.New(link.Config{URL: d.Cfg.Link.URL, Token: d.Cfg.Link.Token, Name: d.Cfg.InstanceName(), Version: d.Version,
-			Hostname: hostname, Logf: m.debugf})
+		m.linker = link.New(link.Config{URL: d.Cfg.Link.URL, Token: d.Cfg.Link.Token, Pin: d.Cfg.Link.Pin, Name: d.Cfg.InstanceName(),
+			Version: d.Version, Hostname: hostname, Logf: m.debugf})
 		if m.linker != nil {
 			m.linkStatus = m.linker.Status()
 		}

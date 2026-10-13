@@ -7,6 +7,7 @@ import (
 
 	"github.com/w4jnl/flok/internal/config"
 	"github.com/w4jnl/flok/internal/link"
+	"github.com/w4jnl/flok/internal/link/tunnel"
 	"github.com/w4jnl/flok/internal/snapshot"
 )
 
@@ -27,6 +28,14 @@ func doctorLink(cfg config.Config, add func(level, format string, args ...any)) 
 	if cfg.Link.Token == "" {
 		add("warn", "link: [link] token is empty; the relay will refuse %s", name)
 	}
+	how := ""
+	if p := cfg.Link.Pin; p != "" {
+		if !tunnel.ValidPin(p) {
+			add("fail", "link: [link] pin %q is not a pin (sha256:… as `flok-relay pin` prints it)", p)
+			return
+		}
+		ws, how = link.TunnelURL(u), ", encrypted to the pinned key"
+	}
 	if s, f := snapshot.Load(config.StateDir(), time.Now()); f == snapshot.Fresh && s.Link != nil && s.SidebarAlive() {
 		level := "ok"
 		if s.Link.State != "connected" {
@@ -36,7 +45,7 @@ func doctorLink(cfg config.Config, add func(level, format string, args ...any)) 
 		if s.Link.Detail != "" {
 			detail = ": " + s.Link.Detail
 		}
-		add(level, "link: %s to %s as %q%s (since %s)", s.Link.State, ws, name, detail, s.Link.Since.Local().Format("15:04:05"))
+		add(level, "link: %s to %s as %q%s%s (since %s)", s.Link.State, ws, name, how, detail, s.Link.Since.Local().Format("15:04:05"))
 		return
 	}
 	health := link.HealthURL(u)
@@ -54,5 +63,5 @@ func doctorLink(cfg config.Config, add func(level, format string, args ...any)) 
 		add("warn", "link: relay at %s answered %s (not a flok relay?)", health, resp.Status)
 		return
 	}
-	add("ok", "link: relay at %s answers; the sidebar connects as %q", health, name)
+	add("ok", "link: relay at %s answers; the sidebar connects as %q%s", health, name, how)
 }
