@@ -5,3 +5,9 @@ FLOK_TEAM_ID = ABCDE12345
 // The push entitlement. Keep it for a paid developer account; a free Apple ID's personal team
 // cannot sign it: make it empty (the app then works while open, without pushes).
 FLOK_ENTITLEMENTS = Flok/Flok.entitlements
+// Optional: an App Store Connect API key (Users and Access → Integrations → App Store Connect
+// API, role Admin), so make ios-testflight and ios-device sign in with it instead of Xcode's
+// account, whose session expires. The .p8 goes to ~/.appstoreconnect/private_keys/AuthKey_<key id>.p8
+// (chmod 600); empty: Xcode's account.
+FLOK_ASC_KEY_ID =
+FLOK_ASC_ISSUER_ID =

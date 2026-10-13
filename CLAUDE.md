@@ -284,7 +284,7 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
   concurrency; XcodeGen `project.yml` → `Flok.xcodeproj`, not committed; `make ios-project`,
   `ios-build`, `ios-test` against the iPhone 15 simulator, no signing; `ios-device` installs on
   the phone on the cable, `ios-testflight` archives and uploads with `ExportOptions.plist`;
-  `Local.xcconfig` holds the team id; `Shared/` is compiled into the app and its two notification
+  `Local.xcconfig` holds the team id and, optional, the App Store Connect API key the Makefile signs in with (`ASC_AUTH`); `Shared/` is compiled into the app and its two notification
   extensions: `FlokNotificationService` puts the brand state tile on a push (`Tiles/`, from
   `assets/icons/gen`), `FlokNotificationContent` is the expanded card in the brand's dress
   (`Shared/NotificationCard.swift`, JetBrains Mono bundled) that fetches the screen and answers

@@ -45,7 +45,11 @@ entitlement, and nothing else changes.
    build installed this way is a development build and registers a sandbox token; a TestFlight
    build (`make ios-testflight`, after creating the app record for `nl.w4j.flok` in App Store
    Connect; or Product → Archive → Distribute) a production one. The relay pushes each phone through
-   the service its token belongs to, so both kinds work side by side.
+   the service its token belongs to, so both kinds work side by side. Both sign in with Xcode's
+   account, whose App Store Connect session expires now and then ("Failed to Use Accounts"); an
+   App Store Connect API key (Users and Access → Integrations, role Admin) in `Local.xcconfig`
+   (`FLOK_ASC_KEY_ID`, `FLOK_ASC_ISSUER_ID`, the `.p8` in `~/.appstoreconnect/private_keys/`)
+   takes its place.
 4. In the app: Settings → relay and device token → Save and connect → Enable notifications.
    The APNs token is handed to the relay (`/api/devices`) and shows as registered.
 
