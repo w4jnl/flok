@@ -6,6 +6,10 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+- **The card behind a push opens.** A long press on a flok notification showed iOS's plain view:
+  the extension that draws flok's card (the agent's screen, keys to answer) did not link the
+  framework iOS loads it through, so it quit at once. It now opens as intended.
+
 - **Switch the relay link off and on with `prefix U`.** `flok link` (on, off, toggle, status) or
   the menu bar's new "Relay link" row does the same. Off, nothing leaves the Mac for the relay:
   the phone shows that flok as *off* rather than *offline*, its waiting agents leave the badge

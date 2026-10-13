@@ -11,7 +11,9 @@ the sessions, the agents below with their state, a sound when an agent needs you
 all three, and a `prefix ?` popup with your live keybinds. Agents can run wherever the work is:
 a host runs the same flok over your ssh config, and its agents, sessions and sounds arrive in the
 one sidebar, its tmux a key press away. On macOS a menu bar item shows the same states while the
-terminal is behind other windows. The sidebar is modelled on [herdr](https://herdr.dev)'s.
+terminal is behind other windows, and on the iPhone an app shows every flok you run, at home and
+at the office, through a relay you host: a push when an agent needs you, Approve or Deny from the
+Lock Screen, its screen and a reply. The sidebar is modelled on [herdr](https://herdr.dev)'s.
 
 <p align="center"><img src="assets/demo.gif" alt="A 20-second recording of the sidebar next to three tmux sessions, with a servers panel listing local and the remote host beta: api asks for a Bash permission and turns orange, prefix o jumps to it, the answer is typed, api works again; docs stays done with one unread completion, build keeps working on beta" width="936"></p>
 
@@ -24,6 +26,13 @@ a click on a row brings the terminal to the front on that pane. The spinner turn
 agent works.
 
 <br clear="all">
+
+<p align="center"><img src="assets/phone-screens.jpg" alt="Four iPhone screens of the flok app: the list of two instances, home and office, with their agents (api needs a Bash permission, web and build on the host beta work, docs is done, billing idle); the agent api with its live screen showing Claude's permission prompt, a key bar and a reply field; a long-pressed push with the agent's screen, keys and Approve, Deny and Mute 1 h; the Lock Screen with the flok Live Activity counting three working, one waiting and one done, above the push" width="900"></p>
+
+The iPhone app, through a relay you run ([how it fits together](#flok-on-your-phone)): every
+flok in one list, an agent's live screen with keys and a reply field, a push for each agent that
+needs you with Approve and Deny (a long press shows the screen), and a Live Activity in the
+Dynamic Island and on the Lock Screen while agents work.
 
 ## Setup
 
@@ -206,10 +215,14 @@ What flok does about it:
   work, a badge for agents waiting for you, and a dropdown of agents (and of servers, once a
   remote host is registered); a click brings the terminal window to the front and puts you on
   that agent's pane.
-- **A message on your phone** when an agent needs you or finishes: `[notify] url` posts to an
-  ntfy topic (or any endpoint taking the JSON form) on blocked, done and error, for agents on
-  every server, named after the instance it came from. Works from behind any firewall that lets
-  HTTPS out; `HTTPS_PROXY` is honoured.
+- **flok on your phone**: an iOS app and `flok-relay`, a small service you host. Every flok
+  dials out to the relay (no port opened anywhere, `HTTPS_PROXY` honoured, TLS inside the link
+  for proxies that read HTTPS); the app shows every instance and its agents, streams an agent's
+  screen, answers it with keys or a line of text, and gets a push with Approve / Deny when one
+  needs you, a Live Activity while they work. `prefix U` switches the link off and on.
+- **A message without the app**: `[notify] url` posts to an ntfy topic (or any endpoint taking
+  the JSON form) on blocked, done and error, for agents on every server, named after the
+  instance it came from.
 - **Keep awake** (macOS, off by default): `flok keep-awake` or the menu bar's "Keep awake" row stops
   the Mac from idle-sleeping and keeps the display on while agents run unattended, until you
   turn it off or flok stops; a ⚡ in the menu bar shows it is on. With
@@ -242,11 +255,17 @@ release, newest first; the same text is on each GitHub release.
 
 ## How it works
 
+<p align="center"><img src="assets/architecture.png" alt="How flok's parts connect. Your Mac: a terminal running the outer tmux with the flok sidebar next to the work pane, which attaches your own tmux server untouched; agents in it call flok hook, which writes the state dir; the sidebar merges hooks, Claude's registry, titles and screen rules and publishes snapshot.json for the menu bar; sounds, keys and ntfy. Your servers over ssh: beta in full mode runs flok serve, gpu-1 in plain mode is read through its tmux. One outbound WebSocket to your relay, flok-relay, which another flok at the office also dials; the relay talks to the app (answers, screens) and pushes through Apple's APNs to the phone, which shows the agents, a push with Approve and Deny, and the Dynamic Island" width="900"></p>
+
+Everything dials out: ssh to the servers you register, one WebSocket to the relay if you use the
+phone. Nothing listens. The sections below follow the picture from left to right.
+
 What the sidebar shows next to your tmux (the servers panel appears once a host is registered;
 `beta` here is a machine reached over ssh, its agent `build` listed with the local ones):
 
 ```
 ┌──────────────────────────┬────────────────────────────────────────┐
+│ [flok]                 ⇄ │                                        │
 │ servers                  │                                        │
 │  ◑ local            3 · 1│   the work pane: your tmux server, or  │
 │  ○ beta full           1 │   a host's over ssh, both untouched    │
@@ -340,7 +359,7 @@ agent's name means no hook data has arrived for that pane (restart the agent aft
 | working | `◐◓◑◒` | cyan | prompt submitted, tool start/end | stop, block, interrupted turn |
 | paused | `◍` | grey | stop while background subagents, shells or workflows are still running (`bg 2 agents`): answered, but the work will wake the agent again | the task wakes it (working), a stop with nothing in flight (done or idle) |
 | blocked | `●` | orange | permission request, `AskUserQuestion`, elicitation dialog, a visible prompt the hooks missed | tool end, next prompt, stop, dialog gone |
-| done | `●` | green | stop while the pane is not the one you look at | looking at it (or jumping there) |
+| done | `✓` | green | stop while the pane is not the one you look at | looking at it (or jumping there) |
 | idle | `○` | grey | session start, stop while you watch, done once seen | prompt |
 | unknown | `◌` | grey | agent present, no signal yet | any signal |
 
@@ -427,19 +446,42 @@ is at most 200 printable characters, only agent panes qualify, every command lan
 instance's remote hosts are answered the same way, through the main instance (full mode: the
 host's `flok serve` types it, with its own check; plain mode: `send-keys` over ssh).
 
+**What the phone shows.**
+
+- **The list**: every instance with its agents in the sidebar's order, remote ones tagged with
+  their host, the ones that need you counted; *Needs you* filters the rest away.
+- **An agent**: its live screen (the pane's text, refreshed while you look), a key bar
+  (`1 2 3 y n ↵ esc ↑ ↓`, Ctrl-C behind a confirmation) and a reply field.
+- **Pushes**, one per agent that needs you, worded like the sidebar: the agent as the title,
+  `home · api` under it, `● needs you: perm:Bash`, flok's own sounds and a state tile.
+  Permission prompts carry **Approve** (Enter on the highlighted choice) and **Deny** (Escape)
+  for the Lock Screen, every push **Mute 1 h**. A long press opens a card with the agent's
+  screen as it is now, fetched from the relay rather than sent through Apple, and keys to answer
+  from there. The badge counts what waits over every instance; an agent you answer or look at,
+  on the Mac or on the phone, comes off the Lock Screen by itself.
+- **A Live Activity** while agents work: the overview in the Dynamic Island and on the Lock
+  Screen (how many work, wait and finished unseen, the most urgent first), ended after a quiet
+  spell; an agent's screen can follow that one agent there as well. A finished agent lights up
+  the overview, with its sound, rather than adding a notification beside it.
+- **Settings → Notifications**: per kind (permission, question, finished, failed) whether it
+  pushes, its sound and whether it breaks through Focus, and the muted agents (an hour, until
+  tomorrow morning, always). The relay holds these settings per phone and decides before every
+  push.
+
 The relay keeps the last snapshot of every instance for an instant first paint, tells the app
-when an instance goes offline, and sends pushes through APNs with the provider key of your
-developer account: the title names the instance and the agent, the category carries the
-actions (`FLOK_PERMISSION`: Approve / Deny from the lock screen), the badge counts what waits.
-It never originates a command. Its API (bearer device token) is what the app speaks and what
-you can drive from a shell:
+when an instance goes offline (or is switched off), and sends pushes through APNs with the
+provider key of your developer account. It never originates a command. Its API (bearer device
+token) is what the app speaks and what you can drive from a shell; [`app/API.md`](app/API.md)
+has all of it:
 
 ```
 GET  /healthz                                       is it up (no token)
 GET  /api/instances                                 every instance with its last snapshot
 POST /api/answer   {"instance","pane","text","keys"}   type into an agent pane; waits for the instance's ack
 POST /api/seen     {"instance","pane"}
+GET  /api/screen?instance=…&pane=…                  one look at a pane's screen
 POST /api/devices  {"token","name","sandbox"}       register a phone for pushes (DELETE /api/devices/<token>)
+PUT  /api/devices/<token>/prefs | /activity         its notification settings, its Live Activity tokens
 GET  /api/ws                                        the live stream: instances, instance, event, screen; subscribe / answer / seen in
 ```
 
@@ -449,6 +491,26 @@ stream as JSON lines, which is the quickest way to see what the phone would. Tok
 `flok doctor` reports the link as the sidebar sees it (or probes the relay's `/healthz` when
 the sidebar is not running), the footer says when the relay has been out of reach for half a
 minute, and `snapshot.json` carries the link's state.
+
+**Setting it up.**
+
+1. Run the relay: [`deploy/relay`](deploy/relay) has the image (`ghcr.io/w4jnl/flok-relay`,
+   amd64 and arm64), a compose stack for Portainer with Traefik labels and the example configs.
+   `flok-relay token` makes the tokens: one per flok instance, one for the phone. Pushes need an
+   APNs key from your Apple developer account (`FLOK_RELAY_APNS_*`); without one the relay runs
+   and the app works, only nothing is pushed.
+2. Link every flok you want on the phone:
+   ```toml
+   [link]
+   name = "home"                          # how the phone names this flok
+   url = "https://flok.example.net"
+   token = "…"                            # one of the relay's instance tokens
+   # pin = "sha256:…"                     # behind a proxy that reads HTTPS: flok-relay pin
+   ```
+   then `flok reload`; `flok doctor` and `flok link status` say whether it connected.
+3. The app: build [`app/ios`](app/ios) with your Apple team (Xcode, `make ios-project`; the
+   simulator needs no signing) and install it from Xcode or TestFlight (`make ios-testflight`).
+   In its Settings: the relay's address, the phone's token, then *Enable notifications*.
 
 **Switching it off.** `prefix U` (or `flok link`, or the menu bar's "Relay link" row) switches
 the link off and on again. Off, nothing leaves the Mac for the relay: the link says goodbye and
@@ -479,12 +541,10 @@ Activity work as before. `tunnel_only` on the relay refuses links without a pin.
 not disguised as anything else: a proxy that blocks or flags data it cannot read will do so,
 and asking for the relay's name to be exempt from inspection is then the straight route.
 
-The app is [`app/ios`](app/ios): SwiftUI, iOS 17 and later, every instance in one list, the
-agents that need you, the live screen of an agent with a key bar and a reply field, Approve and
-Deny from the lock screen, the badge counting what waits. It is built from `project.yml` with
-XcodeGen (`make ios-project`, `ios-build`, `ios-test`; the simulator needs no signing) and
-distributed through TestFlight with your own team id and APNs key. [`app/API.md`](app/API.md)
-is the contract it speaks, written for the Android app to follow.
+The app is [`app/ios`](app/ios): SwiftUI, iOS 17 and later, two notification extensions (the
+state tile, the card) and the Live Activity, built from `project.yml` with XcodeGen
+(`make ios-project`, `ios-build`, `ios-test`). [`app/API.md`](app/API.md) is the contract it
+speaks, written for an Android app to follow.
 
 ### Keep awake (macOS)
 
@@ -614,7 +674,7 @@ flashes `flok: now on <server>` on the status line of the server that came to th
 one the work pane shows.
 
 flok's keys work inside a remote session too, without touching the host's tmux config: while a
-host is connected, flok binds `prefix b B g o a u`, the menus `A S @` and the server keys
+host is connected, flok binds `prefix b B g o a u U`, the menus `A S @` and the server keys
 `N P O F1`…`F9` in that tmux server (`bind-key` lives in the running server, not in a file) and
 puts the host's own bindings of those keys back when it disconnects. What a key had before is noted in that server too (`@flok-orig-<key>` user
 options), so a session that ends abruptly loses nothing: the next one restores from the note.
@@ -626,7 +686,7 @@ screen (`i` in the servers panel) and the sidebar footer instead of failing sile
 On a full-mode host the binding runs `flok relay <cmd>` and `flok serve` forwards it
 at once; on a plain host it sets a tmux user option that the next poll picks up (within a
 second). Either way the local sidebar runs the same `flok toggle|hide|focus|jump|next|menu …|
-host …|keep-awake` the local binding would. `[hosts] keys = false` turns it off. `prefix ?`
+host …|keep-awake|link` the local binding would. `[hosts] keys = false` turns it off. `prefix ?`
 stays the remote tmux's own list-keys.
 
 Security: ssh only, no listening sockets, no daemons. The local side execs the ssh argv (never a
@@ -654,6 +714,9 @@ Nothing is hand-maintained: what the popup shows is what your server has bound r
   `ffplay`, `pw-play`, `paplay`, `play` (sox) found on PATH, or any command via `[sounds] command`.
   Without one flok rings the terminal bell instead (`[sounds] bell = "auto"`), which reaches
   your local terminal even when the agents run on a remote host over ssh.
+- For the phone: somewhere to run `flok-relay` behind HTTPS (one small container), an iPhone
+  on iOS 17 or later, and an Apple developer account for pushes and TestFlight (Xcode to build
+  the app; a free account installs it on your own phone for a week at a time, without pushes).
 - Go 1.27 only if you build from source.
 
 ### tmux versions
@@ -899,7 +962,7 @@ backoff_max_s = 30          # reconnect backoff 1, 2, 4 … up to this many seco
 multiplex = true            # one ControlMaster connection per host, shared by the data channel,
                             # tmux calls and the work pane (sockets under the state dir)
 session = "main"            # a host whose tmux is not running gets this session from its work pane
-keys = true                 # bind flok's keys (prefix b B g o a u, the menus A S @, N P O F1…F9) in a
+keys = true                 # bind flok's keys (prefix b B g o a u U, the menus A S @, N P O F1…F9) in a
                             # host's tmux while connected
 remote_path = "/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:/opt/local/bin"
                             # appended to PATH for every command flok runs on a host: a non-interactive
@@ -992,15 +1055,23 @@ brand = "#12999D"
 - Agents on a full-mode host show only title and screen states: `flok install --claude` was not
   run on that host (`flok doctor` reports it). Sounds for remote agents play on the local side;
   `FLOK_DEBUG=1` writes the connection log to `remote.log` in the state dir.
+- The phone shows nothing from this flok: `flok link status` says whether the link is on and
+  connected (a `–` at the end of the `[flok]` line means switched off: `prefix U`), `flok doctor`
+  why it is refused or out of reach. `flok-relay tail -url … -token <phone token>` shows what
+  the relay would send the app; `curl https://<relay>/healthz` names the relay's version.
 
 ## Development
 
 ```sh
 make build             # bin/flok with the version stamped from git describe
 make test              # unit tests
-make e2e               # headless end-to-end suites on isolated tmux servers, m1..m10, in order
+make e2e               # headless end-to-end suites on isolated tmux servers, m1..m11, in order
 scripts/e2e/m4.sh      # one suite (make e2e SUITES="m4 m7" for a few)
+make relay             # bin/flok-relay, the phone's relay (cgo-free)
+make ios-build         # the iOS app for the simulator, no signing (ios-test runs its unit tests)
 make icons             # regenerate the menu bar template icons (assets/icons/gen)
+assets/demo/record.sh  # the README's GIF; menubar.sh the menu bar picture; phone.sh the phone screens
+assets/diagram/render.sh   # the README's architecture picture
 scripts/spike/m0-outer.sh check   # nested-outer passthrough checks
 scripts/spike/m0-outer.sh up      # interactive checklist against your real server
 ```
@@ -1008,18 +1079,27 @@ scripts/spike/m0-outer.sh up      # interactive checklist against your real serv
 The end-to-end suites start their own tmux servers (`e2e-inner`, `e2e-outer`) with a private
 state and config directory, run a fake agent binary named `claude` that paints scripted screens,
 replay hook payloads against it, and assert on `capture-pane` output of the sidebar. Your real
-tmux server is never touched. `scripts/e2e/run-all.sh` runs them in order, every one even after
-a failure, each under a watchdog (`E2E_SUITE_TIMEOUT`, 300 s), and ends with a table; a suite
-that died prints `ABORT <file>:<line>: <command>` and its summary line says `aborted`.
-`FLOK_DEBUG=1` keeps the logs of the suites that did not pass under `/tmp/flok-e2e-logs`
-(`E2E_KEEP_LOGS=1` keeps them all; `E2E_TMUX_VERBOSE=0` leaves out the outer tmux's own log).
+tmux server is never touched. m10 adds remote hosts behind a fake `ssh`; m11 runs the real
+`flok-relay` with a stand-in APNs and answers agents through it. `scripts/e2e/run-all.sh` runs
+them in order, every one even after a failure, each under a watchdog (`E2E_SUITE_TIMEOUT`, 300
+s), and ends with a table; a suite that died prints `ABORT <file>:<line>: <command>` and its
+summary line says `aborted`. `FLOK_DEBUG=1` keeps the logs of the suites that did not pass under
+`/tmp/flok-e2e-logs` (`E2E_KEEP_LOGS=1` keeps them all; `E2E_TMUX_VERBOSE=0` leaves out the
+outer tmux's own log).
 
 ```
 cmd/flok               entry point
 cmd/flok-bar           macOS menu bar companion (cgo, fyne.io/systray); everything else is cgo-free
-internal/cli           subcommands (up, sidebar, hook, nav, keys, install, doctor, ...)
+cmd/flok-relay         the relay for the phone (serve, tail, token, pin, health)
+internal/cli           subcommands (up, sidebar, hook, nav, keys, install, doctor, link, host, ...)
 internal/launcher      outer server: config template, create/attach, attach loop, runtime.json
 internal/ui            Bubble Tea sidebar, rail, help overlay
+internal/poller        the state pipeline without the rendering (shared by the sidebar and flok serve)
+internal/remote        remote hosts: ssh, flok serve and its frames, plain mode, the keys on hosts
+internal/link          the sidebar's WebSocket to the relay; link/tunnel the TLS inside it, link/wire the frames
+internal/relay         flok-relay: instances, the app's API, pushes and Live Activities (relay/apns)
+internal/answer        the allowlist every answer from the phone goes through
+internal/push          [notify]: ntfy or JSON posts
 internal/snapshot      snapshot.json the sidebar publishes for flok-bar
 internal/bar           menu bar title/rows logic (pure, tested)
 internal/focus         bring the terminal window to the front (aerospace, applescript)
@@ -1035,6 +1115,8 @@ internal/nav           switch-client / select-window / select-pane
 internal/notify        sounds (afplay, pw-play, paplay, mpv, ffplay, play or a custom command), debounce
 internal/install       settings.json / Copilot hook writers, tmux snippet
 internal/config        config.toml, XDG paths
+app/ios                the iOS app (SwiftUI, XcodeGen); app/API.md its contract with the relay
+deploy/relay           the relay's image, compose stack and example configs
 ```
 
 Releases: `scripts/release.sh <version>` runs the tests, tags, pushes, bumps the formula in

@@ -109,7 +109,7 @@ One binary, several roles selected by subcommand (`internal/cli/root.go`):
   prints in double quotes), never by the window they sit in; a second loop for the same host is a
   stray and is killed; every 5th poll the sidebar re-reads which pane is next to it and resyncs
   `front`/runtime.json (`resyncFront`). flok's keys inside a remote session: `remote.InstallKeys`
-  binds `prefix b B g o a u`, the menus `A S @` and the server keys in the host's running tmux (serve does it in full mode with
+  binds `prefix b B g o a u U`, the menus `A S @` and the server keys in the host's running tmux (serve does it in full mode with
   `run-shell "<flok> relay <cmd>"`, the plain-mode conn with `set-option -g @flok-request <cmd>`)
   and restores the host's own bindings on disconnect, one tmux invocation each way; the originals
   are recorded in that server as `@flok-orig-<key>` user options in the same invocation that
@@ -310,7 +310,11 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
   (`APPROVE` = Enter, `DENY` = Escape, `SEEN`) and the APNs token → `/api/devices` once per
   relay+token. The simulator takes `-relayURL`, `-deviceToken` and `-open inst:%N` launch
   arguments; `simctl push` delivers a payload file for the notification path. `app/API.md` is
-  the platform-neutral contract an Android app would implement; a Debug build registers with
+  the platform-neutral contract an Android app would implement; `FlokScreens` (own scheme,
+  `make ios-screens`) is a UI test that walks the app for the README's phone screenshots, run by
+  `assets/demo/phone.sh` against a local relay fed by `assets/demo/phoneinst` (made-up
+  instances), which also answers its request for a push with `simctl push` (`assets/diagram`
+  renders the README's architecture picture); a Debug build registers with
   `sandbox: true` and the relay pushes each device through the service its token belongs to
   (`apns.Device`), so Xcode and TestFlight builds share one relay. Notification delegate
   methods use the completion-handler forms and call the handler on the main thread: the async

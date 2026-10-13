@@ -1,0 +1,180 @@
+<!doctype html>
+<!-- assets/diagram/render.sh renders this to assets/architecture.png (1180x780 at 2x) with headless
+     Chrome: how flok's parts connect, for the README. Colours are the brand palette
+     (assets/brand/README.md); the font is JetBrains Mono from Google Fonts. -->
+<html><head><meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700;800&display=block" rel="stylesheet">
+<style>
+  :root{--ground:#14181A;--panel:#1A2023;--box:#20282B;--line:#2E383C;--ink:#E9EFF0;--mute:#8A999C;
+        --working:#3FD0D4;--blocked:#E8963C;--done:#5FC47A;--teal:#12999D;--host:#BD93F9;--apple:#9FB3BA}
+  *{box-sizing:border-box}
+  html,body{margin:0;width:1180px;height:780px;overflow:hidden;background:var(--ground);color:var(--ink);
+            font:13px/1.35 "JetBrains Mono",ui-monospace,monospace}
+  .abs{position:absolute}
+  .panel{position:absolute;border:1px solid var(--line);border-radius:18px;background:var(--panel)}
+  .ptitle{position:absolute;left:18px;top:-11px;padding:0 8px;background:var(--ground);border-radius:6px;
+          font-weight:700;font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--mute)}
+  .box{position:absolute;border:1px solid var(--line);border-radius:12px;background:var(--box);padding:10px 12px}
+  .box h3{margin:0 0 4px;font-size:14.5px;font-weight:700}
+  .box p{margin:0;color:var(--mute);font-size:12px}
+  .c{color:var(--working)} .o{color:var(--blocked)} .g{color:var(--done)} .m{color:var(--mute)} .h{color:var(--host)} .t{color:var(--teal)}
+  code{font:inherit;color:var(--ink)}
+  /* the terminal window */
+  .term{position:absolute;left:40px;top:96px;width:500px;height:262px;border-radius:12px;background:#0F1214;border:1px solid var(--line);overflow:hidden}
+  .tbar{height:26px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:7px;padding-left:12px;color:var(--mute);font-size:11.5px}
+  .dot{width:10px;height:10px;border-radius:50%;background:#3A4448}
+  .side{position:absolute;left:0;top:26px;width:190px;bottom:0;border-right:1px solid var(--line);padding:10px 12px;font-size:12.5px;line-height:1.55;white-space:pre}
+  .work{position:absolute;left:190px;top:26px;right:0;bottom:0;padding:12px 14px;font-size:12px;line-height:1.5;white-space:pre;color:#C9D3D5}
+  .hdr{color:#B9A6F0;font-weight:700}
+  /* the phone */
+  .phone{position:absolute;left:956px;top:96px;width:214px;height:440px;border-radius:38px;border:7px solid #2A3236;background:#000;overflow:hidden}
+  .island{position:absolute;left:50%;top:10px;transform:translateX(-50%);height:26px;min-width:112px;border-radius:14px;background:#0A0A0A;
+          border:1px solid #1C1C1C;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 10px;font-size:11.5px;font-weight:700}
+  .note{position:absolute;left:9px;right:9px;top:48px;border-radius:16px;background:#22292C;padding:9px 10px;font-size:11px}
+  .note b{font-size:12px}
+  .btns{display:flex;gap:6px;margin-top:7px}
+  .btns span{flex:1;text-align:center;border-radius:8px;background:#2E383C;padding:4px 0;font-weight:700;font-size:11px}
+  .rows{position:absolute;left:9px;right:9px;top:156px;font-size:11.5px;line-height:1.25}
+  .row{border-radius:10px;background:#16191B;padding:6px 9px;margin-bottom:5px}
+  .row small{display:block;font-size:10.5px}
+  .keys{position:absolute;left:9px;right:9px;bottom:16px;display:flex;gap:4px}
+  .keys span{flex:1;text-align:center;border-radius:6px;background:#1E2427;padding:4px 0;font-size:11px;color:var(--working)}
+  /* labels on the connections */
+  .lab{position:absolute;font-size:11.5px;color:var(--mute);background:var(--ground);padding:1px 6px;border-radius:6px;white-space:nowrap}
+  .lab b{color:var(--ink);font-weight:600}
+  .title{position:absolute;left:40px;top:20px;font-size:22px;font-weight:800;letter-spacing:-.02em}
+  .title span{color:var(--working)}
+  .sub{position:absolute;left:40px;top:50px;font-size:12.5px;color:var(--mute)}
+</style></head><body>
+
+<div class="title"><span>[flok]</span> how the parts connect</div>
+<div class="sub">everything dials out: ssh to your servers, one outbound WebSocket to your relay</div>
+
+<!-- your Mac -->
+<div class="panel" style="left:24px;top:82px;width:532px;height:676px"><div class="ptitle">your Mac</div></div>
+<div class="term">
+  <div class="tbar"><span class="dot"></span><span class="dot"></span><span class="dot"></span>&nbsp;&nbsp;terminal · outer tmux <span class="t">-L flok</span></div>
+<div class="side"><span class="c" style="font-weight:800">[flok]</span>             <span class="g">⇄</span>
+<span class="hdr">servers</span>
+ <span class="c">◑</span> local     3 · <span class="o">1</span>
+ <span class="m">○</span> beta  <span class="m">full</span>  1
+<span class="hdr">agents</span> <span class="o">· 2</span>
+ <span class="o">●</span> api   <span class="o">perm:Bash</span>
+ <span class="c">◐</span> web   <span class="c">Read 0:42</span>
+ <span class="g">✓</span> docs  <span class="g">done · 1</span>
+ <span class="c">◓</span> build <span class="h">beta</span></div>
+<div class="work"><span class="m">the work pane: tmux attach to</span>
+<b style="color:var(--ink)">your tmux server, untouched</b>
+<span class="m">sessions, windows, plugins, keys</span>
+
+<span class="m">api ─ claude</span>
+ ⏺ Bash(npm run db:reset)
+ <span class="o">Do you want to proceed?</span>
+ <span class="o">❯ 1. Yes</span>
+   2. No
+<span class="m">web ─ claude   docs ─ copilot</span></div>
+</div>
+
+<div class="box" style="left:40px;top:392px;width:236px;height:104px">
+  <h3>the sidebar</h3>
+  <p>merges hooks, Claude's session registry, pane titles and screen rules every second</p>
+</div>
+<div class="box" style="left:304px;top:392px;width:236px;height:104px">
+  <h3>agents <span class="m">→</span> <code>flok hook</code></h3>
+  <p>Claude Code and Copilot CLI call it on every event: prompt, tool, permission, stop</p>
+</div>
+<div class="box" style="left:40px;top:526px;width:236px;height:104px">
+  <h3>menu bar · flok-bar</h3>
+  <p>badge, spinner and the agents; a click goes to the pane</p>
+</div>
+<div class="box" style="left:304px;top:526px;width:236px;height:104px">
+  <h3>state dir</h3>
+  <p><code>~/.local/state/flok</code><br>a record per agent pane, seen marks</p>
+</div>
+<div class="box" style="left:40px;top:660px;width:500px;height:80px">
+  <h3>sounds, keys <span class="m">and</span> ntfy</h3>
+  <p>a sound or the bell for the pane you are not on · <code>prefix o a A S @ u U</code> in your tmux · <code>[notify]</code> posts to an ntfy topic</p>
+</div>
+
+<!-- your servers -->
+<div class="panel" style="left:596px;top:82px;width:236px;height:262px"><div class="ptitle">your servers</div></div>
+<div class="box" style="left:612px;top:104px;width:204px;height:110px">
+  <h3><span class="h">beta</span> <span class="m">· full</span></h3>
+  <p><code>flok serve --stdio</code> over ssh: the same hooks and merge there, streamed back as JSON lines</p>
+</div>
+<div class="box" style="left:612px;top:226px;width:204px;height:102px">
+  <h3><span class="h">gpu-1</span> <span class="m">· plain</span></h3>
+  <p>no flok needed: its tmux read over ssh, titles and screen rules</p>
+</div>
+
+<!-- your relay -->
+<div class="panel" style="left:596px;top:392px;width:236px;height:226px"><div class="ptitle">your relay</div></div>
+<div class="box" style="left:612px;top:414px;width:204px;height:188px">
+  <h3>flok-relay</h3>
+  <p>one container behind your reverse proxy: every instance's last view, the phones' settings, the pushes. TLS inside the WebSocket to its own key. Never starts a command.</p>
+</div>
+
+<!-- another flok -->
+<div class="box" style="left:612px;top:650px;width:204px;height:90px">
+  <h3>office <span class="m">· another flok</span></h3>
+  <p>its own sidebar, the same relay</p>
+</div>
+
+<!-- Apple's push service -->
+<div class="box" style="left:850px;top:268px;width:78px;height:56px;text-align:center;padding:8px 4px;border-style:dashed">
+  <h3 style="margin:0;color:var(--apple)">APNs</h3><p style="font-size:11px">Apple</p>
+</div>
+
+<!-- your phone -->
+<div class="ptitle abs" style="left:968px;top:71px;background:var(--ground)">your phone</div>
+<div class="phone">
+  <div class="island"><span class="c">◐ 3</span><span class="o">● 1</span></div>
+  <div class="note"><b>api</b> <span class="m">home · api</span><br><span class="o">● needs you: perm:Bash</span>
+    <div class="btns"><span class="g">Approve</span><span class="o">Deny</span></div></div>
+  <div class="rows">
+    <div class="m" style="font-size:10.5px;margin:0 0 5px 4px"><span class="g">●</span> home</div>
+    <div class="row"><span class="o">●</span> api<small class="o">needs you: perm:Bash</small></div>
+    <div class="row"><span class="c">◐</span> web<small class="c">working · Read</small></div>
+    <div class="row"><span class="g">✓</span> docs<small class="g">done</small></div>
+    <div class="row"><span class="c">◓</span> <span class="h">beta</span> build<small class="c">working · Bash</small></div>
+  </div>
+  <div class="keys"><span>1</span><span>2</span><span>y</span><span>n</span><span>↵</span><span>esc</span></div>
+</div>
+<div class="box" style="left:956px;top:560px;width:214px;height:180px">
+  <h3>the app</h3>
+  <p>every instance, the agents that need you, a live screen with keys to answer; Approve / Deny from the Lock Screen; the Dynamic Island while agents work</p>
+</div>
+
+<!-- connections -->
+<svg class="abs" style="left:0;top:0" width="1180" height="780" viewBox="0 0 1180 780">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#6B7B80"/></marker>
+    <marker id="ac" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#3FD0D4"/></marker>
+  </defs>
+  <g fill="none" stroke="#6B7B80" stroke-width="1.6">
+    <path d="M422 358 L422 390" marker-end="url(#a)"/>                      <!-- agents in the work pane → hook -->
+    <path d="M422 496 L422 524" marker-end="url(#a)"/>                      <!-- hook → state dir -->
+    <path d="M304 560 C286 560, 286 470, 278 470" marker-end="url(#a)"/>     <!-- state dir → sidebar -->
+    <path d="M158 392 L158 360" marker-end="url(#a)"/>                      <!-- sidebar draws -->
+    <path d="M158 496 L158 524" marker-end="url(#a)"/>                      <!-- snapshot.json → bar -->
+  </g>
+  <g fill="none" stroke="#3FD0D4" stroke-width="2">
+    <path d="M556 160 L610 160" marker-end="url(#ac)" marker-start="url(#ac)"/>   <!-- ssh beta -->
+    <path d="M556 278 L610 278" marker-end="url(#ac)" marker-start="url(#ac)"/>   <!-- ssh gpu-1 -->
+    <path d="M556 500 L610 500" marker-end="url(#ac)"/>                           <!-- wss to the relay -->
+    <path d="M714 650 L714 620" marker-end="url(#ac)"/>                           <!-- office → relay -->
+    <path d="M816 530 L954 530" marker-end="url(#ac)" marker-start="url(#ac)"/>   <!-- app API -->
+    <path d="M816 440 C872 440, 889 400, 889 328" marker-end="url(#ac)" stroke-dasharray="5 4"/>  <!-- relay → APNs -->
+    <path d="M889 268 C889 180, 920 150, 954 150" marker-end="url(#ac)" stroke-dasharray="5 4"/>  <!-- APNs → phone -->
+  </g>
+</svg>
+<div class="lab" style="left:563px;top:136px"><b>ssh</b></div>
+<div class="lab" style="left:563px;top:254px"><b>ssh</b></div>
+<div class="lab" style="left:563px;top:476px"><b>wss</b></div>
+<div class="lab" style="left:722px;top:624px"><b>wss</b></div>
+<div class="lab" style="left:836px;top:506px">answers, screens</div>
+<div class="lab" style="left:896px;top:372px">pushes</div>
+<div class="lab" style="left:430px;top:364px">hooks</div>
+<div class="lab" style="left:166px;top:500px">snapshot.json</div>
+</body></html>
