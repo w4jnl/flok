@@ -54,7 +54,7 @@ func runDoctor(cfg config.Config) int {
 	} else {
 		add("ok", "inner tmux server %s reachable", inner.Label())
 		if files, err := inner.Run("display-message", "-p", "#{config_files}"); err == nil && doubleTmuxConfig(files, readLegacyTmuxConf(files)) {
-			add("warn", "~/.tmux.conf sources ~/.config/tmux/tmux.conf and tmux 3.1+ loads that file itself, so the configuration runs twice: plugins initialise twice, and tmux-continuum then runs two tmux-resurrect restores that type every restored command twice; guard the source-file with a version check (README, tmux-resurrect section) or remove the shim")
+			add("warn", "~/.tmux.conf sources ~/.config/tmux/tmux.conf and tmux 3.1+ loads that file itself, so the configuration runs twice: plugins initialise twice, and tmux-continuum then runs two tmux-resurrect restores that type every restored command twice; guard the source-file with a version check (docs/tmux-resurrect.md) or remove the shim")
 		}
 		if hook, err := inner.Run("show-options", "-gv", "@resurrect-hook-post-save-layout"); err == nil &&
 			strings.Contains(hook, "flok") && strings.Contains(hook, "resurrect save") {

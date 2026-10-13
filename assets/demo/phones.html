@@ -1,0 +1,23 @@
+<!doctype html>
+<!-- assets/demo/phone.sh copies this next to the FlokScreens shots (shots/*.png) and renders it
+     with headless Chrome to assets/phone-screens.jpg (680x712 at 2x): two phones on the brand's
+     ground colour, a caption under each. The README shows it next to the menu bar. -->
+<html><head><meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=block" rel="stylesheet">
+<style>
+  html,body{margin:0;width:680px;height:712px;overflow:hidden;background:#14181A;color:#E9EFF0;font-family:"JetBrains Mono",ui-monospace,monospace}
+  .row{position:absolute;left:0;right:0;top:34px;display:flex;justify-content:center;gap:34px}
+  .ph{width:276px;text-align:center}
+  .frame{width:276px;height:580px;border-radius:46px;background:#2A3236;padding:8px;box-shadow:0 18px 40px rgba(0,0,0,.45)}
+  .frame img{display:block;width:260px;height:564px;border-radius:38px}
+  h3{margin:18px 0 4px;font-size:15px;font-weight:700}
+  p{margin:0;font-size:12.5px;color:#8A999C}
+</style></head><body>
+<div class="row">
+  <div class="ph"><div class="frame"><img src="shots/list.png"></div>
+    <h3>every flok, one list</h3><p>home and office, hosts tagged</p></div>
+  <div class="ph"><div class="frame"><img src="shots/card.png"></div>
+    <h3>Approve or Deny</h3><p>long press: the screen in the push</p></div>
+</div>
+</body></html>

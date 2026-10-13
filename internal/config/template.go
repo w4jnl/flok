@@ -120,8 +120,8 @@ const Template = `# flok configuration - https://github.com/w4jnl/flok
 # session = "main"            # a host whose tmux is not running gets this session from its work pane
                               # (tmux new-session); flok host add --session <name> sets it per host
 # keys = true                 # while a host is connected, bind flok's keys in its tmux (prefix b B g o
-                              # a A u, as the local snippet does) so they work inside its sessions;
-                              # the host's own bindings of those keys come back on disconnect
+                              # a u U, the menus A S @, N P O F1…F9, as locally) so they work inside its
+                              # sessions; the host's own bindings of those keys come back on disconnect
 # prefix = true               # a connected host's tmux also takes the local prefix (its own moves to
                               # prefix2, so both work there) and gets its own back on disconnect
 

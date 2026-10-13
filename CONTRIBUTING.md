@@ -20,5 +20,5 @@ What is welcome:
 - Small, focused pull requests. Describe what changed and what you verified, in plain words.
 
 Before a larger change, open an issue and ask; it saves both of us a rewrite. The
-[Development](README.md#development) section of the README explains the layout and the
+[Development](docs/development.md) page explains the layout and the
 conventions (tmux version gates, the verbatim herdr manifests, release notes in `CHANGELOG.md`).

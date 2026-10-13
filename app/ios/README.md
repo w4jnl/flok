@@ -14,6 +14,11 @@ make ios-test             # the unit tests on that simulator
 open app/ios/Flok.xcodeproj
 ```
 
+`assets/demo/phone.sh` makes the README's phone screenshots: a local relay with made-up
+instances, then the `FlokScreens` UI test (`make ios-screens`, its own scheme, so `ios-test`
+never runs it) walks the app on the iPhone 15 Pro simulator, asks the script for a push, and
+writes the list, an agent's screen, the push's card and the Lock Screen as PNGs.
+
 The simulator runs the app against a real relay: Settings → the relay's address and a device
 token (`flok-relay token`, one of the relay's `device_tokens`). For a scripted start:
 

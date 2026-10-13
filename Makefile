@@ -5,7 +5,7 @@ LDFLAGS := -s -w -X github.com/w4jnl/flok/internal/cli.Version=$(VERSION)
 
 UNAME := $(shell uname -s)
 
-.PHONY: build build-bar bundle-bar relay relay-image ios-project ios-build ios-test ios-device ios-testflight icons install test vet e2e run-status
+.PHONY: build build-bar bundle-bar relay relay-image ios-project ios-build ios-test ios-screens ios-device ios-testflight icons install test vet e2e run-status
 
 build:
 	CGO_ENABLED=0 go build -ldflags '$(LDFLAGS)' -o bin/$(BIN) ./cmd/$(BIN)
@@ -39,6 +39,12 @@ ios-build: ios-project
 	cd app/ios && xcodebuild -project Flok.xcodeproj -scheme Flok -configuration Debug -destination '$(IOS_SIM)' -derivedDataPath build/DerivedData build CODE_SIGNING_ALLOWED=NO -quiet
 ios-test: ios-project
 	cd app/ios && xcodebuild -project Flok.xcodeproj -scheme Flok -configuration Debug -destination '$(IOS_SIM)' -derivedDataPath build/DerivedData test CODE_SIGNING_ALLOWED=NO -quiet
+# The README's phone screenshots: assets/demo/phone.sh runs a demo relay and this, the FlokScreens
+# UI test, which walks the app and writes PNGs to SHOTS; signed so the Live Activity can start.
+IOS_SCREENS_SIM ?= platform=iOS Simulator,name=iPhone 15 Pro
+ios-screens: ios-project
+	cd app/ios && TEST_RUNNER_FLOK_RELAY='$(RELAY)' TEST_RUNNER_FLOK_DEVICE_TOKEN='$(TOKEN)' TEST_RUNNER_FLOK_SHOTS='$(SHOTS)' \
+	xcodebuild -project Flok.xcodeproj -scheme FlokScreens -configuration Debug -destination '$(IOS_SCREENS_SIM)' -derivedDataPath build/DerivedData -allowProvisioningUpdates $(ASC_AUTH) test -quiet
 # Build, install and launch on the iPhone (unlocked; cable, or Wi-Fi once paired); signs with Local.xcconfig's team.
 ios-device: ios-project
 	@udid=$$(xcrun devicectl list devices 2>/dev/null | grep -v simulated | grep -E ' connected | available \(paired\) ' | grep -oE '[0-9A-F]{8}-[0-9A-F]{16}' | head -1); \

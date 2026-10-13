@@ -87,6 +87,10 @@ targets:
     sources:
       - path: FlokNotificationContent
       - path: Shared
+    dependencies: # linked by hand: the extension's context class lives in UserNotificationsUI, and
+      # without the link iOS cannot load the card (it crashes and shows the plain notification)
+      - sdk: UserNotifications.framework
+      - sdk: UserNotificationsUI.framework
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: nl.w4j.flok.NotificationContent
@@ -139,7 +143,26 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: nl.w4j.flok.tests
+  FlokScreens:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: FlokScreens
+    dependencies:
+      - target: Flok
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: nl.w4j.flok.screens
+        TEST_TARGET_NAME: Flok
+        GENERATE_INFOPLIST_FILE: YES
 schemes:
+  FlokScreens: # the README's phone screenshots (assets/demo/phone.sh), apart from make ios-test
+    build:
+      targets:
+        FlokScreens: [test]
+    test:
+      config: Debug
+      targets: [FlokScreens]
   Flok:
     build:
       targets:
