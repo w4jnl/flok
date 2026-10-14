@@ -202,7 +202,7 @@ What that means in practice:
   `brew upgrade`.
 - Bug reports with a reproduction are welcome; support is best effort.
 
-flok is at 0.8.0 (2026-10-14). [`CHANGELOG.md`](CHANGELOG.md) lists what changed in every
+flok is at 0.8.0 (2026-10-15). [`CHANGELOG.md`](CHANGELOG.md) lists what changed in every
 release, newest first; the same text is on each GitHub release.
 
 ## Credits and license
