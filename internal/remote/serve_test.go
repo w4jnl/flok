@@ -166,8 +166,8 @@ func TestTypeAnswerFilesAndLongText(t *testing.T) {
 	if entries, _ = os.ReadDir(dir); len(entries) != 4 {
 		t.Fatalf("two more files: %v", entries)
 	}
-	// (two temp paths make the text long, so it goes as a paste)
-	if typed := strings.Join(ft.Calls[len(ft.Calls)-1], " "); !strings.Contains(typed, "-- both "+dir+"/") || !strings.Contains(typed, "-shot.png "+dir+"/") || !strings.Contains(typed, "-page.pdf ; paste-buffer") {
+	// (typed as keys or pasted: two temp paths may or may not make the text long)
+	if typed := strings.Join(ft.Calls[len(ft.Calls)-1], " "); !strings.Contains(typed, "-- both "+dir+"/") || !strings.Contains(typed, "-shot.png "+dir+"/") || !strings.Contains(typed, "-page.pdf") {
 		t.Fatalf("two paths: %q", typed)
 	}
 	if err := TypeAnswer(ft, snap, answer.Answer{Pane: "%1", Text: "a\nb"}, nil); err != nil {
