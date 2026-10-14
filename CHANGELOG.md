@@ -4,7 +4,7 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
-## Unreleased
+## 0.8.0 (2026-10-14)
 
 - **Talk to an agent from the phone.** Hold the microphone next to the reply field and speak;
   let go and the words are in the field, or sent, if Settings says so. On iOS 26 the recogniser

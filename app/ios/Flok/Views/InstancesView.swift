@@ -1,4 +1,5 @@
 // Every instance with its agents, the ones that need you first when the filter is on.
+import Combine
 import SwiftUI
 
 struct InstancesView: View {

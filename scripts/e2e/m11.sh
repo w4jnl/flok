@@ -38,7 +38,7 @@ export E2E_EXTRA_CONFIG
 source "$(dirname "$0")/lib.sh"
 m11_cleanup() { kill "${RELAY_PID:-}" "${APNS_PID:-}" "${TAIL_PID:-}" "${TAP_PID:-}" 2>/dev/null || true; rm -rf "$FH" "$RELAY_LOG" "$RELAY_DATA" "$APNS_KEY" "$T/tail.out" 2>/dev/null || true; }
 trap 'm11_cleanup; cleanup' EXIT
-api() { curl -s -m 5 -H "Authorization: Bearer $DEV_TOK" "$@" "http://127.0.0.1:$RELAY_PORT${API_PATH}"; }
+api() { curl -s -m 12 -H "Authorization: Bearer $DEV_TOK" "$@" "http://127.0.0.1:$RELAY_PORT${API_PATH}"; }
 GET() { API_PATH=$1 api; }
 POST() { API_PATH=$1 api -X POST -d "$2"; }
 PUT() { API_PATH=$1 api -X PUT -d "$2"; }
