@@ -77,15 +77,15 @@ expect "the log holds no typed text" '^0$' "$(grep -c '"y"' "$T/state/events.log
 # what the instance takes, and refuses what it does not
 expect "the relay lists what the instance takes" '"features":\["answer","screen","long-text","files"\]' "$(GET /api/instances)"
 expect "a long reply with newlines is taken" '"ok":true' "$(POST /api/answer '{"instance":"e2e","pane":"'"$AGENT"'","text":"first long line\nsecond long line","keys":["Enter"]}')"
-expect_soon "the pane shows both lines" '^first long line$' IN capture-pane -p -J -t "$AGENT"
-expect "… the second as well" '^second long line$' "$(IN capture-pane -p -J -t "$AGENT")"
+expect_soon "the pane shows both lines" '^first long line *$' IN capture-pane -p -J -t "$AGENT"
+expect "… the second as well" '^second long line *$' "$(IN capture-pane -p -J -t "$AGENT")"
 PNG=$(printf '\211PNG\r\n\032\n' | base64 | tr -d '\n')
 expect "two screenshots are taken" '"ok":true' "$(POST /api/answer '{"instance":"e2e","pane":"'"$AGENT"'","text":"look","keys":["Enter"],"files":[{"name":"Screen Shot.png","data":"'"$PNG"'"},{"name":"second.png","data":"'"$PNG"'"}]}')"
 expect_soon "… saved under the state dir with safe names" '[0-9]{8}-[0-9]{6}-Screen_Shot\.png' ls "$T/state/attach"
 expect "… the second as well" '[0-9]{8}-[0-9]{6}-second\.png' "$(ls "$T/state/attach")"
 ATT=$(ls "$T/state/attach"/*-Screen_Shot.png | head -1); ATT2=$(ls "$T/state/attach"/*-second.png | head -1)
 expect "… byte for byte" '^89504e470d0a1a0a$' "$(od -An -tx1 "$ATT" | tr -d ' \n')"
-expect_soon "… and both paths typed after the text, in order" "^look $ATT $ATT2\$" IN capture-pane -p -J -t "$AGENT"
+expect_soon "… and both paths typed after the text, in order" "^look $ATT $ATT2 *\$" IN capture-pane -p -J -t "$AGENT"
 expect "the files are logged by name and size, never their content" '"what":"4 chars \+ Screen_Shot.png \(1 KB\), second.png \(1 KB\) \+ Enter"' "$(grep phone "$T/state/events.log")"
 expect "a file of another kind is refused by the relay" 'files of type .*x-msdownload.* are not taken' "$(POST /api/answer '{"instance":"e2e","pane":"'"$AGENT"'","file":{"name":"x.exe","mime":"application/x-msdownload","data":"'"$PNG"'"}}')"
 OTHER=$(IN display -p -t Alpha:0 '#{pane_id}')
@@ -117,7 +117,7 @@ expect "an answer for beta:pane goes through the host's serve" '"ok":true' "$(PO
 expect_soon "beta's pane shows what was typed" '^n$' tmux -L e2e-beta capture-pane -p -t "$BPANE"
 expect "a screenshot for beta's agent goes through its serve" '"ok":true' "$(POST /api/answer '{"instance":"e2e","pane":"beta:'"$BPANE"'","text":"on beta","file":{"name":"beta.png","data":"'"$PNG"'"}}')"
 expect_soon "… saved in beta's own state dir" '[0-9]{8}-[0-9]{6}-beta\.png' ls "$T/hosts/beta/state/attach"
-expect_soon "… and typed into beta's pane with its path there" "^on beta $T/hosts/beta/state/attach/[0-9-]+-beta\.png\$" tmux -L e2e-beta capture-pane -p -J -t "$BPANE"
+expect_soon "… and typed into beta's pane with its path there" "^on beta $T/hosts/beta/state/attach/[0-9-]+-beta\.png *\$" tmux -L e2e-beta capture-pane -p -J -t "$BPANE"
 rhook beta claude '{"hook_event_name":"SessionStart","source":"startup","session_id":"rb1","cwd":"'"$R"'"}'
 rhook beta claude '{"hook_event_name":"UserPromptSubmit","session_id":"rb1"}'
 rhook beta claude '{"hook_event_name":"PermissionRequest","session_id":"rb1","tool_name":"Bash","tool_input":{"command":"ls"},"tool_use_id":"rt1"}'
