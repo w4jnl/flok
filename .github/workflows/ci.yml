@@ -63,7 +63,7 @@ jobs:
         run: scripts/e2e/run-all.sh
       - name: keep the logs of the suites that did not pass
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: e2e-logs-${{ matrix.os }}
           path: /tmp/flok-e2e-logs
@@ -104,7 +104,7 @@ jobs:
           scripts/e2e/run-all.sh
       - name: keep the logs of the suites that did not pass
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: e2e-logs-${{ matrix.name }}
           path: /tmp/flok-e2e-logs
