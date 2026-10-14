@@ -294,7 +294,7 @@ func (m Model) hostFeatureNotice(host string, a answer.Answer) string {
 	}
 	who := "flok" + versionWord(v.hello.Version) + " on " + host
 	switch {
-	case a.File != nil && !v.hello.Has(proto.FeatureFiles):
+	case len(a.Files) > 0 && !v.hello.Has(proto.FeatureFiles):
 		return who + " cannot take files: it needs an upgrade (flok host install " + host + ")"
 	case answer.Long(a.Text) && !v.hello.Has(proto.FeatureLongText):
 		return fmt.Sprintf("%s takes at most %d characters on one line: longer text needs an upgrade (flok host install %s)", who, answer.MaxText, host)

@@ -462,7 +462,7 @@ func (s *Server) tooOldFor(instance string, a answer.Answer) string {
 	}
 	who := "flok " + version + " on " + instance
 	switch {
-	case a.File != nil && !has(wire.FeatureFiles):
+	case len(a.Files) > 0 && !has(wire.FeatureFiles):
 		return who + " cannot take files: update flok there"
 	case answer.Long(a.Text) && !has(wire.FeatureLongText):
 		return fmt.Sprintf("%s takes at most %d characters on one line: update flok there for longer text", who, answer.MaxText)
@@ -811,11 +811,12 @@ func (s *Server) request(instance string, f wire.Frame) error {
 }
 
 type answerReq struct {
-	Instance string       `json:"instance"`
-	Pane     string       `json:"pane"`
-	Text     string       `json:"text,omitempty"`
-	Keys     []string     `json:"keys,omitempty"`
-	File     *answer.File `json:"file,omitempty"`
+	Instance string        `json:"instance"`
+	Pane     string        `json:"pane"`
+	Text     string        `json:"text,omitempty"`
+	Keys     []string      `json:"keys,omitempty"`
+	Files    []answer.File `json:"files,omitempty"`
+	File     *answer.File  `json:"file,omitempty"` // one file, as the first app build sent it
 }
 
 func (s *Server) handleAnswer(w http.ResponseWriter, r *http.Request) {
@@ -824,7 +825,7 @@ func (s *Server) handleAnswer(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "instance, pane and text, keys or a file are needed"})
 		return
 	}
-	a, err := answer.Normalize(answer.Answer{Pane: req.Pane, Text: req.Text, Keys: req.Keys, File: req.File})
+	a, err := answer.Normalize(answer.Answer{Pane: req.Pane, Text: req.Text, Keys: req.Keys, Files: req.Files, File: req.File})
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 		return

@@ -113,8 +113,8 @@ var InstanceFeatures = []string{FeatureAnswer, FeatureScreen, FeatureLongText, F
 // MaxFrame bounds one frame from an instance (a snapshot of a busy site is a few hundred KB).
 const MaxFrame = 8 << 20
 
-// MaxRelayFrame bounds one frame from the relay to an instance: an answer with a file.
-const MaxRelayFrame = 8 << 20
+// MaxRelayFrame bounds one frame from the relay to an instance: an answer with files (answer.MaxBody).
+const MaxRelayFrame = 36 << 20
 
 // MaxAppFrame bounds one frame from the app on its stream; an answer with a file goes over HTTP
 // (POST /api/answer, answer.MaxBody).

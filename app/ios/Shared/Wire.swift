@@ -191,7 +191,7 @@ struct AnswerBody: Encodable, Sendable {
     var pane: String
     var text: String?
     var keys: [String]?
-    var file: AttachedFile?
+    var files: [AttachedFile]?
 }
 
 /// The longest text an instance without the long-text feature takes, on one line.

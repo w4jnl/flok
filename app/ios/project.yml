@@ -142,8 +142,8 @@ targets:
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
           NSExtensionAttributes:
             NSExtensionActivationRule:
-              NSExtensionActivationSupportsImageWithMaxCount: 1
-              NSExtensionActivationSupportsFileWithMaxCount: 1
+              NSExtensionActivationSupportsImageWithMaxCount: 6
+              NSExtensionActivationSupportsFileWithMaxCount: 6
               NSExtensionActivationSupportsText: true
               NSExtensionActivationSupportsWebURLWithMaxCount: 1
   FlokWidgets:

@@ -768,14 +768,28 @@ func TestRelayLongTextAndFiles(t *testing.T) {
 	if c := <-cmds; c.Kind != "answer" || c.Answer.Text != long || c.Answer.Keys[0] != "Enter" {
 		t.Fatalf("long command: %q", c.Answer.Text)
 	}
-	// a file, base64 in JSON
+	// files, base64 in JSON; "file" (one) is what the first app build sent
 	data := []byte{0x89, 'P', 'N', 'G', 0, 1, 2}
 	if code, out := api(t, srv, "dev-tok", "POST", "/api/answer", map[string]any{"instance": "home", "pane": "%1", "text": "see", "keys": []string{"Enter"},
-		"file": map[string]any{"name": "Shot 1.PNG", "data": data}}); code != 200 {
+		"files": []any{map[string]any{"name": "Shot 1.PNG", "data": data}, map[string]any{"name": "notes.pdf", "data": data}}}); code != 200 {
+		t.Fatalf("files answer: %d %v", code, out)
+	}
+	if c := <-cmds; len(c.Answer.Files) != 2 || c.Answer.Files[0].Name != "Shot_1.png" || c.Answer.Files[0].Mime != "image/png" || !bytes.Equal(c.Answer.Files[0].Data, data) ||
+		c.Answer.Files[1].Name != "notes.pdf" || c.Answer.Text != "see" {
+		t.Fatalf("files command: %+v", c.Answer)
+	}
+	if code, out := api(t, srv, "dev-tok", "POST", "/api/answer", map[string]any{"instance": "home", "pane": "%1", "file": map[string]any{"name": "one.png", "data": data}}); code != 200 {
 		t.Fatalf("file answer: %d %v", code, out)
 	}
-	if c := <-cmds; c.Answer.File == nil || c.Answer.File.Name != "Shot_1.png" || c.Answer.File.Mime != "image/png" || !bytes.Equal(c.Answer.File.Data, data) || c.Answer.Text != "see" {
-		t.Fatalf("file command: %+v", c.Answer)
+	if c := <-cmds; len(c.Answer.Files) != 1 || c.Answer.Files[0].Name != "one.png" || c.Answer.File != nil {
+		t.Fatalf("one file folded into the list: %+v", c.Answer)
+	}
+	many := make([]any, answer.MaxFiles+1)
+	for i := range many {
+		many[i] = map[string]any{"name": "x.png", "data": data}
+	}
+	if code, out := api(t, srv, "dev-tok", "POST", "/api/answer", map[string]any{"instance": "home", "pane": "%1", "files": many}); code != http.StatusBadRequest || !strings.Contains(out["error"].(string), "at most") {
+		t.Fatalf("too many files: %d %v", code, out)
 	}
 	if code, out := api(t, srv, "dev-tok", "POST", "/api/answer", map[string]any{"instance": "home", "pane": "%1", "file": map[string]any{"name": "x.exe", "data": data}}); code != http.StatusBadRequest || !strings.Contains(out["error"].(string), "not taken") {
 		t.Fatalf("exe: %d %v", code, out)

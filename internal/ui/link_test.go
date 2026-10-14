@@ -56,7 +56,7 @@ func TestLinkCommands(t *testing.T) {
 	if c := ft.Calls[len(ft.Calls)-1]; c[0] != "set-buffer" || c[4] != "one\ntwo" || c[6] != "paste-buffer" {
 		t.Fatalf("paste: %q", c)
 	}
-	msg = run(m.linkCommand(link.Command{ID: "a5", Kind: "answer", Pane: "%1", Answer: answer.Answer{Text: "see this", Keys: []string{"Enter"}, File: &answer.File{Name: "shot.jpg", Data: []byte{1, 2}}}}))
+	msg = run(m.linkCommand(link.Command{ID: "a5", Kind: "answer", Pane: "%1", Answer: answer.Answer{Text: "see this", Keys: []string{"Enter"}, Files: []answer.File{{Name: "shot.jpg", Data: []byte{1, 2}}}}}))
 	if am, ok = msg.(linkAnswerMsg); !ok || am.err != nil {
 		t.Fatalf("file answer: %#v", msg)
 	}
@@ -164,7 +164,7 @@ func TestLinkHostPredatingThePhone(t *testing.T) {
 	if n := m.hostFeatureNotice("beta", answer.Answer{Text: "a\nb"}); !strings.Contains(n, "flok 0.7.1 on beta takes at most 200 characters on one line") || !strings.Contains(n, "flok host install beta") {
 		t.Fatalf("long text notice: %q", n)
 	}
-	if n := m.hostFeatureNotice("beta", answer.Answer{File: &answer.File{Name: "x.png"}}); !strings.Contains(n, "cannot take files") {
+	if n := m.hostFeatureNotice("beta", answer.Answer{Files: []answer.File{{Name: "x.png"}}}); !strings.Contains(n, "cannot take files") {
 		t.Fatalf("file notice: %q", n)
 	}
 	if m.hostFeatureNotice("beta", answer.Answer{Text: "y"}) != "" || m.hostFeatureNotice("gamma", answer.Answer{Text: "a\nb"}) != "" || m.hostFeatureNotice("", answer.Answer{Text: "a\nb"}) != "" {
@@ -174,7 +174,7 @@ func TestLinkHostPredatingThePhone(t *testing.T) {
 		t.Fatal("a long text for that host is refused without a round trip")
 	}
 	m.remotes["beta"] = hostView{state: remote.Connected, hello: &proto.Hello{Version: "0.8.0", Features: proto.ServeFeatures}, hasSnap: true, snap: m.remotes["beta"].snap}
-	if m.hostFeatureNotice("beta", answer.Answer{Text: "a\nb", File: &answer.File{Name: "x.png"}}) != "" {
+	if m.hostFeatureNotice("beta", answer.Answer{Text: "a\nb", Files: []answer.File{{Name: "x.png"}}}) != "" {
 		t.Fatal("a current flok takes both")
 	}
 }

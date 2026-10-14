@@ -16,15 +16,15 @@ or a home NAT needs nothing opened: outbound HTTPS is enough, and `HTTPS_PROXY` 
 The instance streams what the sidebar publishes anyway (the same view the menu bar reads,
 remote hosts included), the user-facing transitions, and the screen of a pane while the phone
 looks at it. Back come three things, nothing else: an **answer** (text, a few named keys and
-perhaps one file for an agent pane: a short line is typed with `send-keys`, a long or
-multi-line text pasted through a tmux buffer as one bracketed paste, a file saved under the
-state dir in `attach/` and typed as its path, which the agent reads; the keys are an
-allowlist, text is at most 8000 printable characters, a file 4 MB and an image or a PDF,
-only agent panes qualify, every command lands in `events.log` by size and file name, never
-the text), a **seen** mark, and a **subscription** to a pane's screen. Agents on the
+perhaps some files for an agent pane: a short line is typed with `send-keys`, a long or
+multi-line text pasted through a tmux buffer as one bracketed paste, files saved under the
+state dir in `attach/` and typed as their paths, which the agent reads; the keys are an
+allowlist, text is at most 8000 printable characters, at most six files of 4 MB, images or
+PDFs, only agent panes qualify, every command lands in `events.log` by size and file name,
+never the text), a **seen** mark, and a **subscription** to a pane's screen. Agents on the
 instance's remote hosts are answered the same way, through the main instance (full mode: the
-host's `flok serve` types it, with its own check, and keeps the file in its own state dir;
-plain mode: `send-keys` over ssh, the file streamed into `~/.local/state/flok/attach` there).
+host's `flok serve` types it, with its own check, and keeps the files in its own state dir;
+plain mode: `send-keys` over ssh, the files streamed into `~/.local/state/flok/attach` there).
 
 ## Setting it up
 
@@ -52,14 +52,15 @@ plain mode: `send-keys` over ssh, the file streamed into `~/.local/state/flok/at
   their host, the ones that need you counted; *Needs you* filters the rest away.
 - **An agent**: its live screen (the pane's text, refreshed while you look; a pinch zooms it,
   the *Aa* menu wraps long lines), a key bar (`1 2 3 y n ↵ esc ↑ ↓`, Ctrl-C behind a
-  confirmation) and a reply field. Next to it a paperclip attaches a photo, a screenshot or
-  the clipboard's picture (shrunk on the phone; the agent gets it as a file and reads it) and a
+  confirmation) and a reply field. Next to it a paperclip attaches photos, screenshots or the
+  clipboard's picture, up to six (shrunk on the phone; the agent gets them as files and reads
+  them) and a
   microphone: **hold it and talk**, let go and the words are in the field (or sent, if you
   say so in Settings). On iOS 26 the recogniser runs on the phone (Apple's
   `SpeechTranscriber`, nothing leaves it), with your agents' names and the identifiers on the
   agent's screen as context, and Apple Intelligence tidies the text: punctuation, filler words
   out, `relay.go` spelled as code. Before iOS 26 it is Apple's speech recognition.
-- **The share sheet**: *flok* is among the apps when you share a screenshot, a photo, a PDF,
+- **The share sheet**: *flok* is among the apps when you share screenshots, photos, a PDF,
   text or a link; pick the agent, add a few words, send.
 - **Pushes**, one per agent that needs you, worded like the sidebar: the agent as the title,
   `home · api` under it, `● needs you: perm:Bash`, flok's own sounds and a state tile.

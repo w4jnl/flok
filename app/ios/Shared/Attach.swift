@@ -11,8 +11,9 @@ struct AttachedFile: Encodable, Sendable, Equatable {
     var mime: String
     var data: Data // base64 on the wire
 
-    /// What the relay takes (answer.MaxFile).
+    /// What the relay takes (answer.MaxFile, answer.MaxFiles).
     static let maxBytes = 4 << 20
+    static let maxCount = 6
     /// The long side an image is shrunk to.
     static let maxSide: CGFloat = 1568
 

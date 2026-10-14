@@ -289,8 +289,8 @@ func Serve(ctx context.Context, d ServeDeps) error {
 
 // TypeAnswer types an answer into an agent pane of the server c shows in snap: the answer is
 // checked (answer.Normalize) and the pane must be one of the agents', nothing else is ever
-// typed. A file is saved through save first (the attach directory of the state dir the agent's
-// machine has) and its path typed after the text; nil refuses files. The sidebar uses it for
+// typed. Files are saved through save first (the attach directory of the state dir the agent's
+// machine has) and their paths typed after the text; nil refuses files. The sidebar uses it for
 // local panes, serve and the plain-mode connection for a host's.
 func TypeAnswer(c tmux.Client, snap merge.Snapshot, a answer.Answer, save answer.Saver) error {
 	a, err := answer.Normalize(a)
@@ -308,15 +308,19 @@ func TypeAnswer(c tmux.Client, snap merge.Snapshot, a answer.Answer, save answer
 	if !found {
 		return errors.New("no agent in pane " + a.Pane)
 	}
-	if a.File != nil {
+	if len(a.Files) > 0 {
 		if save == nil {
 			return errors.New("files cannot be saved here")
 		}
-		path, err := save(*a.File)
-		if err != nil {
-			return fmt.Errorf("saving %s: %w", a.File.Name, err)
+		var paths []string
+		for _, f := range a.Files {
+			path, err := save(f)
+			if err != nil {
+				return fmt.Errorf("saving %s: %w", f.Name, err)
+			}
+			paths = append(paths, path)
 		}
-		a = answer.WithPath(a, path, ag.Kind)
+		a = answer.WithPaths(a, paths, ag.Kind)
 	}
 	return answer.Type(c.Run, a.Pane, a)
 }

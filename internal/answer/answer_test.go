@@ -109,17 +109,21 @@ func (e errorf) Error() string { return string(e) }
 
 func TestFiles(t *testing.T) {
 	data := []byte{0xff, 0xd8, 0xff, 1, 2, 3}
-	a, err := Normalize(Answer{Pane: "%1", Text: "see", Keys: []string{"Enter"}, File: &File{Name: "Screenshot 2026-10-14 at 10.02.11.png", Data: data}})
-	if err != nil || a.File == nil || a.File.Name != "Screenshot_2026-10-14_at_10.02.11.png" || a.File.Mime != "image/png" {
-		t.Fatalf("normalize: %+v %v", a.File, err)
+	a, err := Normalize(Answer{Pane: "%1", Text: "see", Keys: []string{"Enter"}, Files: []File{{Name: "Screenshot 2026-10-14 at 10.02.11.png", Data: data}}})
+	if err != nil || len(a.Files) != 1 || a.Files[0].Name != "Screenshot_2026-10-14_at_10.02.11.png" || a.Files[0].Mime != "image/png" {
+		t.Fatalf("normalize: %+v %v", a.Files, err)
 	}
-	a2, _ := Normalize(Answer{File: &File{Name: "../../etc/passwd", Mime: "image/jpeg", Data: data}})
-	if a2.File.Name != "etc_passwd.jpg" {
-		t.Fatalf("name: %q", a2.File.Name)
+	// "file", one, is what the first app build sends: folded into the list, after the list's own
+	a2, _ := Normalize(Answer{Files: []File{{Name: "first.png", Data: data}}, File: &File{Name: "../../etc/passwd", Mime: "image/jpeg", Data: data}})
+	if len(a2.Files) != 2 || a2.Files[0].Name != "first.png" || a2.Files[1].Name != "etc_passwd.jpg" || a2.File != nil {
+		t.Fatalf("name: %+v", a2.Files)
 	}
 	a3, _ := Normalize(Answer{File: &File{Name: "", Mime: "application/pdf", Data: data}})
-	if a3.File.Name != "file.pdf" {
-		t.Fatalf("no name: %q", a3.File.Name)
+	if a3.Files[0].Name != "file.pdf" {
+		t.Fatalf("no name: %q", a3.Files[0].Name)
+	}
+	if _, err := Normalize(Answer{Files: make([]File, MaxFiles+1)}); err == nil || !strings.Contains(err.Error(), "at most") {
+		t.Fatalf("too many files: %v", err)
 	}
 	for i, bad := range []File{
 		{Name: "x.jpg"},                                       // empty
@@ -135,12 +139,15 @@ func TestFiles(t *testing.T) {
 	if got := Describe(a); got != "3 chars + Screenshot_2026-10-14_at_10.02.11.png (1 KB) + Enter" {
 		t.Fatalf("describe: %q", got)
 	}
-	// typed after the text, as a path; @path for Copilot
-	w := WithPath(a, "/tmp/attach/x.png", "claude")
-	if w.Text != "see /tmp/attach/x.png" || w.File != nil || w.Keys[0] != "Enter" {
-		t.Fatalf("with path: %+v", w)
+	if got := Describe(a2); got != "first.png (1 KB), etc_passwd.jpg (1 KB)" {
+		t.Fatalf("describe two: %q", got)
 	}
-	if w := WithPath(Answer{Text: "  \n"}, "/tmp/x.png", "copilot"); w.Text != "@/tmp/x.png" {
+	// typed after the text, as paths in order; @path for Copilot
+	w := WithPaths(a, []string{"/tmp/attach/x.png", "/tmp/attach/y.pdf"}, "claude")
+	if w.Text != "see /tmp/attach/x.png /tmp/attach/y.pdf" || w.Files != nil || w.Keys[0] != "Enter" {
+		t.Fatalf("with paths: %+v", w)
+	}
+	if w := WithPaths(Answer{Text: "  \n"}, []string{"/tmp/x.png"}, "copilot"); w.Text != "@/tmp/x.png" {
 		t.Fatalf("copilot: %q", w.Text)
 	}
 	// saved under a stamped name, old ones swept
@@ -150,8 +157,8 @@ func TestFiles(t *testing.T) {
 	_ = os.WriteFile(old, data, 0o600)
 	stale := time.Now().Add(-2 * KeepFiles)
 	_ = os.Chtimes(old, stale, stale)
-	p1, err := Save(dir, *a.File)
-	if err != nil || !strings.HasPrefix(filepath.Base(p1), time.Now().Format("20060102")) || !strings.HasSuffix(p1, "-"+a.File.Name) {
+	p1, err := Save(dir, a.Files[0])
+	if err != nil || !strings.HasPrefix(filepath.Base(p1), time.Now().Format("20060102")) || !strings.HasSuffix(p1, "-"+a.Files[0].Name) {
 		t.Fatalf("save: %q %v", p1, err)
 	}
 	if b, _ := os.ReadFile(p1); !reflect.DeepEqual(b, data) {
@@ -160,7 +167,7 @@ func TestFiles(t *testing.T) {
 	if _, err := os.Stat(old); err == nil {
 		t.Fatal("the old file was not swept")
 	}
-	p2, _ := Save(dir, *a.File)
+	p2, _ := Save(dir, a.Files[0])
 	if p2 == p1 {
 		t.Fatal("a second file in the same second got the same name")
 	}

@@ -15,7 +15,7 @@ Every call carries `Authorization: Bearer <device token>`, one of the relay's
 |---|---|---|
 | `GET /healthz` | | `{"ok":true,"service":"flok-relay","version","instances","online","push","uptime_s"}` |
 | `GET /api/instances` | | an `instances` frame (below) |
-| `POST /api/answer` | `{"instance","pane","text"?,"keys"?,"file"?}` | `{"ok":true}`, or `{"error"}` with 400 (refused by the relay) / 502 (refused or unreachable instance) |
+| `POST /api/answer` | `{"instance","pane","text"?,"keys"?,"files"?}` | `{"ok":true}`, or `{"error"}` with 400 (refused by the relay) / 502 (refused or unreachable instance) |
 | `POST /api/seen` | `{"instance","pane"}` | `{"ok":true}` or `{"error"}` |
 | `GET /api/devices` | | `{"devices":[{"token":"short…","name","sandbox","added","prefs"?}],"push":bool}` |
 | `POST /api/devices` | `{"token","name"?,"sandbox"?,"prefs"?}` | `{"ok":true,"push":bool}`; `token` is the platform push token (APNs hex, later an FCM token); a registration without `prefs` keeps the device's |
@@ -31,18 +31,19 @@ typed. An **answer** is `text` (typed first: printable characters, tabs and newl
 pasted through a tmux buffer as one bracketed paste, so an agent takes it as a paste and not
 as lines sent one by one), `keys` (then, in order, at most 8 of `Enter Escape Tab BTab Up Down
 Left Right Space BSpace Home End PageUp PageDown C-c`; aliases `esc return backspace ctrl-c`)
-and `file` (`{"name","mime"?,"data"}`: `data` base64, at most 4 MB; `mime` one of `image/jpeg
-image/png image/gif image/webp image/heic application/pdf`, or taken from the name's
-extension; the name is reduced to letters, digits, `. - _`). The instance saves the file under
-its state dir as `attach/<stamp>-<name>` (an agent on a remote host: under that host's, swept
-after a day) and types its path after the text, `@path` for a Copilot agent, which is how
-Claude Code and Copilot read an image or a document. The body may be 6 MB. An instance whose
-flok predates these takes neither a long text nor a file: its `features` (below) lack
-`long-text` / `files`, and the relay answers 400 with a message naming the update before
-anything is sent. The pane must be an agent pane in the instance's view. `pane` is a pane ref:
-`%12` for the instance's own tmux, `beta:%12` for a pane on its remote host `beta` (compose it
-from an agent's `host` and `pane_id`). An answer on the WebSocket is the same without `file`
-(its frames are small; files go over HTTP).
+and `files` (a list of at most 6 `{"name","mime"?,"data"}`: `data` base64, at most 4 MB each;
+`mime` one of `image/jpeg image/png image/gif image/webp image/heic application/pdf`, or
+taken from the name's extension; the name is reduced to letters, digits, `. - _`; `file`, one
+of them, is taken as well). The instance saves each file under its state dir as
+`attach/<stamp>-<name>` (an agent on a remote host: under that host's, swept after a day) and
+types the paths after the text, in order, `@path` for a Copilot agent, which is how Claude
+Code and Copilot read images and documents. The body may be 36 MB. An instance whose flok
+predates these takes neither a long text nor files: its `features` (below) lack `long-text` /
+`files`, and the relay answers 400 with a message naming the update before anything is sent.
+The pane must be an agent pane in the instance's view. `pane` is a pane ref: `%12` for the
+instance's own tmux, `beta:%12` for a pane on its remote host `beta` (compose it from an
+agent's `host` and `pane_id`). An answer on the WebSocket is the same without `files` (its
+frames are small; files go over HTTP).
 
 ## The live stream (`/api/ws`)
 
@@ -78,8 +79,8 @@ sides; additions keep the protocol compatible.
 ```
 
 `features` is what the instance's link can do: `answer`, `screen`, `long-text` (an answer's
-text may be long and multi-line), `files` (an answer may carry a file); absent for an older
-flok, which takes a one-line text of at most 200 characters and no file.
+text may be long and multi-line), `files` (an answer may carry files); absent for an older
+flok, which takes a one-line text of at most 200 characters and no files.
 
 `off` (with `online` false) means the instance's link was switched off there (`flok link off`),
 on purpose: show it as *off*, quietly, not as *offline* (out of reach), and expect it back only

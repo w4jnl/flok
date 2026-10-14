@@ -13,11 +13,11 @@ updates this file first. Dates are the tag dates.
   punctuation, filler words out, `relay.go` spelled as code. Before iOS 26 it is Apple's speech
   recognition. **Reply…** on every push opens the Lock Screen's text field, dictation included
   (an Apple Watch dictates it too), and types it into the agent, then Enter.
-- **Pictures and long text to an agent.** A paperclip in the agent view attaches a photo, a
-  screenshot or the clipboard's picture, shrunk on the phone, and *flok* is in the share sheet
-  for a screenshot, a photo, a PDF, text or a link from any app. The instance saves the file
-  under its state dir (`attach/`, swept after a day; an agent on a remote host: under that
-  host's) and types its path after your words, which Claude Code and Copilot (`@path`) read. A
+- **Pictures and long text to an agent.** A paperclip in the agent view attaches photos,
+  screenshots or the clipboard's picture, up to six, shrunk on the phone, and *flok* is in the
+  share sheet for screenshots, photos, a PDF, text or a link from any app. The instance saves
+  the files under its state dir (`attach/`, swept after a day; an agent on a remote host: under
+  that host's) and types their paths after your words, which Claude Code and Copilot (`@path`) read. A
   reply may be long and multi-line now, up to 8000 characters, pasted through a tmux buffer as
   one bracketed paste instead of typed as keys. Both need flok updated on the instance (and on
   a full-mode host for its agents); the relay names the missing update instead of failing, and

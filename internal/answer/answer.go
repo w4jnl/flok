@@ -20,10 +20,11 @@ import (
 
 // Answer is what is typed into an agent pane: Text first, literally, then Keys in order.
 type Answer struct {
-	Pane string   `json:"pane"`           // pane ref: %12 here, beta:%12 on a remote host
-	Text string   `json:"text,omitempty"` // typed as is: printable, tabs and newlines, at most MaxLongText runes (see Long)
-	Keys []string `json:"keys,omitempty"` // named keys after the text: Enter, Escape, Up, … (see Keys)
-	File *File    `json:"file,omitempty"` // saved on the agent's machine, its path typed after the text
+	Pane  string   `json:"pane"`            // pane ref: %12 here, beta:%12 on a remote host
+	Text  string   `json:"text,omitempty"`  // typed as is: printable, tabs and newlines, at most MaxLongText runes (see Long)
+	Keys  []string `json:"keys,omitempty"`  // named keys after the text: Enter, Escape, Up, … (see Keys)
+	Files []File   `json:"files,omitempty"` // saved on the agent's machine, their paths typed after the text, in order
+	File  *File    `json:"file,omitempty"`  // one file, as the first app build sent it; Normalize folds it into Files
 }
 
 // File is an attachment: a screenshot, a photo, a PDF.
@@ -41,8 +42,9 @@ const (
 	MaxLongText = 8000
 	MaxKeys     = 8       // named keys per answer
 	MaxFile     = 4 << 20 // bytes of a file
-	// MaxBody bounds an answer on the wire (a file, base64, and the rest).
-	MaxBody = 6 << 20
+	MaxFiles    = 6       // files per answer
+	// MaxBody bounds an answer on the wire (the files, base64, and the rest).
+	MaxBody = 36 << 20
 	// KeyGap separates the text from the keys that follow it. Written in one burst, an Enter
 	// right behind the text reaches the agent inside what it takes for a paste, and Claude Code
 	// then inserts a newline instead of sending the line; a pause makes it a keypress.
@@ -80,7 +82,9 @@ var keyByLower = func() map[string]string {
 }()
 
 // Empty reports an answer that types nothing.
-func (a Answer) Empty() bool { return a.Text == "" && len(a.Keys) == 0 && a.File == nil }
+func (a Answer) Empty() bool {
+	return a.Text == "" && len(a.Keys) == 0 && len(a.Files) == 0 && a.File == nil
+}
 
 // Long reports a text that is pasted rather than typed: over MaxText runes, or more than one
 // line. An instance without the long-text feature refuses it.
@@ -114,12 +118,19 @@ func Normalize(a Answer) (Answer, error) {
 		}
 		out.Keys = append(out.Keys, name)
 	}
+	files := a.Files
 	if a.File != nil {
-		f, err := normalizeFile(*a.File)
+		files = append(append([]File{}, files...), *a.File)
+	}
+	if len(files) > MaxFiles {
+		return a, fmt.Errorf("%d files, at most %d", len(files), MaxFiles)
+	}
+	for _, f := range files {
+		n, err := normalizeFile(f)
 		if err != nil {
 			return a, err
 		}
-		out.File = &f
+		out.Files = append(out.Files, n)
 	}
 	return out, nil
 }
@@ -227,18 +238,19 @@ func hide(err error, text string) error {
 	return errors.New(msg)
 }
 
-// WithPath is the answer as it is typed once its file is saved at path: the text, then the
-// path, which Claude Code reads as an image or a document (Copilot wants it as @path).
-func WithPath(a Answer, path, agentKind string) Answer {
-	ref := path
-	if agentKind == "copilot" {
-		ref = "@" + path
-	}
+// WithPaths is the answer as it is typed once its files are saved at paths: the text, then the
+// paths in order, which Claude Code reads as images or documents (Copilot wants them as @path).
+func WithPaths(a Answer, paths []string, agentKind string) Answer {
 	text := strings.TrimRight(a.Text, " \t\n")
-	if text == "" {
-		text = ref
-	} else {
-		text += " " + ref
+	for _, p := range paths {
+		if agentKind == "copilot" {
+			p = "@" + p
+		}
+		if text == "" {
+			text = p
+		} else {
+			text += " " + p
+		}
 	}
 	return Answer{Pane: a.Pane, Text: text, Keys: a.Keys}
 }
@@ -291,15 +303,19 @@ func Sweep(dir string, now time.Time) {
 	}
 }
 
-// Describe is the answer for a log line: the keys, how much text and the file's name and size,
-// never the text itself.
+// Describe is the answer for a log line: the keys, how much text and the files' names and
+// sizes, never the text itself.
 func Describe(a Answer) string {
 	parts := []string{}
 	if a.Text != "" {
 		parts = append(parts, fmt.Sprintf("%d chars", len([]rune(a.Text))))
 	}
-	if a.File != nil {
-		parts = append(parts, fmt.Sprintf("%s (%d KB)", a.File.Name, (len(a.File.Data)+1023)/1024))
+	var files []string
+	for _, f := range a.Files {
+		files = append(files, fmt.Sprintf("%s (%d KB)", f.Name, (len(f.Data)+1023)/1024))
+	}
+	if len(files) > 0 {
+		parts = append(parts, strings.Join(files, ", "))
 	}
 	if len(a.Keys) > 0 {
 		parts = append(parts, strings.Join(a.Keys, " "))

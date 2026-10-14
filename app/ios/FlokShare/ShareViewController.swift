@@ -18,7 +18,7 @@ final class ShareViewController: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = .systemGroupedBackground
         let root = ShareView(
-            load: { [weak self] in await self?.loadItem() },
+            load: { [weak self] in await self?.loadItems() ?? [] },
             finish: { [weak self] in self?.extensionContext?.completeRequest(returningItems: nil) },
             cancel: { [weak self] in self?.extensionContext?.cancelRequest(withError: CocoaError(.userCancelled)) })
         let host = UIHostingController(rootView: root)
@@ -34,27 +34,32 @@ final class ShareViewController: UIViewController {
         host.didMove(toParent: self)
     }
 
-    /// The first attachment flok can use: an image, a PDF, a link or text.
-    private func loadItem() async -> SharedItem? {
+    /// What flok can use of the shared items: every image and PDF (up to the relay's limit),
+    /// and one piece of text or one link.
+    private func loadItems() async -> [SharedItem] {
+        var out: [SharedItem] = []
+        var files = 0
+        var gotText = false
         let items = extensionContext?.inputItems as? [NSExtensionItem] ?? []
         for item in items {
             for p in item.attachments ?? [] {
                 let name = p.suggestedName ?? ""
-                if p.hasItemConformingToTypeIdentifier(UTType.image.identifier), let d = try? await Self.data(p, UTType.image) {
-                    return .image(d, name)
-                }
-                if p.hasItemConformingToTypeIdentifier(UTType.pdf.identifier), let d = try? await Self.data(p, UTType.pdf) {
-                    return .pdf(d, name)
-                }
-                if p.hasItemConformingToTypeIdentifier(UTType.url.identifier), let s = await Self.string(p, UTType.url), !s.isEmpty {
-                    return .text(s)
-                }
-                if p.hasItemConformingToTypeIdentifier(UTType.plainText.identifier), let s = await Self.string(p, UTType.plainText), !s.isEmpty {
-                    return .text(s)
+                if files < AttachedFile.maxCount, p.hasItemConformingToTypeIdentifier(UTType.image.identifier), let d = try? await Self.data(p, UTType.image) {
+                    out.append(.image(d, name))
+                    files += 1
+                } else if files < AttachedFile.maxCount, p.hasItemConformingToTypeIdentifier(UTType.pdf.identifier), let d = try? await Self.data(p, UTType.pdf) {
+                    out.append(.pdf(d, name))
+                    files += 1
+                } else if !gotText, p.hasItemConformingToTypeIdentifier(UTType.url.identifier), let s = await Self.string(p, UTType.url), !s.isEmpty {
+                    out.append(.text(s))
+                    gotText = true
+                } else if !gotText, p.hasItemConformingToTypeIdentifier(UTType.plainText.identifier), let s = await Self.string(p, UTType.plainText), !s.isEmpty {
+                    out.append(.text(s))
+                    gotText = true
                 }
             }
         }
-        return nil
+        return out
     }
 
     private static func data(_ p: NSItemProvider, _ type: UTType) async throws -> Data {
@@ -86,12 +91,11 @@ final class ShareViewController: UIViewController {
 }
 
 struct ShareView: View {
-    let load: @MainActor () async -> SharedItem?
+    let load: @MainActor () async -> [SharedItem]
     let finish: @MainActor () -> Void
     let cancel: @MainActor () -> Void
 
-    @State private var item: SharedItem?
-    @State private var file: AttachedFile?
+    @State private var files: [AttachedFile] = []
     @State private var sharedText = ""
     @State private var note = ""
     @State private var instances: [InstanceState] = []
@@ -147,7 +151,7 @@ struct ShareView: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { cancel() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(sent ? "Sent" : "Send") { Task { await send() } }
-                        .disabled(selected == nil || sending || sent || loading || warning != nil || (file == nil && sharedText.isEmpty && note.isEmpty))
+                        .disabled(selected == nil || sending || sent || loading || warning != nil || (files.isEmpty && sharedText.isEmpty && note.isEmpty))
                 }
             }
             .task { await prepare() }
@@ -155,8 +159,10 @@ struct ShareView: View {
     }
 
     @ViewBuilder private var preview: some View {
-        if let file {
-            AttachmentPreview(file: file)
+        if !files.isEmpty {
+            ForEach(Array(files.enumerated()), id: \.offset) { _, f in
+                AttachmentPreview(file: f)
+            }
         } else if !sharedText.isEmpty {
             Text(sharedText).font(.footnote).lineLimit(6)
         } else if loading {
@@ -190,7 +196,7 @@ struct ShareView: View {
     private var warning: String? {
         guard let selected, let inst = instances.first(where: { $0.name == selected.instance }) else { return nil }
         if !inst.online { return "\(inst.name) is offline" }
-        if file != nil && !inst.takesFiles { return "flok on \(inst.name) is too old for files: update it there" }
+        if !files.isEmpty && !inst.takesFiles { return "flok on \(inst.name) is too old for files: update it there" }
         let text = composed
         if (text.contains("\n") || text.count > shortAnswerLimit) && !inst.takesLongText { return "flok on \(inst.name) takes at most \(shortAnswerLimit) characters on one line: update it there" }
         return nil
@@ -218,19 +224,23 @@ struct ShareView: View {
         } else {
             status = "open flok once and set the relay up there"
         }
-        switch await loaded {
-        case .image(let data, let name)?:
-            if let img = UIImage(data: data) {
-                file = AttachedFile.image(img, name: name.isEmpty ? "image" : name)
+        for item in await loaded {
+            switch item {
+            case .image(let data, let name):
+                if let img = UIImage(data: data), let f = AttachedFile.image(img, name: name.isEmpty ? "image" : name) {
+                    files.append(f)
+                } else {
+                    status = "an image cannot be read"
+                }
+            case .pdf(let data, let name):
+                if let f = AttachedFile.pdf(data, name: name.isEmpty ? "document" : name) {
+                    files.append(f)
+                } else {
+                    status = "a PDF is too large (4 MB at most)"
+                }
+            case .text(let s):
+                sharedText = s
             }
-            if file == nil { status = "that image cannot be read" }
-        case .pdf(let data, let name)?:
-            file = AttachedFile.pdf(data, name: name.isEmpty ? "document" : name)
-            if file == nil { status = "that PDF is too large (4 MB at most)" }
-        case .text(let s)?:
-            sharedText = s
-        case nil:
-            break
         }
         loading = false
     }
@@ -241,7 +251,7 @@ struct ShareView: View {
         defer { sending = false }
         do {
             let text = composed
-            try await api.answer(instance: selected.instance, pane: selected.pane, text: text.isEmpty ? nil : text, keys: ["Enter"], file: file)
+            try await api.answer(instance: selected.instance, pane: selected.pane, text: text.isEmpty ? nil : text, keys: ["Enter"], files: files)
             try? await api.seen(instance: selected.instance, pane: selected.pane)
             sent = true
             status = "sent"

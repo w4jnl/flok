@@ -14,10 +14,10 @@ struct AgentView: View {
     @State private var notice: String?
     @State private var confirmInterrupt = false
     @State private var inputChoice: Bool? // the user's show/hide of the bottom; nil = the orientation's default
-    @State private var attachment: AttachedFile?
+    @State private var attachments: [AttachedFile] = []
     @State private var showPhotos = false
     @State private var showCamera = false
-    @State private var photoItem: PhotosPickerItem?
+    @State private var photoItems: [PhotosPickerItem] = []
     @State private var voice = Voice()
     @State private var voiceBase = "" // what the field held before the microphone was pressed
     @State private var pressStarted: Date?
@@ -46,9 +46,18 @@ struct AgentView: View {
                 // the send button, on iOS 26 and later).
                 KeyBar { key in Task { await send(text: key.text, keys: key.keys) } }
                     .clipped()
-                if let attachment {
-                    AttachmentChip(file: attachment) { self.attachment = nil }
+                if attachments.count == 1, let f = attachments.first {
+                    AttachmentChip(file: f) { attachments.removeAll() }
                         .padding(.horizontal, 10)
+                } else if !attachments.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            ForEach(Array(attachments.enumerated()), id: \.offset) { i, f in
+                                AttachmentChip(file: f) { attachments.remove(at: i) }.frame(width: 230)
+                            }
+                        }
+                        .padding(.horizontal, 10)
+                    }
                 }
                 HStack(spacing: 6) {
                     Button { inputChoice = false; typing = false } label: { Image(systemName: "chevron.down").fontWeight(.semibold) }
@@ -71,7 +80,7 @@ struct AgentView: View {
                     }
                     Button { Task { await sendInput() } } label: { Image(systemName: "paperplane.fill") }
                         .buttonStyle(.borderedProminent)
-                        .disabled(input.isEmpty && attachment == nil)
+                        .disabled(input.isEmpty && attachments.isEmpty)
                 }
                 .padding(.horizontal, 10).padding(.vertical, compact ? 4 : 8)
             } else {
@@ -98,11 +107,11 @@ struct AgentView: View {
         .confirmationDialog("Send Ctrl-C to \(found?.1.name ?? "the agent")?", isPresented: $confirmInterrupt, titleVisibility: .visible) {
             Button("Interrupt", role: .destructive) { Task { await send(keys: ["C-c"]) } }
         }
-        .photosPicker(isPresented: $showPhotos, selection: $photoItem, matching: .images)
-        .onChange(of: photoItem) { _, item in
-            guard let item else { return }
-            photoItem = nil
-            Task { await attach(item) }
+        .photosPicker(isPresented: $showPhotos, selection: $photoItems, maxSelectionCount: max(1, AttachedFile.maxCount - attachments.count), matching: .images)
+        .onChange(of: photoItems) { _, items in
+            guard !items.isEmpty else { return }
+            photoItems = []
+            Task { await attach(items) }
         }
         .fullScreenCover(isPresented: $showCamera) {
             CameraPicker { image in
@@ -213,7 +222,7 @@ struct AgentView: View {
                 Text(found == nil ? "no agent" : "flok on \(target.instance) is too old for files: update it there")
             }
         } label: {
-            Image(systemName: attachment == nil ? "paperclip" : "paperclip.badge.ellipsis")
+            Image(systemName: attachments.isEmpty ? "paperclip" : "paperclip.badge.ellipsis")
                 .font(.body.weight(.semibold))
                 .frame(width: 34, height: 32)
                 .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
@@ -271,21 +280,27 @@ struct AgentView: View {
 
     // MARK: attachments
 
-    private func attach(_ item: PhotosPickerItem) async {
-        guard let data = try? await item.loadTransferable(type: Data.self), let image = UIImage(data: data) else {
-            flash("that picture cannot be read")
-            return
+    private func attach(_ items: [PhotosPickerItem]) async {
+        for item in items {
+            guard let data = try? await item.loadTransferable(type: Data.self), let image = UIImage(data: data) else {
+                flash("a picture cannot be read")
+                continue
+            }
+            attach(image, name: "photo")
         }
-        attach(image, name: "photo")
     }
 
     private func attach(_ image: UIImage, name: String) {
+        guard attachments.count < AttachedFile.maxCount else {
+            flash("at most \(AttachedFile.maxCount) files in one reply")
+            return
+        }
         guard let file = AttachedFile.image(image, name: name) else {
             flash("that picture cannot be used")
             return
         }
-        attachment = file
-        flash("attached \(file.name), \(file.sizeLabel)")
+        attachments.append(file)
+        flash(attachments.count == 1 ? "attached \(file.name), \(file.sizeLabel)" : "\(attachments.count) files attached")
     }
 
     private func pasteImage() {
@@ -343,15 +358,15 @@ struct AgentView: View {
 
     private func sendInput() async {
         let text = input
-        let file = attachment
-        guard !text.isEmpty || file != nil else { return }
+        let files = attachments
+        guard !text.isEmpty || !files.isEmpty else { return }
         if let inst = found?.0, !inst.takesLongText, text.contains("\n") || text.count > shortAnswerLimit {
             flash("flok on \(inst.name) takes at most \(shortAnswerLimit) characters on one line: update it there")
             return
         }
         input = ""
-        attachment = nil
-        await send(text: text, keys: ["Enter"], file: file)
+        attachments = []
+        await send(text: text, keys: ["Enter"], files: files)
     }
 
     private func seenIfUnseen() async {
@@ -359,11 +374,11 @@ struct AgentView: View {
         try? await relay.markSeen(target)
     }
 
-    private func send(text: String? = nil, keys: [String]? = nil, file: AttachedFile? = nil) async {
+    private func send(text: String? = nil, keys: [String]? = nil, files: [AttachedFile] = []) async {
         do {
-            try await relay.answer(target, text: text, keys: keys, file: file)
+            try await relay.answer(target, text: text, keys: keys, files: files)
             await seenIfUnseen()
-            flash(file == nil ? "sent" : "sent with \(file!.name)")
+            flash(files.isEmpty ? "sent" : files.count == 1 ? "sent with \(files[0].name)" : "sent with \(files.count) files")
         } catch {
             flash(error.localizedDescription)
         }

@@ -80,12 +80,13 @@ expect "a long reply with newlines is taken" '"ok":true' "$(POST /api/answer '{"
 expect_soon "the pane shows both lines" '^first long line$' IN capture-pane -p -J -t "$AGENT"
 expect "… the second as well" '^second long line$' "$(IN capture-pane -p -J -t "$AGENT")"
 PNG=$(printf '\211PNG\r\n\032\n' | base64 | tr -d '\n')
-expect "a screenshot is taken" '"ok":true' "$(POST /api/answer '{"instance":"e2e","pane":"'"$AGENT"'","text":"look","keys":["Enter"],"file":{"name":"Screen Shot.png","data":"'"$PNG"'"}}')"
-expect_soon "… saved under the state dir with a safe name" '[0-9]{8}-[0-9]{6}-Screen_Shot\.png' ls "$T/state/attach"
-ATT=$(ls "$T/state/attach"/*-Screen_Shot.png | head -1)
+expect "two screenshots are taken" '"ok":true' "$(POST /api/answer '{"instance":"e2e","pane":"'"$AGENT"'","text":"look","keys":["Enter"],"files":[{"name":"Screen Shot.png","data":"'"$PNG"'"},{"name":"second.png","data":"'"$PNG"'"}]}')"
+expect_soon "… saved under the state dir with safe names" '[0-9]{8}-[0-9]{6}-Screen_Shot\.png' ls "$T/state/attach"
+expect "… the second as well" '[0-9]{8}-[0-9]{6}-second\.png' "$(ls "$T/state/attach")"
+ATT=$(ls "$T/state/attach"/*-Screen_Shot.png | head -1); ATT2=$(ls "$T/state/attach"/*-second.png | head -1)
 expect "… byte for byte" '^89504e470d0a1a0a$' "$(od -An -tx1 "$ATT" | tr -d ' \n')"
-expect_soon "… and its path typed after the text" "^look $ATT\$" IN capture-pane -p -J -t "$AGENT"
-expect "the file is logged by name and size, never its content" '"what":"4 chars \+ Screen_Shot.png \(1 KB\) \+ Enter"' "$(grep phone "$T/state/events.log")"
+expect_soon "… and both paths typed after the text, in order" "^look $ATT $ATT2\$" IN capture-pane -p -J -t "$AGENT"
+expect "the files are logged by name and size, never their content" '"what":"4 chars \+ Screen_Shot.png \(1 KB\), second.png \(1 KB\) \+ Enter"' "$(grep phone "$T/state/events.log")"
 expect "a file of another kind is refused by the relay" 'files of type .*x-msdownload.* are not taken' "$(POST /api/answer '{"instance":"e2e","pane":"'"$AGENT"'","file":{"name":"x.exe","mime":"application/x-msdownload","data":"'"$PNG"'"}}')"
 OTHER=$(IN display -p -t Alpha:0 '#{pane_id}')
 expect "a pane without an agent is refused" '"error":"no agent in pane '"$OTHER"'"' "$(POST /api/answer '{"instance":"e2e","pane":"'"$OTHER"'","text":"rm -rf /"}')"

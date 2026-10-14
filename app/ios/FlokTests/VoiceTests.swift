@@ -23,10 +23,12 @@ struct AttachTests {
     }
 
     @Test func encodesTheFileAsBase64() throws {
-        let body = AnswerBody(instance: "home", pane: "%1", text: "see", keys: ["Enter"], file: AttachedFile(name: "x.jpg", mime: "image/jpeg", data: Data([1, 2, 3])))
+        let body = AnswerBody(instance: "home", pane: "%1", text: "see", keys: ["Enter"],
+                              files: [AttachedFile(name: "x.jpg", mime: "image/jpeg", data: Data([1, 2, 3])), AttachedFile(name: "y.pdf", mime: "application/pdf", data: Data([4]))])
         let json = String(decoding: try Wire.encoder.encode(body), as: UTF8.self)
-        #expect(json.contains(#""data":"AQID""#))
-        #expect(json.contains(#""name":"x.jpg""#))
+        #expect(json.contains(#""files":[{"#))
+        #expect(json.contains(#""data":"AQID""#) && json.contains(#""data":"BA==""#))
+        #expect(json.contains(#""name":"x.jpg""#) && json.contains(#""name":"y.pdf""#))
         #expect(json.contains("image\\/jpeg") || json.contains("image/jpeg"))
     }
 
