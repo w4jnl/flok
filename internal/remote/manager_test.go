@@ -5,11 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/w4jnl/flok/internal/answer"
 	"github.com/w4jnl/flok/internal/config"
 	"github.com/w4jnl/flok/internal/hosts"
 	"github.com/w4jnl/flok/internal/remote/proto"
@@ -617,5 +620,51 @@ func TestCloseIsBounded(t *testing.T) {
 	m.Close()
 	if d := time.Since(t0); d < 150*time.Millisecond || d > 400*time.Millisecond {
 		t.Fatalf("Close took %v, want one bound of 200ms for both hosts", d)
+	}
+}
+
+// A file for a plain-mode host is streamed over ssh into the attach directory of the host's
+// state dir, which the script makes, and its path comes back; here the script runs through sh.
+func TestSaveRemote(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", home)
+	var gotArgv []string
+	m := New(Deps{Cfg: config.Default(), StateDir: t.TempDir(), Sink: make(chan Msg, 8),
+		Dial: func(ctx context.Context, argv []string) (Proc, error) {
+			gotArgv = argv
+			return Exec(ctx, []string{"sh", "-c", argv[len(argv)-1]}) // the remote command, run here
+		}})
+	defer m.Close()
+	c := &conn{m: m, host: hosts.Host{Name: "beta", Target: "beta"}}
+	path, err := c.saveRemote(answer.File{Name: "shot.png", Mime: "image/png", Data: []byte{1, 2, 3}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(home, "flok", "attach")
+	if filepath.Dir(path) != want || !strings.HasSuffix(path, "-shot.png") {
+		t.Fatalf("path %q", path)
+	}
+	if b, _ := os.ReadFile(path); string(b) != "\x01\x02\x03" {
+		t.Fatalf("content %q", b)
+	}
+	if info, _ := os.Stat(want); info.Mode().Perm() != 0o700 {
+		t.Fatalf("dir mode %v", info.Mode())
+	}
+	if gotArgv[0] != "ssh" || gotArgv[len(gotArgv)-2] != "beta" || !strings.Contains(gotArgv[len(gotArgv)-1], "sh -c ") {
+		t.Fatalf("argv %q", gotArgv)
+	}
+	// a stale file is swept by the next save
+	old := filepath.Join(want, "old.png")
+	_ = os.WriteFile(old, []byte{1}, 0o600)
+	stale := time.Now().Add(-49 * time.Hour)
+	_ = os.Chtimes(old, stale, stale)
+	if _, err := c.saveRemote(answer.File{Name: "next.png", Mime: "image/png", Data: []byte{4}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(old); err == nil {
+		t.Fatal("the old file was not swept")
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatal("today's file was swept")
 	}
 }

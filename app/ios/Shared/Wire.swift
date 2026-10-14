@@ -60,12 +60,23 @@ struct InstanceState: Decodable, Sendable, Identifiable {
     var since: Date
     var version: String?
     var hostname: String?
+    /// What the instance's link can do (`long-text`, `files`); an older flok sends none.
+    var features: [String]?
     var snap: Snapshot?
 
     var id: String { name }
     var switchedOff: Bool { !online && off == true }
     var agents: [Agent] { snap?.agents ?? [] }
     var unseen: Int { snap?.unseen ?? 0 }
+    /// Whether an answer may be long and multi-line there (else at most 200 characters on one line).
+    var takesLongText: Bool { features?.contains(Feature.longText) ?? false }
+    /// Whether an answer may carry a file there.
+    var takesFiles: Bool { features?.contains(Feature.files) ?? false }
+
+    enum Feature {
+        static let longText = "long-text"
+        static let files = "files"
+    }
 }
 
 /// The sidebar's published view (snapshot.json), the parts the app shows.
@@ -180,7 +191,11 @@ struct AnswerBody: Encodable, Sendable {
     var pane: String
     var text: String?
     var keys: [String]?
+    var file: AttachedFile?
 }
+
+/// The longest text an instance without the long-text feature takes, on one line.
+let shortAnswerLimit = 200
 
 struct SeenBody: Encodable, Sendable {
     var instance: String
@@ -192,11 +207,4 @@ struct SubscribeFrame: Encodable, Sendable {
     var instance: String
     var pane: String
     var on: Bool
-}
-
-struct DeviceBody: Encodable, Sendable {
-    var token: String
-    var name: String
-    var sandbox: Bool
-    var prefs: NotificationPrefs?
 }

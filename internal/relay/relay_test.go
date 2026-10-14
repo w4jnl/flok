@@ -728,3 +728,83 @@ func TestLiveActivities(t *testing.T) {
 		t.Fatalf("an agent activity without instance and pane: %d", code)
 	}
 }
+
+// A long, multi-line text and a file travel to an instance that takes them (its hello says so,
+// and the app can see that); an instance without those features is told what it needs, before
+// anything is sent.
+func TestRelayLongTextAndFiles(t *testing.T) {
+	s, err := New(Config{InstanceTokens: []string{"inst-tok"}, DeviceTokens: []string{"dev-tok"}, DataDir: t.TempDir(), AnswerWait: 2 * time.Second, Logf: t.Logf})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(s.Handler())
+	defer srv.Close()
+	snap := snapshot.Snapshot{Agents: []snapshot.Agent{{PaneID: "%1", Name: "api", State: agent.Blocked}}}
+	cl := link.New(link.Config{URL: srv.URL, Token: "inst-tok", Name: "home", Version: "test", Hostname: "mac"})
+	cmds := make(chan link.Command, 16)
+	go func() {
+		for m := range cl.Messages() {
+			if m.Command != nil {
+				cmds <- *m.Command
+				if m.Command.Kind == "answer" {
+					cl.Ack(m.Command.ID, "")
+				}
+			}
+		}
+	}()
+	cl.Publish(snap)
+	cl.Start()
+	defer cl.Close()
+	app := dialApp(t, srv, "dev-tok")
+	f := app.next(t, func(f wire.Frame) bool { return f.Type == wire.TypeInstance && f.Inst != nil && f.Inst.Snap != nil })
+	if !strings.Contains(strings.Join(f.Inst.Features, " "), wire.FeatureFiles) || !strings.Contains(strings.Join(f.Inst.Features, " "), wire.FeatureLongText) {
+		t.Fatalf("features: %v", f.Inst.Features)
+	}
+	// a long text with newlines, through HTTP
+	long := strings.Repeat("a line of text\n", 30)
+	if code, out := api(t, srv, "dev-tok", "POST", "/api/answer", map[string]any{"instance": "home", "pane": "%1", "text": long, "keys": []string{"Enter"}}); code != 200 {
+		t.Fatalf("long answer: %d %v", code, out)
+	}
+	if c := <-cmds; c.Kind != "answer" || c.Answer.Text != long || c.Answer.Keys[0] != "Enter" {
+		t.Fatalf("long command: %q", c.Answer.Text)
+	}
+	// a file, base64 in JSON
+	data := []byte{0x89, 'P', 'N', 'G', 0, 1, 2}
+	if code, out := api(t, srv, "dev-tok", "POST", "/api/answer", map[string]any{"instance": "home", "pane": "%1", "text": "see", "keys": []string{"Enter"},
+		"file": map[string]any{"name": "Shot 1.PNG", "data": data}}); code != 200 {
+		t.Fatalf("file answer: %d %v", code, out)
+	}
+	if c := <-cmds; c.Answer.File == nil || c.Answer.File.Name != "Shot_1.png" || c.Answer.File.Mime != "image/png" || !bytes.Equal(c.Answer.File.Data, data) || c.Answer.Text != "see" {
+		t.Fatalf("file command: %+v", c.Answer)
+	}
+	if code, out := api(t, srv, "dev-tok", "POST", "/api/answer", map[string]any{"instance": "home", "pane": "%1", "file": map[string]any{"name": "x.exe", "data": data}}); code != http.StatusBadRequest || !strings.Contains(out["error"].(string), "not taken") {
+		t.Fatalf("exe: %d %v", code, out)
+	}
+	if code, _ := api(t, srv, "dev-tok", "POST", "/api/answer", map[string]any{"instance": "home", "pane": "%1", "text": strings.Repeat("x", answer.MaxLongText+1)}); code != http.StatusBadRequest {
+		t.Fatalf("over the limit: %d", code)
+	}
+	// an instance from before: its hello has neither feature
+	u := "ws" + strings.TrimPrefix(srv.URL, "http") + "/link"
+	old, _, err := websocket.Dial(context.Background(), u, &websocket.DialOptions{HTTPHeader: http.Header{"Authorization": {"Bearer inst-tok"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer old.CloseNow()
+	hello, _ := json.Marshal(wire.Frame{Type: wire.TypeHello, Hello: &wire.Hello{Proto: wire.Proto, Name: "old", Version: "0.7.1", Features: []string{wire.FeatureAnswer, wire.FeatureScreen}}})
+	if err := old.Write(context.Background(), websocket.MessageText, hello); err != nil {
+		t.Fatal(err)
+	}
+	app.next(t, func(f wire.Frame) bool { return f.Type == wire.TypeInstance && f.Inst != nil && f.Inst.Name == "old" })
+	if code, out := api(t, srv, "dev-tok", "POST", "/api/answer", map[string]any{"instance": "old", "pane": "%1", "text": "one\ntwo"}); code != http.StatusBadRequest ||
+		out["error"] != "flok 0.7.1 on old takes at most 200 characters on one line: update flok there for longer text" {
+		t.Fatalf("old long: %d %v", code, out)
+	}
+	if code, out := api(t, srv, "dev-tok", "POST", "/api/answer", map[string]any{"instance": "old", "pane": "%1", "file": map[string]any{"name": "x.png", "data": data}}); code != http.StatusBadRequest ||
+		out["error"] != "flok 0.7.1 on old cannot take files: update flok there" {
+		t.Fatalf("old file: %d %v", code, out)
+	}
+	app.send(t, wire.Frame{Type: wire.TypeAnswer, ID: "q1", Instance: "old", Answer: &answer.Answer{Pane: "%1", Text: strings.Repeat("x", answer.MaxText+1)}})
+	if f := app.next(t, func(f wire.Frame) bool { return f.Type == wire.TypeAck && f.ID == "q1" }); !strings.Contains(f.Error, "takes at most 200 characters") {
+		t.Fatalf("ws ack: %+v", f)
+	}
+}

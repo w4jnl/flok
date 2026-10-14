@@ -15,6 +15,11 @@ final class Settings {
     var deviceToken: String { didSet { Keychain.set(deviceToken, for: "deviceToken") } }
     var fontSize: Double { didSet { defaults.set(fontSize, forKey: "fontSize") } }
     var wrapLines: Bool { didSet { defaults.set(wrapLines, forKey: "wrapLines") } }
+    /// Voice: tidy the dictated text with the on-device model, send it as soon as the button
+    /// is released, and the language ("" = the phone's).
+    var voiceCleanup: Bool { didSet { defaults.set(voiceCleanup, forKey: "voiceCleanup") } }
+    var voiceSendOnRelease: Bool { didSet { defaults.set(voiceSendOnRelease, forKey: "voiceSendOnRelease") } }
+    var voiceLocale: String { didSet { defaults.set(voiceLocale, forKey: "voiceLocale") } }
     /// "<relay>|<apns token>" of the last device registration, so it is not repeated at every start.
     var registered: String? { didSet { defaults.set(registered, forKey: "registered") } }
     /// What this phone wants pushed; Relay.updatePrefs changes it and tells the relay.
@@ -31,6 +36,9 @@ final class Settings {
         deviceToken = launched ?? Keychain.get("deviceToken") ?? defaults.string(forKey: "deviceToken") ?? ""
         fontSize = defaults.object(forKey: "fontSize") as? Double ?? 11
         wrapLines = defaults.bool(forKey: "wrapLines")
+        voiceCleanup = defaults.object(forKey: "voiceCleanup") as? Bool ?? true
+        voiceSendOnRelease = defaults.bool(forKey: "voiceSendOnRelease")
+        voiceLocale = defaults.string(forKey: "voiceLocale") ?? ""
         registered = defaults.string(forKey: "registered")
         notificationPrefs = defaults.data(forKey: "notificationPrefs").flatMap { try? JSONDecoder().decode(NotificationPrefs.self, from: $0) } ?? NotificationPrefs()
         // Saved again at every start: an item from a build before the shared keychain group moves

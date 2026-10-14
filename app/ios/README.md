@@ -82,17 +82,38 @@ notifications too" turns that off). A simulator build needs signing (`-allowProv
 
 ## What the app does, and does not
 
-Answers go through the relay's allowlist: a short line of text and the named keys the key bar
-offers (Enter, Esc, arrows, Tab, Backspace; Ctrl-C behind a confirmation). Approve on a
-permission push sends Enter (the highlighted choice), Deny sends Escape. Everything is logged on
-the instance in `events.log`. The app keeps no data beyond the relay address (preferences),
-the device token (keychain) and the font size.
+Answers go through the relay's allowlist: text (a short line typed as keys, a longer or
+multi-line one pasted through a tmux buffer, with an instance that takes it), the named keys
+the key bar offers (Enter, Esc, arrows, Tab, Backspace; Ctrl-C behind a confirmation) and one
+file (an image shrunk here to about 1568 px as JPEG, or a PDF; the instance saves it next to
+the agent and types its path after the words, which Claude Code and Copilot read). Approve on
+a permission push sends Enter (the highlighted choice), Deny sends Escape, Reply… opens the
+system's text field (dictation included, on the Watch too) and types it, then Enter.
+Everything is logged on the instance in `events.log`, by size and file name, never the text.
+The app keeps no data beyond the relay address (preferences), the device token (keychain),
+the font size and the voice settings.
+
+Voice: hold the microphone next to the reply field and talk. On iOS 26 the recogniser is
+`SpeechTranscriber` (on the Neural Engine; nothing leaves the phone; the first use downloads
+the language's model), before that `SFSpeechRecognizer`. Both get the names the app holds and
+the identifiers on the agent's screen (`Voice/Vocabulary.swift`) as context, so `relay.go`
+comes out as written. With Apple Intelligence (iOS 26, iPhone 15 Pro or later) the text is
+tidied on the phone (`Voice/Cleanup.swift`: punctuation, filler words out, names spelled as
+code; on any doubt the raw text is kept). `SpeechTranscriber` does not run in the Simulator:
+the voice path is tried on a phone (`make ios-device`).
 
 ## Layout
 
-- `Model/Wire.swift`: the relay's JSON as Swift types, one decoder for the wire's dates.
+- `Shared/Wire.swift`: the relay's JSON as Swift types, one decoder for the wire's dates
+  (shared with the extensions); `Shared/Attach.swift` the file an answer carries.
 - `Model/Relay.swift`: the client: the live WebSocket (reconnect with backoff, subscriptions
   resent), the HTTP calls, the badge.
 - `Notifications.swift`: categories and actions, the APNs token to the relay, what a tap does.
-- `Views/`: the instance list, the agent screen with its key bar, settings.
-- `FlokTests/`: decoding, URL normalisation, the action mapping.
+- `Views/`: the instance list, the agent screen with its key bar, the attachment and
+  microphone buttons, settings.
+- `Voice/`: the recogniser (`Voice.swift`, both engines and the microphone), the vocabulary
+  and the clean-up.
+- `FlokShare/`: the share extension ("flok" in the share sheet: a screenshot, a photo, a
+  PDF, text or a link to an agent, with the relay and token from the shared keychain group).
+- `FlokTests/`: decoding, URL normalisation, the action mapping, the image shrink, the
+  vocabulary and the clean-up's guard rails.

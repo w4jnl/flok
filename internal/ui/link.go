@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -179,17 +180,26 @@ func (m *Model) linkCommand(c link.Command) tea.Cmd {
 			m.logLink("answer", ref, answer.Describe(c.Answer), errorString(notice))
 			return nil
 		}
+		if notice := m.hostFeatureNotice(a.Host, c.Answer); notice != "" { // the host's serve would refuse it
+			m.linker.Ack(c.ID, notice)
+			m.logLink("answer", ref, answer.Describe(c.Answer), errorString(notice))
+			return nil
+		}
 		ans := c.Answer
 		if n, err := answer.Normalize(ans); err == nil { // the log and the host see tmux's spelling
 			ans = n
 		}
 		ans.Pane = a.PaneID // the host's own pane id
+		var save answer.Saver
+		if m.d.Store != nil {
+			save = answer.DirSaver(remote.AttachDir(m.d.Store.Dir))
+		}
 		id, inner, local, rem, host := c.ID, m.d.Inner, m.local, m.remote, a.Host
 		return func() tea.Msg {
 			var err error
 			switch {
 			case host == "":
-				err = remote.TypeAnswer(inner, local, ans)
+				err = remote.TypeAnswer(inner, local, ans, save)
 			case rem == nil:
 				err = errNoRemote
 			default:
@@ -266,6 +276,30 @@ func (m Model) phoneUpgradeNotice(host string) string {
 		return ""
 	}
 	return "flok" + versionWord(v.hello.Version) + " on " + host + " predates the phone: screens and answers from it need an upgrade (flok host install " + host + ")"
+}
+
+// hostFeatureNotice names the upgrade a full-mode host needs for what an answer carries, a long
+// text (pasted) or a file; "" when its serve takes it, or for local and plain-mode panes.
+func (m Model) hostFeatureNotice(host string, a answer.Answer) string {
+	if host == "" {
+		return ""
+	}
+	h, ok := m.hostSet.Get(host)
+	if !ok || h.Mode == hosts.ModePlain {
+		return ""
+	}
+	v, ok := m.remotes[host]
+	if !ok || v.hello == nil {
+		return ""
+	}
+	who := "flok" + versionWord(v.hello.Version) + " on " + host
+	switch {
+	case a.File != nil && !v.hello.Has(proto.FeatureFiles):
+		return who + " cannot take files: it needs an upgrade (flok host install " + host + ")"
+	case answer.Long(a.Text) && !v.hello.Has(proto.FeatureLongText):
+		return fmt.Sprintf("%s takes at most %d characters on one line: longer text needs an upgrade (flok host install %s)", who, answer.MaxText, host)
+	}
+	return ""
 }
 
 // resubscribeHost asks a host that just (re)connected for the screens the phone is looking at

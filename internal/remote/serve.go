@@ -5,10 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"path/filepath"
 	"sync"
 	"time"
 
+	"github.com/w4jnl/flok/internal/agent"
 	"github.com/w4jnl/flok/internal/answer"
 	"github.com/w4jnl/flok/internal/merge"
 	"github.com/w4jnl/flok/internal/nav"
@@ -230,7 +233,11 @@ func Serve(ctx context.Context, d ServeDeps) error {
 				}
 				a, id := *f.Answer, f.ID
 				enqueue(func() {
-					err := TypeAnswer(d.Inner, p.Snap(), a)
+					var save answer.Saver
+					if d.Store != nil {
+						save = answer.DirSaver(AttachDir(d.Store.Dir))
+					}
+					err := TypeAnswer(d.Inner, p.Snap(), a, save)
 					ack := proto.Frame{Type: proto.TypeAck, ID: id}
 					if err != nil {
 						ack.Error = err.Error()
@@ -282,21 +289,37 @@ func Serve(ctx context.Context, d ServeDeps) error {
 
 // TypeAnswer types an answer into an agent pane of the server c shows in snap: the answer is
 // checked (answer.Normalize) and the pane must be one of the agents', nothing else is ever
-// typed. The sidebar uses it for local panes, serve and the plain-mode connection for a host's.
-func TypeAnswer(c tmux.Client, snap merge.Snapshot, a answer.Answer) error {
+// typed. A file is saved through save first (the attach directory of the state dir the agent's
+// machine has) and its path typed after the text; nil refuses files. The sidebar uses it for
+// local panes, serve and the plain-mode connection for a host's.
+func TypeAnswer(c tmux.Client, snap merge.Snapshot, a answer.Answer, save answer.Saver) error {
 	a, err := answer.Normalize(a)
 	if err != nil {
 		return err
 	}
+	var ag agent.Agent
 	found := false
-	for _, ag := range snap.Agents {
-		if ag.PaneID == a.Pane {
-			found = true
+	for _, x := range snap.Agents {
+		if x.PaneID == a.Pane {
+			ag, found = x, true
 			break
 		}
 	}
 	if !found {
 		return errors.New("no agent in pane " + a.Pane)
 	}
+	if a.File != nil {
+		if save == nil {
+			return errors.New("files cannot be saved here")
+		}
+		path, err := save(*a.File)
+		if err != nil {
+			return fmt.Errorf("saving %s: %w", a.File.Name, err)
+		}
+		a = answer.WithPath(a, path, ag.Kind)
+	}
 	return answer.Type(c.Run, a.Pane, a)
 }
+
+// AttachDir is where an instance keeps the files the phone sends, under its state dir.
+func AttachDir(stateDir string) string { return filepath.Join(stateDir, "attach") }

@@ -95,20 +95,27 @@ type Instance struct {
 	Since    time.Time          `json:"since"`              // when it came online, or went offline
 	Version  string             `json:"version,omitempty"`  // flok version on the instance
 	Hostname string             `json:"hostname,omitempty"` // the machine
+	Features []string           `json:"features,omitempty"` // what its link can do (FeatureLongText, FeatureFiles): the app shows what the instance takes
 	Snap     *snapshot.Snapshot `json:"snap,omitempty"`
 }
 
 // Features an instance advertises in its hello.
 const (
-	FeatureAnswer = "answer" // takes answer frames
-	FeatureScreen = "screen" // streams screens on subscribe
+	FeatureAnswer   = "answer"    // takes answer frames
+	FeatureScreen   = "screen"    // streams screens on subscribe
+	FeatureLongText = "long-text" // an answer's text may be long and multi-line (pasted); without it at most answer.MaxText on one line
+	FeatureFiles    = "files"     // an answer may carry a file, saved next to the agent and typed as its path
 )
 
 // InstanceFeatures is what this flok's link advertises.
-var InstanceFeatures = []string{FeatureAnswer, FeatureScreen}
+var InstanceFeatures = []string{FeatureAnswer, FeatureScreen, FeatureLongText, FeatureFiles}
 
 // MaxFrame bounds one frame from an instance (a snapshot of a busy site is a few hundred KB).
 const MaxFrame = 8 << 20
 
-// MaxAppFrame bounds one frame from the app.
+// MaxRelayFrame bounds one frame from the relay to an instance: an answer with a file.
+const MaxRelayFrame = 8 << 20
+
+// MaxAppFrame bounds one frame from the app on its stream; an answer with a file goes over HTTP
+// (POST /api/answer, answer.MaxBody).
 const MaxAppFrame = 64 << 10

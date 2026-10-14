@@ -22,8 +22,9 @@ while the terminal is out of sight. The sidebar is modelled on [herdr](https://h
 **On the Mac**, the menu bar companion (opt-in, `[bar] enabled = true`): a badge for the agents
 waiting on you, a spinner while any works, the agents in a dropdown; a click brings the terminal
 to the front on that pane. **On the iPhone**, the app, through a relay you run: every flok in one
-list, an agent's live screen with keys to answer, a push with Approve and Deny when one needs
-you (a long press shows its screen), and a Live Activity while agents work.
+list, an agent's live screen with keys to answer, a reply typed or dictated (hold the
+microphone), a screenshot or a photo sent to the agent, a push with Approve, Deny and Reply when
+one needs you (a long press shows its screen), and a Live Activity while agents work.
 
 ## Setup
 

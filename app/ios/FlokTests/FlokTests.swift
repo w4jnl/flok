@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import Testing
+import UserNotifications
 @testable import Flok
 
 struct WireTests {
@@ -82,10 +83,12 @@ struct NotificationTests {
     @Test func actionsTypeTheRightKeys() {
         #expect(NotificationAction.approve.keys == ["Enter"])
         #expect(NotificationAction.deny.keys == ["Escape"])
+        #expect(NotificationAction.reply.keys == ["Enter"], "a reply is its text, then Enter")
         #expect(NotificationAction.seen.keys == nil && NotificationAction.mute.keys == nil)
-        #expect(NotificationCategory.permission.actions.map(\.identifier) == ["APPROVE", "DENY", "MUTE_1H"])
-        #expect(NotificationCategory.question.actions.map(\.identifier) == ["MUTE_1H"])
-        #expect(NotificationCategory.done.actions.map(\.identifier) == ["SEEN", "MUTE_1H"])
+        #expect(NotificationCategory.permission.actions.map(\.identifier) == ["APPROVE", "DENY", "REPLY", "MUTE_1H"])
+        #expect(NotificationCategory.question.actions.map(\.identifier) == ["REPLY", "MUTE_1H"])
+        #expect(NotificationCategory.done.actions.map(\.identifier) == ["REPLY", "SEEN", "MUTE_1H"])
+        #expect(NotificationCategory.all.allSatisfy { c in c.actions.contains { $0 is UNTextInputNotificationAction && $0.identifier == "REPLY" } }, "every category has the text field")
         #expect(Set(NotificationCategory.all.map(\.identifier)) == ["FLOK_PERMISSION", "FLOK_QUESTION", "FLOK_DONE"])
     }
 

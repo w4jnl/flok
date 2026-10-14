@@ -606,7 +606,7 @@ func (c *Client) dial(ctx context.Context) (*websocket.Conn, frames, State, stri
 		st, detail := dialFailed(c.url, resp, err)
 		return nil, frames{}, st, detail
 	}
-	conn.SetReadLimit(wire.MaxAppFrame * 4)
+	conn.SetReadLimit(wire.MaxRelayFrame) // an answer with a file
 	return conn, frames{
 		read: func(ctx context.Context) ([]byte, error) {
 			_, data, err := conn.Read(ctx)
@@ -643,7 +643,7 @@ func (c *Client) dialTunnel(ctx context.Context) (*websocket.Conn, frames, State
 		st, detail := dialFailed(u, resp, err)
 		return nil, frames{}, st, detail
 	}
-	t, err := tunnel.Client(ctx, conn, c.cfg.Pin, wire.MaxAppFrame*4)
+	t, err := tunnel.Client(ctx, conn, c.cfg.Pin, wire.MaxRelayFrame)
 	if err != nil {
 		conn.CloseNow()
 		if errors.Is(err, tunnel.ErrPinMismatch) {

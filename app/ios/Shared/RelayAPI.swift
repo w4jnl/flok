@@ -73,12 +73,20 @@ struct RelayAPI: Sendable {
         try await send("POST", "/api/seen", body: JSONEncoder().encode(["instance": instance, "pane": pane]))
     }
 
-    /// Types into an agent pane: text first, then the keys; the relay waits for the instance.
-    func answer(instance: String, pane: String, text: String? = nil, keys: [String]? = nil) async throws {
+    /// Types into an agent pane: text first, then the keys; a file is saved there and its path
+    /// typed after the text. The relay waits for the instance.
+    func answer(instance: String, pane: String, text: String? = nil, keys: [String]? = nil, file: AttachedFile? = nil) async throws {
         var body: [String: AnyEncodable] = ["instance": .init(instance), "pane": .init(pane)]
         if let text, !text.isEmpty { body["text"] = .init(text) }
         if let keys, !keys.isEmpty { body["keys"] = .init(keys) }
+        if let file { body["file"] = .init(file) }
         try await send("POST", "/api/answer", body: JSONEncoder().encode(body))
+    }
+
+    /// Every instance the relay knows, with its last snapshot (GET /api/instances).
+    func instances() async throws -> [InstanceState] {
+        let data = try await send("GET", "/api/instances")
+        return try Wire.decoder.decode(Frame.self, from: data).instances ?? []
     }
 }
 
