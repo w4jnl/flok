@@ -13,7 +13,7 @@ import (
 )
 
 // fakeLinkSidebar publishes snapshots whose link follows the link-off marker, like the real
-// sidebar does (connected when on, encrypted), until stop is called.
+// sidebar does (connected when on, encrypted and compressed), until stop is called.
 func fakeLinkSidebar(t *testing.T, dir string) (stop func()) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, "runtime.json"), []byte("{}"), 0o644); err != nil {
@@ -21,7 +21,7 @@ func fakeLinkSidebar(t *testing.T, dir string) (stop func()) {
 	}
 	st, pub := state.New(dir), &snapshot.Publisher{Dir: dir}
 	snap := func() snapshot.Snapshot {
-		l := &snapshot.Link{State: "connected", URL: "wss://flok.example.net/link", Encrypted: true, Since: time.Now()}
+		l := &snapshot.Link{State: "connected", URL: "wss://flok.example.net/link", Encrypted: true, Compressed: true, Since: time.Now()}
 		if st.LinkOff() {
 			l.State = "off"
 		}
@@ -103,7 +103,7 @@ func TestLinkRoundTrip(t *testing.T) {
 		}
 		return strings.TrimSpace(out.String())
 	}
-	on := "relay link: on, connected to flok.example.net, encrypted"
+	on := "relay link: on, connected to flok.example.net, encrypted, compressed"
 	if got := run("status"); got != on {
 		t.Fatalf("initial status %q", got)
 	}

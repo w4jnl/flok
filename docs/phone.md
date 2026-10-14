@@ -90,6 +90,13 @@ stream as JSON lines, which is the quickest way to see what the phone would. Tok
 the sidebar is not running), the footer says when the relay has been out of reach for half a
 minute, and `snapshot.json` carries the link's state.
 
+Both connections are compressed when both ends can: the link offers permessage-deflate and the
+relay agrees, one deflate window for the whole connection, so a snapshot that changed by one
+agent's tool costs a few dozen bytes instead of a few kilobytes, and a screen you watch on the
+phone about a hundred bytes a second instead of ten kilobytes. The encrypted link (below)
+compresses inside its TLS, after the token. The app's WebSocket asks for it by itself. An older
+flok or relay sends the frames as they are; `flok link status` says `compressed` when it is.
+
 ## Switching the link off
 
 `prefix U` (or `flok link`, or the menu bar's "Relay link" row) switches

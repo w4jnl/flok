@@ -283,7 +283,7 @@ func runTail(args []string) int {
 	defer stop()
 	hdr := http.Header{"Authorization": {"Bearer " + *tok}}
 	dctx, cancel := context.WithTimeout(ctx, 20*time.Second)
-	conn, resp, err := websocket.Dial(dctx, ws, &websocket.DialOptions{HTTPHeader: hdr})
+	conn, resp, err := websocket.Dial(dctx, ws, &websocket.DialOptions{HTTPHeader: hdr, CompressionMode: websocket.CompressionContextTakeover})
 	cancel()
 	if err != nil {
 		if resp != nil {

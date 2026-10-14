@@ -5,7 +5,8 @@
 # (local, then on a remote host through the main instance), a subscription streams the screen,
 # the link comes back after the relay restarts, flok link switches it off (the phone sees off, not
 # offline) and prefix U on again, and the encrypted link ([link] pin) carries the same through a
-# tap that reads every byte, which sees neither the token nor an answer.
+# tap that reads every byte, which sees neither the token nor an answer. Both links are deflated
+# (permessage-deflate on /link, flok-link/2 inside the tunnel).
 R0=$(cd "$(dirname "$0")/../.." && pwd)
 RELAY=$R0/bin/flok-relay
 FH=$(mktemp -d)
@@ -115,10 +116,11 @@ start_relay
 expect_soon -t 20 "the link is back after the relay restarts" '^connected$' json "$SNAP" "s['link']['state']"
 expect_soon -t 10 "the instance is online at the new relay, snapshot included" '"name":"e2e","online":true.*"pane_id":"'"$AGENT"'"' GET /api/instances
 expect "the relay logged the instance" 'instance e2e online' "$(cat "$RELAY_LOG")"
+expect "... with its frames deflated" 'instance e2e online \(flok [^)]*, compressed\)' "$(cat "$RELAY_LOG")"
 expect "the relay logged the pushes" 'push: e2e · '"$PROJ"' → e2e phone e2edevic… production \(blocked\)' "$(cat "$RELAY_LOG")"
 
 # --- flok link: the relay link switched off and on again (prefix U) ------------------------------
-expect "flok link status says connected" "^relay link: on, connected to 127.0.0.1:$RELAY_PORT\$" "$("$BIN" link status)"
+expect "flok link status says connected" "^relay link: on, connected to 127.0.0.1:$RELAY_PORT, compressed\$" "$("$BIN" link status)"
 expect_soon "the sidebar shows the link at the end of its brand line" '\[flok\] +⇄' capture
 expect "flok link off confirms" '^relay link: off \(flok link on\)$' "$("$BIN" link off)"
 expect_soon -t 10 "the relay shows the instance off, not offline" '"name":"e2e","online":false,"off":true' GET /api/instances
@@ -150,15 +152,15 @@ for _ in $(seq 1 100); do [ -s "$FH/tapport" ] && break; sleep 0.1; done
 sed -i.bak "s#127.0.0.1:$RELAY_PORT#127.0.0.1:$(cat "$FH/tapport")#" "$FLOK_CONFIG" && rm -f "$FLOK_CONFIG.bak"
 printf 'pin = "%s"\n' "$PIN" >> "$FLOK_CONFIG"   # [link] is the config's last table
 "$BIN" reload
-expect_soon -t 20 "the sidebar links in again, encrypted, through the tap" '^connected True$' json "$SNAP" "s['link']['state'] + ' ' + str(s['link'].get('encrypted'))"
-expect_soon -t 10 "the relay logged the encrypted link" 'instance e2e online \(flok [^)]*, encrypted\)' cat "$RELAY_LOG"
+expect_soon -t 20 "the sidebar links in again, encrypted and deflated, through the tap" '^connected True True$' json "$SNAP" "s['link']['state'] + ' ' + str(s['link'].get('encrypted')) + ' ' + str(s['link'].get('compressed'))"
+expect_soon -t 10 "the relay logged the encrypted link" 'instance e2e online \(flok [^)]*, encrypted, compressed\)' cat "$RELAY_LOG"
 expect_soon -t 10 "the snapshot reaches the relay inside the tunnel" '"name":"e2e","online":true.*"pane_id":"'"$AGENT"'"' GET /api/instances
 expect "an answer goes through the tunnel" '"ok":true' "$(POST /api/answer '{"instance":"e2e","pane":"'"$AGENT"'","text":"tunnelreply"}')"
 expect_soon "the pane shows it" 'tunnelreply' IN capture-pane -p -t "$AGENT"
 expect "the link went through the tap, to the encrypted path" 'GET /link/tls' "$(cat "$FH/tap.log")"
 expect "the tap never saw the instance token" '^0$' "$(grep -c -a -F "$INST_TOK" "$FH/tap.log" || true)"
 expect "the tap never saw the answer" '^0$' "$(grep -c -a -F tunnelreply "$FH/tap.log" || true)"
-expect "flok doctor reports the encrypted link" 'link: connected to ws://127.0.0.1:[0-9]+/link/tls as "e2e", encrypted to the pinned key' "$("$BIN" doctor 2>&1)"
+expect "flok doctor reports the encrypted link" 'link: connected to ws://127.0.0.1:[0-9]+/link/tls as "e2e", encrypted to the pinned key, compressed' "$("$BIN" doctor 2>&1)"
 sed -i.bak "s#^pin = .*#pin = \"sha256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\"#" "$FLOK_CONFIG" && rm -f "$FLOK_CONFIG.bak"
 "$BIN" reload
 expect_soon -t 20 "a key other than the pinned one is refused" "^refused: the relay's key does not match \[link\] pin \(it is $PIN\)" json "$SNAP" "s['link']['state'] + ': ' + s['link'].get('detail', '')"

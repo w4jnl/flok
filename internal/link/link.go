@@ -50,6 +50,8 @@ type Status struct {
 	URL     string    `json:"url,omitempty"`
 	// Encrypted: the link runs inside TLS to the relay's pinned key ([link] pin).
 	Encrypted bool `json:"encrypted,omitempty"`
+	// Compressed: the connected link's frames travel deflated (the relay agreed to it).
+	Compressed bool `json:"compressed,omitempty"`
 }
 
 // Command is what the relay asks of the instance, on behalf of the phone. Reset is the link's
@@ -367,6 +369,9 @@ func (c *Client) set(st State, detail string, retryAt time.Time) {
 		c.status.Since = time.Now()
 	}
 	c.status.State, c.status.Detail, c.status.RetryAt = st, detail, retryAt
+	if st != Connected {
+		c.status.Compressed = false
+	}
 	s := c.status
 	c.mu.Unlock()
 	if changed || !retryAt.IsZero() {
@@ -440,9 +445,12 @@ func (c *Client) run(ctx context.Context) {
 }
 
 // frames is a connection's frame stream: WebSocket text messages, or lines inside the tunnel.
+// deflated: the relay agreed to compress them (permessage-deflate on /link, flok-link/2 inside
+// the tunnel); an older relay does not, and the frames go as they are.
 type frames struct {
-	read  func(context.Context) ([]byte, error)
-	write func(context.Context, []byte) error
+	read     func(context.Context) ([]byte, error)
+	write    func(context.Context, []byte) error
+	deflated bool
 }
 
 // session is one connection: dial, hello, then frames both ways until something ends it.
@@ -502,6 +510,7 @@ func (c *Client) session(ctx context.Context) (State, string) {
 	if c.lastAll != nil {
 		c.snap = c.lastAll
 	}
+	c.status.Compressed = fr.deflated
 	c.mu.Unlock()
 	c.kick()
 	c.set(Connected, "", time.Time{})
@@ -580,7 +589,9 @@ func (c *Client) session(ctx context.Context) (State, string) {
 	}
 }
 
-// dial opens the plain link: the token in the upgrade's Authorization header.
+// dial opens the plain link: the token in the upgrade's Authorization header, and an offer to
+// deflate the frames with one window for the whole connection (successive snapshots and screens
+// differ by a line or two, so each one after the first costs a few dozen bytes).
 func (c *Client) dial(ctx context.Context) (*websocket.Conn, frames, State, string) {
 	dctx, cancel := context.WithTimeout(ctx, c.cfg.Dial)
 	defer cancel()
@@ -589,7 +600,8 @@ func (c *Client) dial(ctx context.Context) (*websocket.Conn, frames, State, stri
 		hdr.Set("Authorization", "Bearer "+c.cfg.Token)
 	}
 	hdr.Set("User-Agent", "flok/"+c.cfg.Version)
-	conn, resp, err := websocket.Dial(dctx, c.url, &websocket.DialOptions{HTTPClient: c.cfg.HTTP, HTTPHeader: hdr})
+	conn, resp, err := websocket.Dial(dctx, c.url, &websocket.DialOptions{HTTPClient: c.cfg.HTTP, HTTPHeader: hdr,
+		CompressionMode: websocket.CompressionContextTakeover})
 	if err != nil {
 		st, detail := dialFailed(c.url, resp, err)
 		return nil, frames{}, st, detail
@@ -600,12 +612,20 @@ func (c *Client) dial(ctx context.Context) (*websocket.Conn, frames, State, stri
 			_, data, err := conn.Read(ctx)
 			return data, err
 		},
-		write: func(ctx context.Context, data []byte) error { return conn.Write(ctx, websocket.MessageText, data) },
+		write:    func(ctx context.Context, data []byte) error { return conn.Write(ctx, websocket.MessageText, data) },
+		deflated: deflated(resp.Header),
 	}, "", ""
 }
 
+// deflated reports that a WebSocket upgrade's response agreed to permessage-deflate.
+func deflated(h http.Header) bool {
+	return strings.Contains(strings.ToLower(h.Get("Sec-WebSocket-Extensions")), "permessage-deflate")
+}
+
 // dialTunnel opens the encrypted link: an upgrade without a token, TLS to the pinned key inside
-// it, then the token as the first frame. ctx is the session's: it ends the tunnel.
+// it, then the token as the first frame, and the frames deflated inside the TLS from there on
+// when the relay speaks flok-link/2 (the WebSocket itself carries ciphertext, which does not
+// compress). ctx is the session's: it ends the tunnel.
 func (c *Client) dialTunnel(ctx context.Context) (*websocket.Conn, frames, State, string) {
 	if !tunnel.ValidPin(c.cfg.Pin) {
 		return nil, frames{}, Refused, "[link] pin is not a pin: sha256:… as flok-relay pin prints it"
@@ -640,7 +660,8 @@ func (c *Client) dialTunnel(ctx context.Context) (*websocket.Conn, frames, State
 	var f wire.Frame
 	switch {
 	case err == nil && json.Unmarshal(data, &f) == nil && f.Type == wire.TypeAuth:
-		return conn, frames{read: t.Read, write: t.Write}, "", ""
+		t.Compress()
+		return conn, frames{read: t.Read, write: t.Write, deflated: t.Compressed()}, "", ""
 	case err == nil && f.Type == wire.TypeError:
 		conn.CloseNow()
 		return nil, frames{}, Refused, "the relay refused the token ([link] token)"

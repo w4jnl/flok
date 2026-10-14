@@ -87,6 +87,8 @@ type Link struct {
 	URL    string    `json:"url,omitempty"`
 	// Encrypted: the link runs inside TLS to the relay's pinned key ([link] pin).
 	Encrypted bool `json:"encrypted,omitempty"`
+	// Compressed: the connected link's frames travel deflated (the relay agreed; an older one does not).
+	Compressed bool `json:"compressed,omitempty"`
 }
 
 // Freshness tells a reader how much to trust a loaded snapshot.

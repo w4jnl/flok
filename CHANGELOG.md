@@ -4,6 +4,17 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
+## Unreleased
+
+- **The relay link and the phone's stream are compressed.** Snapshots and screens travel
+  deflated to the relay and on to the phone, with one window for the whole connection: a
+  snapshot that changed by one agent's tool costs a few dozen bytes instead of a few kilobytes,
+  and a screen you watch on the phone about a hundred bytes a second instead of ten kilobytes.
+  The encrypted link compresses inside its TLS, after the token. It takes flok and the relay
+  both updated (the app already asks for it); with either one older the frames go as before.
+  `flok link status`, `flok doctor` and the menu bar's "Relay link" row say `compressed` when it
+  is, and the relay's log says so per instance.
+
 ## 0.7.1 (2026-10-13)
 
 - **flok's popups look like your terminal again.** tmux 3.8 gives popups a grey background of

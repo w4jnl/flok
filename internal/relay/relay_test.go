@@ -49,8 +49,16 @@ type wsApp struct {
 
 func dialApp(t *testing.T, srv *httptest.Server, token string) *wsApp {
 	t.Helper()
+	a, _ := dialAppWith(t, srv, token, websocket.CompressionDisabled)
+	return a
+}
+
+// dialAppWith is dialApp offering the compression mode, with the upgrade's response.
+func dialAppWith(t *testing.T, srv *httptest.Server, token string, mode websocket.CompressionMode) (*wsApp, *http.Response) {
+	t.Helper()
 	u := "ws" + strings.TrimPrefix(srv.URL, "http") + "/api/ws"
-	conn, _, err := websocket.Dial(context.Background(), u, &websocket.DialOptions{HTTPHeader: http.Header{"Authorization": {"Bearer " + token}}})
+	conn, resp, err := websocket.Dial(context.Background(), u, &websocket.DialOptions{HTTPHeader: http.Header{"Authorization": {"Bearer " + token}},
+		CompressionMode: mode})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +75,7 @@ func dialApp(t *testing.T, srv *httptest.Server, token string) *wsApp {
 		}
 	}()
 	t.Cleanup(func() { conn.CloseNow() })
-	return a
+	return a, resp
 }
 
 func (a *wsApp) send(t *testing.T, f wire.Frame) {

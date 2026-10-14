@@ -49,6 +49,9 @@ func doctorLink(cfg config.Config, add func(level, format string, args ...any)) 
 		if s.Link.Detail != "" {
 			detail = ": " + s.Link.Detail
 		}
+		if s.Link.Compressed {
+			how += ", compressed"
+		}
 		add(level, "link: %s to %s as %q%s%s (since %s)", s.Link.State, ws, name, how, detail, s.Link.Since.Local().Format("15:04:05"))
 		return
 	}

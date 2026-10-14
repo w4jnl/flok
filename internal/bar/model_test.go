@@ -160,7 +160,7 @@ func TestIconColor(t *testing.T) {
 
 func TestLinkRow(t *testing.T) {
 	withLink := func(st, detail string) snapshot.Snapshot {
-		return snapshot.Snapshot{Link: &snapshot.Link{State: st, Detail: detail, Encrypted: true}}
+		return snapshot.Snapshot{Link: &snapshot.Link{State: st, Detail: detail, Encrypted: true, Compressed: true}}
 	}
 	if _, _, _, shown := LinkRow(snapshot.Snapshot{}, snapshot.Fresh); shown {
 		t.Error("a sidebar without [link] url shows the row")
@@ -172,7 +172,7 @@ func TestLinkRow(t *testing.T) {
 		st, detail, title, tip string
 		checked                bool
 	}{
-		{"connected", "", "Relay link", "connected to your relay, encrypted", true},
+		{"connected", "", "Relay link", "connected to your relay, encrypted, compressed", true},
 		{"off", "", "Relay link", "switched off: the phone shows this flok as off (flok link on)", false},
 		{"connecting", "", "Relay link · connecting", "this flok's connection to your relay, for the phone app (flok link)", true},
 		{"unreachable", "no pong from the relay", "Relay link · out of reach", "no pong from the relay", true},

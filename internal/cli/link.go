@@ -64,10 +64,14 @@ func (l linkState) String() string {
 	case link.Off:
 		return "relay link: off (flok link on)"
 	case link.Connected:
+		s := "relay link: on, connected to " + relay
 		if k.Encrypted {
-			return "relay link: on, connected to " + relay + ", encrypted"
+			s += ", encrypted"
 		}
-		return "relay link: on, connected to " + relay
+		if k.Compressed {
+			s += ", compressed"
+		}
+		return s
 	case link.Connecting:
 		return "relay link: on, connecting to " + relay
 	case link.Refused:

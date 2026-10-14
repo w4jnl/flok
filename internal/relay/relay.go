@@ -220,12 +220,23 @@ func (s *Server) handleLink(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "an instance token is needed", http.StatusUnauthorized)
 		return
 	}
-	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true, CompressionMode: websocket.CompressionContextTakeover})
 	if err != nil {
 		return
 	}
-	conn.SetReadLimit(wire.MaxFrame)
-	s.serveLink(r.Context(), wsConn{conn}, r.RemoteAddr, "")
+	conn.SetReadLimit(wire.MaxFrame) // counts what the frames inflate to
+	how := ""
+	if deflated(w.Header()) {
+		how = ", compressed"
+	}
+	s.serveLink(r.Context(), wsConn{conn}, r.RemoteAddr, how)
+}
+
+// deflated reports that an accepted upgrade agreed to permessage-deflate, offered by the other
+// end: one deflate window per connection and direction (CompressionContextTakeover), which
+// takes a snapshot that changed by a line from a few KB to a few dozen bytes.
+func deflated(h http.Header) bool {
+	return strings.Contains(h.Get("Sec-WebSocket-Extensions"), "permessage-deflate")
 }
 
 // handleLinkTunnel is the encrypted link: the WebSocket carries TLS to the relay's own key, and
@@ -264,7 +275,12 @@ func (s *Server) handleLinkTunnel(w http.ResponseWriter, r *http.Request) {
 		conn.CloseNow()
 		return
 	}
-	s.serveLink(ctx, tc, r.RemoteAddr, ", encrypted")
+	t.Compress() // flok-link/2: deflated from here, after the token
+	how := ", encrypted"
+	if t.Compressed() {
+		how += ", compressed"
+	}
+	s.serveLink(ctx, tc, r.RemoteAddr, how)
 }
 
 // serveLink runs an instance's link once it is authenticated: the hello, then its frames until
@@ -801,7 +817,7 @@ func (s *Server) handleSeen(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAppWS(w http.ResponseWriter, r *http.Request) {
-	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true, CompressionMode: websocket.CompressionContextTakeover})
 	if err != nil {
 		return
 	}
