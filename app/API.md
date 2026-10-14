@@ -15,7 +15,7 @@ Every call carries `Authorization: Bearer <device token>`, one of the relay's
 |---|---|---|
 | `GET /healthz` | | `{"ok":true,"service":"flok-relay","version","instances","online","push","uptime_s"}` |
 | `GET /api/instances` | | an `instances` frame (below) |
-| `POST /api/answer` | `{"instance","pane","text"?,"keys"?}` | `{"ok":true}`, or `{"error"}` with 400 (refused by the relay) / 502 (refused or unreachable instance) |
+| `POST /api/answer` | `{"instance","pane","text"?,"keys"?,"files"?}` | `{"ok":true}`, or `{"error"}` with 400 (refused by the relay) / 502 (refused or unreachable instance) |
 | `POST /api/seen` | `{"instance","pane"}` | `{"ok":true}` or `{"error"}` |
 | `GET /api/devices` | | `{"devices":[{"token":"short…","name","sandbox","added","prefs"?}],"push":bool}` |
 | `POST /api/devices` | `{"token","name"?,"sandbox"?,"prefs"?}` | `{"ok":true,"push":bool}`; `token` is the platform push token (APNs hex, later an FCM token); a registration without `prefs` keeps the device's |
@@ -26,12 +26,24 @@ Every call carries `Authorization: Bearer <device token>`, one of the relay's
 | `GET /api/ws` | WebSocket | the live stream |
 
 `/api/answer` waits for the instance to confirm (up to 8 s), so a 200 means the keys were
-typed. An **answer** is `text` (typed literally first, at most 200 printable characters) and
-`keys` (then, in order, at most 8 of `Enter Escape Tab BTab Up Down Left Right Space BSpace
-Home End PageUp PageDown C-c`; aliases `esc return backspace ctrl-c`). The pane must be an
-agent pane in the instance's view. `pane` is a pane ref: `%12` for the instance's own tmux,
-`beta:%12` for a pane on its remote host `beta` (compose it from an agent's `host` and
-`pane_id`).
+typed. An **answer** is `text` (typed first: printable characters, tabs and newlines, at most
+8000; one line of up to 200 characters is typed as keys, anything longer or with a newline is
+pasted through a tmux buffer as one bracketed paste, so an agent takes it as a paste and not
+as lines sent one by one), `keys` (then, in order, at most 8 of `Enter Escape Tab BTab Up Down
+Left Right Space BSpace Home End PageUp PageDown C-c`; aliases `esc return backspace ctrl-c`)
+and `files` (a list of at most 6 `{"name","mime"?,"data"}`: `data` base64, at most 4 MB each;
+`mime` one of `image/jpeg image/png image/gif image/webp image/heic application/pdf`, or
+taken from the name's extension; the name is reduced to letters, digits, `. - _`; `file`, one
+of them, is taken as well). The instance saves each file under its state dir as
+`attach/<stamp>-<name>` (an agent on a remote host: under that host's, swept after a day) and
+types the paths after the text, in order, `@path` for a Copilot agent, which is how Claude
+Code and Copilot read images and documents. The body may be 36 MB. An instance whose flok
+predates these takes neither a long text nor files: its `features` (below) lack `long-text` /
+`files`, and the relay answers 400 with a message naming the update before anything is sent.
+The pane must be an agent pane in the instance's view. `pane` is a pane ref: `%12` for the
+instance's own tmux, `beta:%12` for a pane on its remote host `beta` (compose it from an
+agent's `host` and `pane_id`). An answer on the WebSocket is the same without `files` (its
+frames are small; files go over HTTP).
 
 ## The live stream (`/api/ws`)
 
@@ -63,8 +75,12 @@ sides; additions keep the protocol compatible.
 `Instance`:
 
 ```
-{"name","online":bool,"off"?:true,"since":time,"version"?,"hostname"?,"snap":Snapshot?}
+{"name","online":bool,"off"?:true,"since":time,"version"?,"hostname"?,"features"?:[string],"snap":Snapshot?}
 ```
+
+`features` is what the instance's link can do: `answer`, `screen`, `long-text` (an answer's
+text may be long and multi-line), `files` (an answer may carry files); absent for an older
+flok, which takes a one-line text of at most 200 characters and no files.
 
 `off` (with `online` false) means the instance's link was switched off there (`flok link off`),
 on purpose: show it as *off*, quietly, not as *offline* (out of reach), and expect it back only
@@ -99,7 +115,8 @@ not switched off
 (muted or not), `mutable-content` (the iOS service extension adds the state tile), and the
 custom keys `instance`, `pane`, `kind`, `reason`, `agent`, `host`, `session`, `push_kind` for
 the app to act on. Categories: `FLOK_PERMISSION` (a permission prompt; the iOS app offers
-Approve = `Enter`, Deny = `Escape`, Mute 1 h), `FLOK_QUESTION` (Mute 1 h), `FLOK_DONE` (Mark
+Approve = `Enter`, Deny = `Escape`, Reply… = the system's text field, dictation included, its
+text then `Enter`, Mute 1 h), `FLOK_QUESTION` (Reply…, Mute 1 h), `FLOK_DONE` (Reply…, Mark
 seen, Mute 1 h). Sounds are the app's bundled `flok-request.caf` (permission, question,
 failed) and `flok-done.caf`, `default`, or none, as the device chose. APNs is the one provider
 today; an Android build adds FCM or ntfy/UnifiedPush to the relay, with the same payload.

@@ -33,6 +33,12 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>NSCameraUsageDescription</key>
+	<string>Take a photo to send to an agent.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Hold the microphone to dictate a reply to an agent; the words are recognised on this phone.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>On an iPhone before iOS 26 the dictation uses Apple's speech recognition service.</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>UIBackgroundModes</key>

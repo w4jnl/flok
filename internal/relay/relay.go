@@ -434,7 +434,40 @@ func (s *Server) offline(in *instance, gen uint64) (gone, off bool) {
 
 func (s *Server) view(in *instance) *wire.Instance {
 	return &wire.Instance{Name: in.name, Online: in.online, Off: in.off, Since: in.since, Version: in.hello.Version, Hostname: in.hello.Hostname,
-		Snap: in.snap}
+		Features: in.hello.Features, Snap: in.snap}
+}
+
+// tooOldFor says why an instance's flok cannot take an answer as it is (a long text, a file),
+// from the features its hello advertised; "" when it can, or for an instance the relay does
+// not know (request says so).
+func (s *Server) tooOldFor(instance string, a answer.Answer) string {
+	s.mu.Lock()
+	in := s.instances[instance]
+	var version string
+	var features []string
+	if in != nil {
+		version, features = in.hello.Version, in.hello.Features
+	}
+	s.mu.Unlock()
+	if in == nil {
+		return ""
+	}
+	has := func(want string) bool {
+		for _, f := range features {
+			if f == want {
+				return true
+			}
+		}
+		return false
+	}
+	who := "flok " + version + " on " + instance
+	switch {
+	case len(a.Files) > 0 && !has(wire.FeatureFiles):
+		return who + " cannot take files: update flok there"
+	case answer.Long(a.Text) && !has(wire.FeatureLongText):
+		return fmt.Sprintf("%s takes at most %d characters on one line: update flok there for longer text", who, answer.MaxText)
+	}
+	return ""
 }
 
 // gone says why an instance cannot take a request; the caller holds s.mu.
@@ -778,21 +811,27 @@ func (s *Server) request(instance string, f wire.Frame) error {
 }
 
 type answerReq struct {
-	Instance string   `json:"instance"`
-	Pane     string   `json:"pane"`
-	Text     string   `json:"text,omitempty"`
-	Keys     []string `json:"keys,omitempty"`
+	Instance string        `json:"instance"`
+	Pane     string        `json:"pane"`
+	Text     string        `json:"text,omitempty"`
+	Keys     []string      `json:"keys,omitempty"`
+	Files    []answer.File `json:"files,omitempty"`
+	File     *answer.File  `json:"file,omitempty"` // one file, as the first app build sent it
 }
 
 func (s *Server) handleAnswer(w http.ResponseWriter, r *http.Request) {
 	var req answerReq
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&req); err != nil || req.Instance == "" || req.Pane == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "instance, pane and text or keys are needed"})
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, answer.MaxBody)).Decode(&req); err != nil || req.Instance == "" || req.Pane == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "instance, pane and text, keys or a file are needed"})
 		return
 	}
-	a, err := answer.Normalize(answer.Answer{Pane: req.Pane, Text: req.Text, Keys: req.Keys})
+	a, err := answer.Normalize(answer.Answer{Pane: req.Pane, Text: req.Text, Keys: req.Keys, Files: req.Files, File: req.File})
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+		return
+	}
+	if why := s.tooOldFor(req.Instance, a); why != "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": why})
 		return
 	}
 	if err := s.request(req.Instance, wire.Frame{Type: wire.TypeAnswer, Answer: &a}); err != nil {
@@ -879,6 +918,10 @@ func (s *Server) handleAppWS(w http.ResponseWriter, r *http.Request) {
 				n, err := answer.Normalize(*f.Answer)
 				if err != nil {
 					a.send(wire.Frame{Type: wire.TypeAck, ID: id, Error: err.Error()})
+					continue
+				}
+				if why := s.tooOldFor(inst, n); why != "" {
+					a.send(wire.Frame{Type: wire.TypeAck, ID: id, Instance: inst, Error: why})
 					continue
 				}
 				fwd.Answer = &n

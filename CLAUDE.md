@@ -273,8 +273,22 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
   the poller reads it with the other markers (`SnapshotMsg.LinkOff`) and the sidebar calls
   `link.Client.SetOff`: a `bye` frame (`wire.ByeOff`) then a close, queued events dropped, a
   dial in progress abandoned; the relay then shows the instance `off` (`wire.Instance.Off`),
-  leaves it out of the badge (`badgeLocked`) and syncs its alerts away. `internal/answer` is the allowlist (named keys, ≤ 200 printable
-  chars, `Args` = one `send-keys` invocation, a trailing `;` escaped) every path goes through.
+  leaves it out of the badge (`badgeLocked`) and syncs its alerts away. `internal/answer` is the allowlist every path goes through:
+  named keys, text of ≤ 8000 printable runes (one line of ≤ `MaxText` 200 is typed with
+  `send-keys -l --`, anything longer or multi-line, `Long`, is pasted through the tmux buffer
+  `flok-answer` with `paste-buffer -p`, bracketed, so Claude Code takes it as one paste; a
+  trailing `;` escaped; errors never quote the text) and `Files` (≤ `MaxFiles` 6, image or
+  PDF, ≤ 4 MB each, names reduced to safe characters; `file`, one, is folded in by
+  `Normalize`), which `remote.TypeAnswer` hands one by one to an `answer.Saver`
+  (`$FLOK_STATE/attach/<stamp>-<name>`, swept after a day: the sidebar's dir for local
+  panes, serve's own for a full-mode host, `~/.local/state/flok/attach` streamed over ssh for
+  plain mode, `conn.saveRemote`) and types as their paths after the text (`WithPaths`,
+  `@path` for Copilot).
+  Long text and files are features: `wire.FeatureLongText`/`FeatureFiles` in the instance's
+  hello (shown to the app as `Instance.Features`; the relay's `tooOldFor` refuses with the
+  update named) and `proto.FeatureLongText`/`FeatureFiles` in a serve's hello
+  (`ui.hostFeatureNotice`). The relay's `/api/answer` body may be `answer.MaxBody` (36 MB),
+  frames from the relay to an instance `wire.MaxRelayFrame` (36 MB); the app's socket stays small.
   `internal/relay` is `flok-relay` (`cmd/flok-relay`: serve, tail, token, pin, health): `/link` for
   instances (bearer instance token; the newest connection under a name replaces the older), and
   `/link/tls`, the same frames inside TLS 1.3 to the relay's own key (`internal/link/tunnel`:

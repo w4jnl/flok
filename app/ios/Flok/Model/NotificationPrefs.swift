@@ -147,3 +147,13 @@ struct NotificationPrefs: Codable, Equatable, Sendable {
         return d.formatted(.dateTime.weekday().hour().minute())
     }
 }
+
+/// The phone's registration with the relay (POST /api/devices): its push token, a name, which
+/// APNs service the token belongs to, and these settings. Here rather than in Shared/Wire.swift
+/// because the extensions do not carry NotificationPrefs.
+struct DeviceBody: Encodable, Sendable {
+    var token: String
+    var name: String
+    var sandbox: Bool
+    var prefs: NotificationPrefs?
+}

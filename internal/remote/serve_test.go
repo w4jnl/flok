@@ -5,10 +5,14 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/w4jnl/flok/internal/agent"
+	"github.com/w4jnl/flok/internal/answer"
 	"github.com/w4jnl/flok/internal/config"
+	"github.com/w4jnl/flok/internal/merge"
 	"github.com/w4jnl/flok/internal/poller"
 	"github.com/w4jnl/flok/internal/remote/proto"
 	"github.com/w4jnl/flok/internal/state"
@@ -115,5 +119,61 @@ func TestServeSession(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("serve must end on EOF")
+	}
+}
+
+// A file in an answer is saved in the attach directory and typed as its path (Copilot's
+// @path); a long text goes through a buffer; without a saver files are refused.
+func TestTypeAnswerFilesAndLongText(t *testing.T) {
+	ft := &tmuxtest.Fake{Screens: map[string]string{}}
+	snap := merge.Snapshot{Agents: []agent.Agent{{PaneID: "%1", Kind: "claude"}, {PaneID: "%2", Kind: "copilot"}}}
+	dir := filepath.Join(t.TempDir(), "attach")
+	f := answer.File{Name: "shot.png", Data: []byte("PNG...")}
+	if err := TypeAnswer(ft, snap, answer.Answer{Pane: "%1", Text: "look", Keys: []string{"Enter"}, Files: []answer.File{f}}, answer.DirSaver(dir)); err != nil {
+		t.Fatal(err)
+	}
+	entries, _ := os.ReadDir(dir)
+	if len(entries) != 1 || !strings.HasSuffix(entries[0].Name(), "-shot.png") {
+		t.Fatalf("attach dir: %v", entries)
+	}
+	path := filepath.Join(dir, entries[0].Name())
+	if typed := strings.Join(ft.Calls[len(ft.Calls)-2], " "); typed != "send-keys -t %1 -l -- look "+path {
+		t.Fatalf("typed: %q", typed)
+	}
+	if last := strings.Join(ft.Calls[len(ft.Calls)-1], " "); last != "send-keys -t %1 Enter" {
+		t.Fatalf("keys: %q", last)
+	}
+	if err := TypeAnswer(ft, snap, answer.Answer{Pane: "%2", Files: []answer.File{f}}, answer.DirSaver(dir)); err != nil {
+		t.Fatal(err)
+	}
+	if typed := strings.Join(ft.Calls[len(ft.Calls)-1], " "); !strings.HasPrefix(typed, "send-keys -t %2 -l -- @"+dir+"/") || !strings.HasSuffix(typed, "-shot.png") {
+		t.Fatalf("copilot: %q", typed)
+	}
+	n := len(ft.Calls)
+	if err := TypeAnswer(ft, snap, answer.Answer{Pane: "%1", Files: []answer.File{f}}, nil); err == nil || len(ft.Calls) != n {
+		t.Fatalf("no saver: %v, %d calls", err, len(ft.Calls)-n)
+	}
+	if err := TypeAnswer(ft, snap, answer.Answer{Pane: "%9", Files: []answer.File{f}}, answer.DirSaver(dir)); err == nil || err.Error() != "no agent in pane %9" {
+		t.Fatalf("no agent: %v", err)
+	}
+	if entries, _ = os.ReadDir(dir); len(entries) != 2 {
+		t.Fatalf("a refused answer saved a file: %v", entries)
+	}
+	// two files: both saved, both paths typed, in order
+	if err := TypeAnswer(ft, snap, answer.Answer{Pane: "%1", Text: "both", Files: []answer.File{f, {Name: "page.pdf", Data: []byte("%PDF")}}}, answer.DirSaver(dir)); err != nil {
+		t.Fatal(err)
+	}
+	if entries, _ = os.ReadDir(dir); len(entries) != 4 {
+		t.Fatalf("two more files: %v", entries)
+	}
+	// (typed as keys or pasted: two temp paths may or may not make the text long)
+	if typed := strings.Join(ft.Calls[len(ft.Calls)-1], " "); !strings.Contains(typed, "-- both "+dir+"/") || !strings.Contains(typed, "-shot.png "+dir+"/") || !strings.Contains(typed, "-page.pdf") {
+		t.Fatalf("two paths: %q", typed)
+	}
+	if err := TypeAnswer(ft, snap, answer.Answer{Pane: "%1", Text: "a\nb"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if c := ft.Calls[len(ft.Calls)-1]; c[0] != "set-buffer" || c[4] != "a\nb" || c[6] != "paste-buffer" {
+		t.Fatalf("long text: %q", c)
 	}
 }

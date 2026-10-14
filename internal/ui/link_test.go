@@ -40,11 +40,36 @@ func TestLinkCommands(t *testing.T) {
 	m.answerDone(am)
 	k := len(ft.Calls)
 	text, keys := strings.Join(ft.Calls[k-2], " "), strings.Join(ft.Calls[k-1], " ")
-	if text != "send-keys -t %1 -l y" || keys != "send-keys -t %1 Enter" { // two writes: the Enter must not ride in the text's paste
+	if text != "send-keys -t %1 -l -- y" || keys != "send-keys -t %1 Enter" { // two writes: the Enter must not ride in the text's paste
 		t.Fatalf("send-keys: %q then %q", text, keys)
 	}
 	log, _ := os.ReadFile(filepath.Join(m.d.Store.Dir, "events.log"))
 	if !strings.Contains(string(log), `"source":"phone"`) || !strings.Contains(string(log), `"what":"1 chars + Enter"`) || strings.Contains(string(log), `"y"`) {
+		t.Fatalf("events.log: %s", log)
+	}
+	// a long text is pasted through a buffer; a file is saved under the state dir and typed as
+	// its path, and the log names the file, not the text
+	msg = run(m.linkCommand(link.Command{ID: "a4", Kind: "answer", Pane: "%1", Answer: answer.Answer{Text: "one\ntwo"}}))
+	if am, ok = msg.(linkAnswerMsg); !ok || am.err != nil {
+		t.Fatalf("long answer: %#v", msg)
+	}
+	if c := ft.Calls[len(ft.Calls)-1]; c[0] != "set-buffer" || c[4] != "one\ntwo" || c[6] != "paste-buffer" {
+		t.Fatalf("paste: %q", c)
+	}
+	msg = run(m.linkCommand(link.Command{ID: "a5", Kind: "answer", Pane: "%1", Answer: answer.Answer{Text: "see this", Keys: []string{"Enter"}, Files: []answer.File{{Name: "shot.jpg", Data: []byte{1, 2}}}}}))
+	if am, ok = msg.(linkAnswerMsg); !ok || am.err != nil {
+		t.Fatalf("file answer: %#v", msg)
+	}
+	m.answerDone(am)
+	files, _ := filepath.Glob(filepath.Join(m.d.Store.Dir, "attach", "*-shot.jpg"))
+	if len(files) != 1 {
+		t.Fatalf("attach dir: %v", files)
+	}
+	if typed := strings.Join(ft.Calls[len(ft.Calls)-2], " "); typed != "send-keys -t %1 -l -- see this "+files[0] {
+		t.Fatalf("typed: %q", typed)
+	}
+	log, _ = os.ReadFile(filepath.Join(m.d.Store.Dir, "events.log"))
+	if !strings.Contains(string(log), `"what":"8 chars + shot.jpg (1 KB) + Enter"`) || strings.Contains(string(log), "see this") {
 		t.Fatalf("events.log: %s", log)
 	}
 	// not an agent pane: refused before tmux hears of it, and logged with the error
@@ -133,5 +158,23 @@ func TestLinkHostPredatingThePhone(t *testing.T) {
 	m.remotes["beta"] = hostView{state: remote.Connected, hello: &proto.Hello{Version: "0.6.0", Features: proto.ServeFeatures}, hasSnap: true, snap: m.remotes["beta"].snap}
 	if m.phoneUpgradeNotice("beta") != "" {
 		t.Fatal("a current flok needs none")
+	}
+	// a serve that takes answers but not long text or files: the phone is told what the host needs
+	m.remotes["beta"] = hostView{state: remote.Connected, hello: &proto.Hello{Version: "0.7.1", Features: []string{proto.FeatureKeys, proto.FeaturePrefix, proto.FeatureNotify, proto.FeatureKeyMap, proto.FeatureAnswer}}, hasSnap: true, snap: m.remotes["beta"].snap}
+	if n := m.hostFeatureNotice("beta", answer.Answer{Text: "a\nb"}); !strings.Contains(n, "flok 0.7.1 on beta takes at most 200 characters on one line") || !strings.Contains(n, "flok host install beta") {
+		t.Fatalf("long text notice: %q", n)
+	}
+	if n := m.hostFeatureNotice("beta", answer.Answer{Files: []answer.File{{Name: "x.png"}}}); !strings.Contains(n, "cannot take files") {
+		t.Fatalf("file notice: %q", n)
+	}
+	if m.hostFeatureNotice("beta", answer.Answer{Text: "y"}) != "" || m.hostFeatureNotice("gamma", answer.Answer{Text: "a\nb"}) != "" || m.hostFeatureNotice("", answer.Answer{Text: "a\nb"}) != "" {
+		t.Fatal("a short text, a plain-mode host and a local pane need nothing")
+	}
+	if c := m.linkCommand(link.Command{ID: "a2", Kind: "answer", Pane: "beta:%1", Answer: answer.Answer{Text: "a\nb"}}); c != nil {
+		t.Fatal("a long text for that host is refused without a round trip")
+	}
+	m.remotes["beta"] = hostView{state: remote.Connected, hello: &proto.Hello{Version: "0.8.0", Features: proto.ServeFeatures}, hasSnap: true, snap: m.remotes["beta"].snap}
+	if m.hostFeatureNotice("beta", answer.Answer{Text: "a\nb", Files: []answer.File{{Name: "x.png"}}}) != "" {
+		t.Fatal("a current flok takes both")
 	}
 }

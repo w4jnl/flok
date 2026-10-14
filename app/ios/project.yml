@@ -39,6 +39,7 @@ targets:
       - target: FlokNotificationService
       - target: FlokNotificationContent
       - target: FlokWidgets
+      - target: FlokShare
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: nl.w4j.flok
@@ -56,6 +57,11 @@ targets:
         UILaunchScreen: {}
         UIBackgroundModes: [remote-notification]
         NSSupportsLiveActivities: true
+        # hold to talk (the microphone; Apple's recogniser before iOS 26 asks for speech
+        # recognition as well), and a photo for an agent
+        NSMicrophoneUsageDescription: Hold the microphone to dictate a reply to an agent; the words are recognised on this phone.
+        NSSpeechRecognitionUsageDescription: On an iPhone before iOS 26 the dictation uses Apple's speech recognition service.
+        NSCameraUsageDescription: Take a photo to send to an agent.
         CFBundleURLTypes:
           - CFBundleURLName: nl.w4j.flok
             CFBundleURLSchemes: [flok]
@@ -110,6 +116,36 @@ targets:
             UNNotificationExtensionInitialContentSizeRatio: 0.9
             UNNotificationExtensionDefaultContentHidden: true
             UNNotificationExtensionUserInteractionEnabled: true
+  FlokShare: # the share sheet's "flok": a screenshot, a photo, a PDF, text or a link to an agent
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: FlokShare
+      - path: Shared/RelayAPI.swift
+      - path: Shared/RelayURL.swift
+      - path: Shared/Keychain.swift
+      - path: Shared/Wire.swift
+      - path: Shared/Attach.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: nl.w4j.flok.Share
+        TARGETED_DEVICE_FAMILY: "1,2"
+        CODE_SIGN_ENTITLEMENTS: FlokShare/FlokShare.entitlements
+    info:
+      path: FlokShare/Info.plist
+      properties:
+        CFBundleDisplayName: flok
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsImageWithMaxCount: 6
+              NSExtensionActivationSupportsFileWithMaxCount: 6
+              NSExtensionActivationSupportsText: true
+              NSExtensionActivationSupportsWebURLWithMaxCount: 1
   FlokWidgets:
     type: app-extension
     platform: iOS

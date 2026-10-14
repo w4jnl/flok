@@ -1,6 +1,7 @@
 package remote
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -898,6 +899,45 @@ func (c *conn) goTo(session, window, pane string) error {
 // answerWait bounds how long an answer waits for the host to type it.
 const answerWait = 5 * time.Second
 
+// attachTimeout bounds sending a file to a plain-mode host.
+const attachTimeout = 30 * time.Second
+
+// attachScript runs on a plain-mode host with the file on stdin and its name as $1: it saves
+// the file under the attach directory of flok's state dir there (which a host without flok
+// gets as well), sweeps what is older than a day, and prints the path to type.
+const attachScript = `d="${XDG_STATE_HOME:-$HOME/.local/state}/flok/attach" && mkdir -p "$d" && chmod 700 "$d" && ` +
+	`(find "$d" -type f -mtime +1 -exec rm -f {} + 2>/dev/null; true) && f="$d/$1" && cat > "$f.part" && mv "$f.part" "$f" && printf %s "$f"`
+
+// saveRemote streams a normalized file to a plain-mode host over ssh (a host in full mode saves
+// it itself) and returns its path there.
+func (c *conn) saveRemote(f answer.File) (string, error) {
+	name := time.Now().Format("20060102-150405") + "-" + f.Name
+	cmd := "sh -c " + tmux.ShellQuote(attachScript) + " sh " + tmux.ShellQuote(name)
+	ctx, cancel := context.WithTimeout(context.Background(), attachTimeout)
+	defer cancel()
+	proc, err := c.m.d.Dial(ctx, Argv(c.m.d.Cfg.Hosts, c.m.d.StateDir, c.host, false, cmd))
+	if err != nil {
+		return "", err
+	}
+	outc := make(chan []byte, 1)
+	go func() {
+		b, _ := io.ReadAll(io.LimitReader(proc.Stdout(), 4<<10))
+		outc <- b
+	}()
+	_, _ = io.Copy(proc.Stdin(), bytes.NewReader(f.Data)) // a short write shows in the exit code
+	_ = proc.CloseStdin()
+	out := <-outc
+	exit, stderr := proc.Wait()
+	if exit != 0 {
+		return "", fmt.Errorf("saving %s on %s: %s", f.Name, c.host.Name, Detail(stderr))
+	}
+	path := strings.TrimSpace(string(out))
+	if path == "" {
+		return "", fmt.Errorf("saving %s on %s: no path came back", f.Name, c.host.Name)
+	}
+	return path, nil
+}
+
 func (c *conn) answer(a answer.Answer) error {
 	c.mu.Lock()
 	send, cmds, client, p := c.send, c.cmds, c.client, c.poller
@@ -919,7 +959,7 @@ func (c *conn) answer(a answer.Answer) error {
 		}
 	case cmds != nil:
 		if err := c.enqueue(cmds, func() {
-			err := TypeAnswer(client, p.Snap(), a)
+			err := TypeAnswer(client, p.Snap(), a, func(f answer.File) (string, error) { return c.saveRemote(f) })
 			if err == nil {
 				p.MarkSeen(a.Pane)
 			}

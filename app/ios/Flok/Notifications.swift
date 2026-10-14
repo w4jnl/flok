@@ -9,14 +9,15 @@ import UserNotifications
 enum NotificationAction: String, CaseIterable {
     case approve = "APPROVE"
     case deny = "DENY"
+    case reply = "REPLY"
     case seen = "SEEN"
     case mute = "MUTE_1H"
 
     /// What the action types: Enter takes the highlighted choice of a permission prompt (Yes),
-    /// Escape dismisses it (No).
+    /// Escape dismisses it (No); a reply is its text, then Enter.
     var keys: [String]? {
         switch self {
-        case .approve: ["Enter"]
+        case .approve, .reply: ["Enter"]
         case .deny: ["Escape"]
         case .seen, .mute: nil
         }
@@ -30,15 +31,20 @@ enum NotificationCategory: String, CaseIterable {
 
     var actions: [UNNotificationAction] {
         let mute = UNNotificationAction(identifier: NotificationAction.mute.rawValue, title: "Mute 1 h", options: [], icon: UNNotificationActionIcon(systemImageName: "bell.slash"))
+        // Reply opens the system's text field on the Lock Screen (with the keyboard's dictation;
+        // an Apple Watch dictates it too) and types it into the pane, then Enter.
+        let reply = UNTextInputNotificationAction(identifier: NotificationAction.reply.rawValue, title: "Reply…", options: [.authenticationRequired],
+                                                  icon: UNNotificationActionIcon(systemImageName: "arrowshape.turn.up.left"),
+                                                  textInputButtonTitle: "Send", textInputPlaceholder: "typed into the agent, then Enter")
         switch self {
         case .permission:
             return [UNNotificationAction(identifier: NotificationAction.approve.rawValue, title: "Approve", options: [.authenticationRequired], icon: UNNotificationActionIcon(systemImageName: "checkmark")),
                     UNNotificationAction(identifier: NotificationAction.deny.rawValue, title: "Deny", options: [.authenticationRequired, .destructive], icon: UNNotificationActionIcon(systemImageName: "xmark")),
-                    mute]
+                    reply, mute]
         case .question:
-            return [mute]
+            return [reply, mute]
         case .done:
-            return [UNNotificationAction(identifier: NotificationAction.seen.rawValue, title: "Mark seen", options: [], icon: UNNotificationActionIcon(systemImageName: "eye")), mute]
+            return [reply, UNNotificationAction(identifier: NotificationAction.seen.rawValue, title: "Mark seen", options: [], icon: UNNotificationActionIcon(systemImageName: "eye")), mute]
         }
     }
 
@@ -119,11 +125,12 @@ final class Notifications: NSObject, UNUserNotificationCenterDelegate {
                                             withCompletionHandler completionHandler: @escaping () -> Void) {
         let push = PushPayload(response.notification.request.content.userInfo)
         let action = response.actionIdentifier
+        let text = (response as? UNTextInputNotificationResponse)?.userText
         let done = MainThreadCallback(completionHandler)
         Task { @MainActor in
             // An action from the lock screen runs in the background: iOS keeps the app alive
             // until the handler is called, so it is called once the answer went out.
-            await Notifications.shared.perform(action: action, push: push)
+            await Notifications.shared.perform(action: action, push: push, text: text)
             done.call()
         }
     }
@@ -155,14 +162,16 @@ final class Notifications: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
-    func perform(action: String, push: PushPayload?) async {
+    func perform(action: String, push: PushPayload?, text: String? = nil) async {
         guard let push, let relay else { return }
         let target = Target(instance: push.instance, pane: push.pane)
         switch NotificationAction(rawValue: action) {
-        case .approve, .deny:
+        case .approve, .deny, .reply:
             let keys = NotificationAction(rawValue: action)!.keys
+            let typed = text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if action == NotificationAction.reply.rawValue && typed.isEmpty { return }
             do {
-                try await relay.answer(target, keys: keys)
+                try await relay.answer(target, text: typed.isEmpty ? nil : typed, keys: keys)
                 try? await relay.markSeen(target) // answering is looking at it
             } catch {
                 lastError = error.localizedDescription

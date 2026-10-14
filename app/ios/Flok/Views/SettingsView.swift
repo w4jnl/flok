@@ -7,6 +7,17 @@ struct SettingsView: View {
     @State private var url = ""
     @State private var token = ""
     @State private var notifications = Notifications.shared
+    @State private var voiceLocales: [Locale] = []
+
+    private var voiceFooter: String {
+        var s = "Hold the microphone next to the reply field and talk; let go to stop, or tap it once to keep listening. The agent's names and the words on its screen are given to the recogniser, so file names come out as written."
+        if let why = Cleanup.unavailableReason {
+            s += " The tidy-up (punctuation, filler words out, names spelled as code) is off here: \(why)."
+        } else {
+            s += " The tidy-up runs on this phone and fixes punctuation, drops filler words and spells names as code."
+        }
+        return s
+    }
 
     var body: some View {
         @Bindable var settings = settings
@@ -51,9 +62,31 @@ struct SettingsView: View {
             } footer: {
                 Text("Pushes come through the relay's APNs key. This phone tells the relay which Apple service its token belongs to (a build from Xcode: sandbox).")
             }
-            Section("Screen") {
-                Stepper("Font size \(Int(settings.fontSize))", value: $settings.fontSize, in: 7...18)
+            Section {
+                Stepper("Font size \(Int(settings.fontSize))", value: $settings.fontSize, in: 5...24)
+                Toggle("Wrap long lines", isOn: $settings.wrapLines)
+            } header: {
+                Text("Screen")
+            } footer: {
+                Text("On the agent's screen a pinch zooms the text and a double tap fits the widest line; the Aa menu has the same.")
             }
+            Section {
+                LabeledContent("Recognition", value: Voice.engineName)
+                Picker("Language", selection: $settings.voiceLocale) {
+                    Text("the phone's").tag("")
+                    ForEach(voiceLocales, id: \.identifier) { l in
+                        Text(Locale.current.localizedString(forIdentifier: l.identifier) ?? l.identifier).tag(l.identifier)
+                    }
+                }
+                Toggle("Tidy up with Apple Intelligence", isOn: $settings.voiceCleanup)
+                    .disabled(!Cleanup.available)
+                Toggle("Send as soon as the button is released", isOn: $settings.voiceSendOnRelease)
+            } header: {
+                Text("Voice")
+            } footer: {
+                Text(voiceFooter)
+            }
+            .task { voiceLocales = await Voice.supportedLocales() }
             Section("About") {
                 LabeledContent("Version", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")
                 LabeledContent("Instances", value: "\(relay.instances.count)")
