@@ -35,7 +35,9 @@ agent pane in the instance's view. `pane` is a pane ref: `%12` for the instance'
 
 ## The live stream (`/api/ws`)
 
-Text frames, one JSON object each.
+Text frames, one JSON object each. The relay agrees to permessage-deflate (RFC 7692) when the
+client offers it, with one window per connection and direction; URLSession offers it on its own.
+A client that does not offer it gets the frames uncompressed.
 
 Relay → app:
 

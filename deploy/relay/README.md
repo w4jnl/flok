@@ -58,7 +58,8 @@ pin = "sha256:…"                       # the relay's key: the link goes to /li
 
 The key is created at the first start in the data dir (`link-key.pem`, keep it with the
 volume: a new key means a new pin for every instance). `flok doctor` then says `…/link/tls …,
-encrypted to the pinned key`, the relay logs `instance office online (…, encrypted)`. A pin
+encrypted to the pinned key, compressed`, the relay logs `instance office online (…, encrypted,
+compressed)`. A pin
 that does not match is refused with the pin that answered: a proxy replacing the key, or a
 relay whose key changed. Once every instance has its pin, `tunnel_only = true`
 (`FLOK_RELAY_TUNNEL_ONLY=1`) refuses the plain `/link`.

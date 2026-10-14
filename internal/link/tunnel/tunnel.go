@@ -4,12 +4,13 @@
 // self-signed certificate kept with its data; flok trusts exactly that key, named by its pin in
 // [link] pin, and no certificate authority, so a proxy that answers with a key of its own is
 // refused instead of read. Inside, frames are lines of JSON (encoding/json never writes a raw
-// newline).
+// newline), deflated after the auth exchange when both ends speak flok-link/2 (Compress).
 package tunnel
 
 import (
 	"bufio"
 	"bytes"
+	"compress/flate"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -33,7 +34,16 @@ import (
 )
 
 // ALPN names the protocol inside the tunnel; a later incompatible framing gets a new one.
-const ALPN = "flok-link/1"
+// flok-link/2 is flok-link/1 deflated: after the auth exchange each direction is one deflate
+// stream (Compress).
+const (
+	ALPN        = "flok-link/1"
+	ALPNDeflate = "flok-link/2"
+)
+
+// offer is what both ends offer, newest first. The relay takes the first of its own that the
+// instance offers too, so two current ends meet at flok-link/2 and an older one at flok-link/1.
+var offer = []string{ALPNDeflate, ALPN}
 
 // HandshakeTimeout bounds the TLS handshake inside the WebSocket.
 var HandshakeTimeout = 15 * time.Second
@@ -126,18 +136,24 @@ func LoadOrCreate(path string) (tls.Certificate, error) {
 
 // Conn is one tunnel: frames as lines of JSON over TLS over WebSocket binary messages.
 type Conn struct {
-	tc  *tls.Conn
-	rd  *bufio.Reader
-	max int
-	wmu sync.Mutex
+	tc      *tls.Conn
+	rd      *bufio.Reader
+	fw      *flate.Writer // the deflate stream into tc once Compress ran; nil writes straight to tc
+	deflate bool          // flok-link/2 agreed
+	max     int
+	wmu     sync.Mutex
 }
 
 // Client opens the tunnel on a dialled WebSocket and checks the relay's key against pin. ctx
 // bounds the tunnel's whole life (it ends the WebSocket's reads and writes), max one frame.
 func Client(ctx context.Context, ws *websocket.Conn, pin string, max int) (*Conn, error) {
+	return client(ctx, ws, pin, max, offer)
+}
+
+func client(ctx context.Context, ws *websocket.Conn, pin string, max int, protos []string) (*Conn, error) {
 	cfg := &tls.Config{
 		MinVersion: tls.VersionTLS13,
-		NextProtos: []string{ALPN},
+		NextProtos: protos,
 		ServerName: "flok-relay",
 		// No CA, no name, no dates: the pin is the whole of the trust.
 		InsecureSkipVerify: true,
@@ -156,7 +172,11 @@ func Client(ctx context.Context, ws *websocket.Conn, pin string, max int) (*Conn
 
 // Server answers the tunnel on an accepted WebSocket with the relay's key.
 func Server(ctx context.Context, ws *websocket.Conn, cert tls.Certificate, max int) (*Conn, error) {
-	cfg := &tls.Config{MinVersion: tls.VersionTLS13, NextProtos: []string{ALPN}, Certificates: []tls.Certificate{cert}}
+	return server(ctx, ws, cert, max, offer)
+}
+
+func server(ctx context.Context, ws *websocket.Conn, cert tls.Certificate, max int, protos []string) (*Conn, error) {
+	cfg := &tls.Config{MinVersion: tls.VersionTLS13, NextProtos: protos, Certificates: []tls.Certificate{cert}}
 	return handshake(ctx, tls.Server(websocket.NetConn(ctx, ws, websocket.MessageBinary), cfg), max)
 }
 
@@ -166,11 +186,29 @@ func handshake(ctx context.Context, tc *tls.Conn, max int) (*Conn, error) {
 	if err := tc.HandshakeContext(hctx); err != nil {
 		return nil, err
 	}
-	if p := tc.ConnectionState().NegotiatedProtocol; p != ALPN {
+	p := tc.ConnectionState().NegotiatedProtocol
+	if p != ALPN && p != ALPNDeflate {
 		return nil, fmt.Errorf("the other end speaks %q inside the tunnel, not %s", p, ALPN)
 	}
-	return &Conn{tc: tc, rd: bufio.NewReaderSize(tc, 64<<10), max: max}, nil
+	return &Conn{tc: tc, rd: bufio.NewReaderSize(tc, 64<<10), deflate: p == ALPNDeflate, max: max}, nil
 }
+
+// Compress starts flok-link/2's deflate streams, one each way. Both ends call it right after
+// the auth exchange, before any other frame, so the token never shares a deflate window with
+// what follows: deflated sizes depend on content, and a proxy that can put text into the stream
+// and watch the sizes could otherwise guess a secret in the same window. A no-op on
+// flok-link/1, and not safe alongside Read or Write.
+func (c *Conn) Compress() {
+	if !c.deflate || c.fw != nil {
+		return
+	}
+	c.fw, _ = flate.NewWriter(c.tc, flate.BestSpeed) // the level never fails
+	// what the reader already holds past the auth frame is the start of the other end's stream
+	c.rd = bufio.NewReaderSize(flate.NewReader(c.rd), 64<<10)
+}
+
+// Compressed reports that both ends speak flok-link/2: Compress deflates the tunnel.
+func (c *Conn) Compressed() bool { return c.deflate }
 
 // Read returns the next frame. ctx's deadline and cancellation end the read, and with it the
 // tunnel (a TLS read that timed out cannot be resumed).
@@ -201,8 +239,15 @@ func (c *Conn) Write(ctx context.Context, frame []byte) error {
 	c.wmu.Lock()
 	defer c.wmu.Unlock()
 	defer deadline(ctx, c.tc.SetWriteDeadline)()
-	_, err := c.tc.Write(append(frame[:len(frame):len(frame)], '\n'))
-	return err
+	line := append(frame[:len(frame):len(frame)], '\n')
+	if c.fw == nil {
+		_, err := c.tc.Write(line)
+		return err
+	}
+	if _, err := c.fw.Write(line); err != nil {
+		return err
+	}
+	return c.fw.Flush() // a sync flush: the other end reads the frame now, not when a block fills
 }
 
 // deadline applies ctx to one read or write: its deadline, and a cancellation that cuts it off.

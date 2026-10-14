@@ -256,7 +256,11 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
   (`[link] url`/`token`, `github.com/coder/websocket`, `ProxyFromEnvironment`, backoff, a
   `hello` then `snap`/`event`/`screen`/`ack` frames out and `answer`/`seen`/`subscribe` in;
   `internal/link/wire` is the frame set shared with the relay and the app; the snapshot is
-  deduped and always precedes the events announced with it, so the relay's badge is right).
+  deduped and always precedes the events announced with it, so the relay's badge is right;
+  frames are deflated where the other end agrees: permessage-deflate with context takeover on
+  `/link` and `/api/ws` (coder/websocket `CompressionContextTakeover`, both ends; the read
+  limits count inflated bytes), `flok-link/2` inside the tunnel, `link.Status.Compressed` →
+  `snapshot.json` `link.compressed`, the relay logs `, compressed`).
   `ui/link.go` feeds it from `publish` and `notePush`, acts on commands (`agentByRef` against
   `m.fed`, local answers through `remote.TypeAnswer` on the inner server, remote ones through
   `Manager.Answer`: an `answer` frame and its `ack` in full mode, `send-keys` over ssh in plain
@@ -274,7 +278,9 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
   `internal/relay` is `flok-relay` (`cmd/flok-relay`: serve, tail, token, pin, health): `/link` for
   instances (bearer instance token; the newest connection under a name replaces the older), and
   `/link/tls`, the same frames inside TLS 1.3 to the relay's own key (`internal/link/tunnel`:
-  `websocket.NetConn` + `crypto/tls`, lines of JSON inside, `link-key.pem` in the data dir,
+  `websocket.NetConn` + `crypto/tls`, lines of JSON inside, deflated after the auth exchange
+  when both ends offer the ALPN `flok-link/2` (`Conn.Compress`; never before the token, so it
+  shares no deflate window with what follows; `flok-link/1` stays for older ends), `link-key.pem` in the data dir,
   `flok-relay pin`; the instance pins it with `[link] pin`, sends its token as the first frame
   inside, and a proxy that inspects HTTPS reads nothing; `relay/linkconn.go` puts both behind
   `frameConn`; `tunnel_only` refuses the plain path; m11 checks it through a byte-logging tap),

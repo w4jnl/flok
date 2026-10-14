@@ -300,6 +300,9 @@ func LinkRow(s snapshot.Snapshot, f snapshot.Freshness) (title, tip string, chec
 		if l.Encrypted {
 			tip += ", encrypted"
 		}
+		if l.Compressed {
+			tip += ", compressed"
+		}
 	case "connecting":
 		title += " · connecting"
 	case "unreachable":

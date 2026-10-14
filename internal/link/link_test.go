@@ -3,8 +3,10 @@ package link
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -39,15 +41,18 @@ func TestNormalizeURL(t *testing.T) {
 	}
 }
 
-// relay is a stand-in for the relay's /link: it records what it gets and can speak back.
+// relay is a stand-in for the relay's /link: it records what it gets and can speak back. It
+// deflates when deflate says so (a relay before compression does not).
 type relay struct {
-	mu     sync.Mutex
-	frames []wire.Frame
-	conns  int
-	tokens []string
-	conn   *websocket.Conn
-	srv    *httptest.Server
-	got    chan wire.Frame
+	mu      sync.Mutex
+	frames  []wire.Frame
+	conns   int
+	tokens  []string
+	offers  []string // the upgrades' Sec-WebSocket-Extensions
+	deflate websocket.CompressionMode
+	conn    *websocket.Conn
+	srv     *httptest.Server
+	got     chan wire.Frame
 }
 
 func newRelay(t *testing.T, refuse bool) *relay {
@@ -59,13 +64,15 @@ func newRelay(t *testing.T, refuse bool) *relay {
 		}
 		r.mu.Lock()
 		r.tokens = append(r.tokens, req.Header.Get("Authorization"))
+		r.offers = append(r.offers, req.Header.Get("Sec-WebSocket-Extensions"))
 		r.conns++
+		mode := r.deflate
 		r.mu.Unlock()
 		if refuse {
 			http.Error(w, "no", http.StatusUnauthorized)
 			return
 		}
-		c, err := websocket.Accept(w, req, &websocket.AcceptOptions{InsecureSkipVerify: true})
+		c, err := websocket.Accept(w, req, &websocket.AcceptOptions{InsecureSkipVerify: true, CompressionMode: mode})
 		if err != nil {
 			return
 		}
@@ -141,7 +148,12 @@ func TestLinkSession(t *testing.T) {
 	if r.tokens[0] != "Bearer t0k" {
 		t.Fatalf("token header: %q", r.tokens[0])
 	}
-	waitMsg(t, c, func(m Msg) bool { return m.Status != nil && m.Status.State == Connected })
+	if !strings.Contains(r.offers[0], "permessage-deflate") {
+		t.Fatalf("the link offers no compression: %q", r.offers[0])
+	}
+	if m := waitMsg(t, c, func(m Msg) bool { return m.Status != nil && m.Status.State == Connected }); m.Status.Compressed {
+		t.Fatal("a relay that does not deflate shows as compressed")
+	}
 	if f := r.next(t, wire.TypeSnap); len(f.Snap.Agents) != 1 || f.Snap.Agents[0].Name != "api" {
 		t.Fatalf("snap: %+v", f.Snap)
 	}
@@ -194,6 +206,40 @@ func TestLinkSession(t *testing.T) {
 	waitMsg(t, c, func(m Msg) bool { return m.Status != nil && m.Status.State == Connected })
 	if r.conns < 2 {
 		t.Fatalf("expected a reconnect, %d connections", r.conns)
+	}
+}
+
+// A relay that agrees to permessage-deflate gets the frames deflated, which the link's status
+// says while it is connected.
+func TestLinkDeflatesWhenTheRelayAgrees(t *testing.T) {
+	r := newRelay(t, false)
+	r.mu.Lock()
+	r.deflate = websocket.CompressionContextTakeover
+	r.mu.Unlock()
+	c := New(Config{URL: r.srv.URL, Token: "t0k", Name: "home", Version: "test", BackoffMax: 300 * time.Millisecond})
+	agents := make([]snapshot.Agent, 20)
+	for i := range agents {
+		agents[i] = snapshot.Agent{PaneID: fmt.Sprintf("%%%d", i), Name: fmt.Sprintf("agent-%d", i), State: agent.Working, Tool: "Bash"}
+	}
+	c.Publish(snapshot.Snapshot{Agents: agents})
+	c.Start()
+	defer c.Close()
+	if m := waitMsg(t, c, func(m Msg) bool { return m.Status != nil && m.Status.State == Connected }); !m.Status.Compressed {
+		t.Fatal("the relay deflates, the status does not say so")
+	}
+	if f := r.next(t, wire.TypeSnap); len(f.Snap.Agents) != 20 || f.Snap.Agents[19].Name != "agent-19" {
+		t.Fatalf("snap: %+v", f.Snap)
+	}
+	text := strings.Repeat("a screen line that repeats\n", 400)
+	c.Screen("%3", text)
+	if f := r.next(t, wire.TypeScreen); f.Screen.Text != text {
+		t.Fatalf("screen of %d bytes came as %d", len(text), len(f.Screen.Text))
+	}
+	r.mu.Lock()
+	r.conn.Close(websocket.StatusGoingAway, "restart")
+	r.mu.Unlock()
+	if m := waitMsg(t, c, func(m Msg) bool { return m.Status != nil && m.Status.State == Unreachable }); m.Status.Compressed {
+		t.Fatal("a link that is down shows as compressed")
 	}
 }
 
