@@ -375,7 +375,9 @@ func TestRelayReplacesALink(t *testing.T) {
 	app.next(t, func(f wire.Frame) bool { return f.Type == wire.TypeInstances })
 	second := dial()
 	defer second.CloseNow()
-	_, _, err := first.Read(context.Background())
+	rctx, rcancel := context.WithTimeout(context.Background(), 10*time.Second) // a replacement that never comes fails, instead of hanging the run
+	defer rcancel()
+	_, _, err := first.Read(rctx)
 	if websocket.CloseStatus(err) != websocket.StatusGoingAway {
 		t.Fatalf("the first link should be closed as replaced: %v", err)
 	}

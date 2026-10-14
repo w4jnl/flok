@@ -157,8 +157,8 @@ expect "local is the first server row" '^[ ▶]. local' "$snap"
 expect "the sessions header names the front host" '^sessions · local' "$snap"
 wait_hosts "beta=connected gamma=connected" 25 || true   # beta may sit out a busy retry after part 1's serves
 expect "snapshot.json reports both hosts connected" '^beta=connected gamma=connected$' "$(snap_hosts)"
-wait_for 'beta +full +[0-9]' 5 || true
-wait_for 'gamma +plain +[0-9]' 10 || true   # plain mode polls over the fake ssh with a 1 s floor: slower on a loaded runner
+wait_for ' beta +full +1' 10 || true
+wait_for ' gamma +plain +1' 15 || true   # plain mode polls over the fake ssh with a 1 s floor: slower on a loaded runner; the count follows the first poll
 snap=$(capture)
 expect "beta's row names its mode and counts its agent" ' beta +full +1' "$snap"
 expect "gamma's row reads plain and counts its title-detected agent" ' gamma +plain +1' "$snap"
