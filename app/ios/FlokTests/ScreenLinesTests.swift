@@ -38,6 +38,24 @@ struct ScreenLinesTests {
         #expect(ScreenLines.fit("── a label that is far too wide for the phone to show at all ──", columns: 20).count == 20)
     }
 
+    @Test func dropsTheRightEdgeOfABoxWiderThanThePhone() {
+        let pad = String(repeating: " ", count: 60)
+        #expect(ScreenLines.unedged("  ● The tag is set in main.yml, line 9:" + pad + "│") == "  ● The tag is set in main.yml, line 9:")
+        #expect(ScreenLines.unedged("❯ where is the image param?" + pad + "12:08 │") == "❯ where is the image param?" + pad + "12:08")
+        #expect(ScreenLines.unedged("│") == "" && ScreenLines.unedged("   │  ") == "")
+        #expect(ScreenLines.unedged(" " + String(repeating: "▀", count: 110) + " │") == " " + String(repeating: "▀", count: 110))
+        // a gutter, a bar glued to text, a table row and plain text keep every character
+        #expect(ScreenLines.unedged("│ ● Task complete") == "│ ● Task complete")
+        #expect(ScreenLines.unedged("text│") == "text│")
+        #expect(ScreenLines.unedged("│ a │ b │") == "│ a │ b │")
+        #expect(ScreenLines.unedged("plain text   ") == "plain text")
+        // the blocks and the widest line see the unedged lines
+        let blocks = ScreenLines.blocks(of: "a line" + pad + "│\n│\n" + String(repeating: "▁", count: 110) + " │")
+        #expect(blocks.map(\.kind) == [.prose, .rule])
+        #expect(blocks[0].lines == ["a line", ""])
+        #expect(ScreenLines.widest(of: "a line" + pad + "│\n│") == "a line".count)
+    }
+
     @Test func groupsConsecutiveLinesOfAKind() {
         let screen = """
         Some prose here

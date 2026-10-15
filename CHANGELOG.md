@@ -19,7 +19,10 @@ updates this file first. Dates are the tag dates.
   past the edge, so the next row came along with it. Screens for the phone are now captured
   row by row, from the sidebar for local and plain-mode panes and from a host's flok for
   full-mode ones (that part needs the host's flok updated, `flok host install <name>`). The
-  phone's own classifier also knows the block characters (`▀▀▀`, `▁▁▁`) a box is drawn with.
+  phone's own classifier also knows the block characters (`▀▀▀`, `▁▁▁`) a box is drawn with,
+  and with wrapping on it leaves out the right edge of a box wider than the phone, which
+  would otherwise land on a row of its own after each wrapped row, or stand alone on an empty
+  one; a gutter at the start of a row and a table's bars stay.
 - **A host that refuses your key says so.** Now and then a full-mode host whose ssh refused the
   key showed as `unreachable` with `read |0: file already closed` for a detail instead of
   `needs auth` with its hint: the pipe closed under the reader as the process ended, and the
