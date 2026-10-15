@@ -51,7 +51,8 @@ plain mode: `send-keys` over ssh, the files streamed into `~/.local/state/flok/a
 - **The list**: every instance with its agents in the sidebar's order, remote ones tagged with
   their host, the ones that need you counted; *Needs you* filters the rest away.
 - **An agent**: its live screen (the pane's text, refreshed while you look; a pinch zooms it,
-  the *Aa* menu wraps long lines), a key bar (`1 2 3 y n ↵ esc ↑ ↓`, Ctrl-C behind a
+  the *Aa* menu wraps long lines: prose at words, a divider cut to the width rather than folded,
+  a table kept whole in a strip that scrolls sideways), a key bar (`1 2 3 y n ↵ esc ↑ ↓`, Ctrl-C behind a
   confirmation) and a reply field. Next to it a paperclip attaches photos, screenshots or the
   clipboard's picture, up to six (shrunk on the phone; the agent gets them as files and reads
   them) and a

@@ -4,6 +4,14 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
+## Unreleased
+
+- **Wrapped screens keep their shape.** With long lines wrapped on the phone, prose wraps at
+  words as before, but a divider as wide as the Mac's pane is cut to the screen instead of
+  folding into three rows, and a table (box drawing, `|` columns) keeps its rows whole in a
+  strip that scrolls sideways. The push's card cuts its dividers the same way, and a double tap
+  fits the widest line of text, not the widest rule.
+
 ## 0.8.0 (2026-10-15)
 
 - **Talk to an agent from the phone.** Hold the microphone next to the reply field and speak;
