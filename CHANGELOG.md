@@ -11,7 +11,6 @@ updates this file first. Dates are the tag dates.
   folding into three rows, and a table (box drawing, `|` columns) keeps its rows whole in a
   strip that scrolls sideways. The push's card cuts its dividers the same way, and a double tap
   fits the widest line of text, not the widest rule.
-
 - **A host that refuses your key says so.** Now and then a full-mode host whose ssh refused the
   key showed as `unreachable` with `read |0: file already closed` for a detail instead of
   `needs auth` with its hint: the pipe closed under the reader as the process ended, and the
