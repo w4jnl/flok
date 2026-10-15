@@ -51,7 +51,7 @@ cleanup() { [ -n "${summary_done:-}" ] || echo "== ${pass:-0} passed, ${fail:-0}
     for h in ${FAKE_HOSTS:-}; do cp "$T/hosts/$h/state/serve.log" "$d/serve-$h.log" 2>/dev/null || true; cp "$T/hosts/$h/ssh.log" "$d/ssh-$h.log" 2>/dev/null || true; done
     mv "$T"/tmux-*.log "$R"/tmux-*.log "$d"/ 2>/dev/null || true   # tmux -vv's server/client/out logs
   fi
-  rm -rf "$T"; }
+  for _ in 1 2 3 4 5; do rm -rf "$T" 2>/dev/null && break; sleep 0.2; done; }   # the sidebar may still be writing as its server dies
 trap cleanup EXIT
 IN kill-server 2>/dev/null || true; OUT kill-server 2>/dev/null || true
 
