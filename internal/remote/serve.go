@@ -169,7 +169,7 @@ func Serve(ctx context.Context, d ServeDeps) error {
 				panes = append(panes, pane)
 			}
 			enqueue(func() {
-				for pane, text := range poller.CaptureAll(d.Inner, panes, 0) {
+				for pane, text := range poller.CaptureShown(d.Inner, panes) {
 					if lastScreen[pane] == text {
 						continue
 					}

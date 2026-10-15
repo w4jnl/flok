@@ -361,7 +361,7 @@ func (m Model) captureSubs() tea.Cmd {
 	return func() tea.Msg {
 		out := map[string]string{}
 		for _, j := range jobs {
-			for pane, text := range poller.CaptureAll(j.c, j.panes, 0) {
+			for pane, text := range poller.CaptureShown(j.c, j.panes) {
 				out[agent.PaneRef{Host: j.host, ID: pane}.String()] = text
 			}
 		}

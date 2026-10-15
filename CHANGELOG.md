@@ -10,7 +10,16 @@ updates this file first. Dates are the tag dates.
   words as before, but a divider as wide as the Mac's pane is cut to the screen instead of
   folding into three rows, and a table (box drawing, `|` columns) keeps its rows whole in a
   strip that scrolls sideways. The push's card cuts its dividers the same way, and a double tap
-  fits the widest line of text, not the widest rule.
+  fits the widest line of text, not the widest rule. Wrapping is now the default; a phone whose
+  owner switched it off keeps scrolling sideways.
+- **The phone sees the rows the terminal shows.** Copilot's transcript on the phone had its
+  gutter bars `│` glued to the end of the row before, after a run of spaces, and the frame of
+  its input box folded into thick bars. The screen was captured with tmux's wrapped lines
+  joined, and a row a TUI repaints in place keeps the wrapped flag it got when it once ran
+  past the edge, so the next row came along with it. Screens for the phone are now captured
+  row by row, from the sidebar for local and plain-mode panes and from a host's flok for
+  full-mode ones (that part needs the host's flok updated, `flok host install <name>`). The
+  phone's own classifier also knows the block characters (`▀▀▀`, `▁▁▁`) a box is drawn with.
 - **A host that refuses your key says so.** Now and then a full-mode host whose ssh refused the
   key showed as `unreachable` with `read |0: file already closed` for a detail instead of
   `needs auth` with its hint: the pipe closed under the reader as the process ended, and the

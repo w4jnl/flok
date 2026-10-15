@@ -282,3 +282,19 @@ struct LiveActivityTests {
         try save(HStack { LiveCompactLeading(state: st); Spacer(); LiveCompactTrailing(attributes: .overview, state: st) }.padding(8), "compact.png", width: 230, bg: .black)
     }
 }
+
+/// What the app remembers between starts: UserDefaults, read back at init.
+struct SettingsTests {
+    @MainActor @Test func wrapIsTheDefaultAndAChoiceIsKept() {
+        let d = UserDefaults.standard
+        let before = d.object(forKey: "wrapLines")
+        defer { if let before { d.set(before, forKey: "wrapLines") } else { d.removeObject(forKey: "wrapLines") } }
+        d.removeObject(forKey: "wrapLines")
+        #expect(Settings().wrapLines, "a fresh install wraps long lines")
+        let s = Settings()
+        s.wrapLines = false
+        #expect(!Settings().wrapLines, "switched off, it stays off at the next start")
+        s.wrapLines = true
+        #expect(Settings().wrapLines)
+    }
+}

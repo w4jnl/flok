@@ -26,14 +26,20 @@ func (f *Fake) Run(args ...string) (string, error) {
 			pane := args[i+3]
 			out.WriteString(strings.ReplaceAll(args[i+4], "#{pane_id}", pane) + "\n")
 			i += 4
-		case "capture-pane": // -p -J -t <pane> [-S -n]
-			pane := args[i+4]
+		case "capture-pane": // -p [-J] -t <pane> [-S -n]
+			pane := ""
+			for j := i + 1; j+1 < len(args) && args[j] != ";"; j++ {
+				if args[j] == "-t" {
+					pane = args[j+1]
+					i = j + 1
+					break
+				}
+			}
 			text, ok := f.Screens[pane]
 			if !ok {
 				return out.String(), errors.New("can't find pane: " + pane)
 			}
 			out.WriteString(text)
-			i += 4
 		}
 	}
 	return out.String(), nil
