@@ -26,6 +26,24 @@ enum ScreenLines {
                                            "┌", "┐", "└", "┘", "├", "┤", "┬", "┴", "┼", "╭", "╮", "╰", "╯",
                                            "╔", "╗", "╚", "╝", "╠", "╣", "╦", "╩", "╬", "╒", "╕", "╘", "╛", "╞", "╡", "╤", "╧", "╪"]
 
+    /// Vertical bars: the right edge of a box wider than the phone, when one is a line's only bar.
+    static let edgeChars: Set<Character> = ["│", "┃", "║", "┆", "┇", "┊", "┋", "╎", "╏"]
+
+    /// The line without its trailing blanks and without the right edge of a box that is wider
+    /// than the phone: a bar that is the line's only box character, at its end after a blank,
+    /// would land on a row of its own once the text wraps, and a line that is nothing but a bar
+    /// is that edge on an empty row (Copilot frames its messages so). A bar at the start (a
+    /// gutter), one glued to text, or a line with two (a table row) stays.
+    static func unedged(_ line: String) -> String {
+        var l = Substring(line)
+        while l.last == " " { l.removeLast() }
+        guard let last = l.last, edgeChars.contains(last) else { return String(l) }
+        var before = l.dropLast()
+        guard before.isEmpty || before.last == " ", !before.contains(where: { boxChars.contains($0) }) else { return String(l) }
+        while before.last == " " { before.removeLast() }
+        return String(before)
+    }
+
     /// The kind of one line. A box edge like `┌────┐` is boxed (it belongs with its rows), a
     /// bare divider like `────` or `── name ─` is a rule, a single `│` or `|` in a line of text
     /// (a quote gutter, a shell pipe) leaves it prose.
@@ -50,10 +68,11 @@ enum ScreenLines {
         return .prose
     }
 
-    /// The screen as blocks of consecutive lines of one kind.
+    /// The screen as blocks of consecutive lines of one kind, each line `unedged`.
     static func blocks(of text: String) -> [Block] {
         var out: [Block] = []
-        for (i, line) in text.components(separatedBy: "\n").enumerated() {
+        for (i, raw) in text.components(separatedBy: "\n").enumerated() {
+            let line = unedged(raw)
             let k = kind(of: line)
             if let last = out.indices.last, out[last].kind == k {
                 out[last].lines.append(line)
@@ -91,6 +110,6 @@ enum ScreenLines {
     /// The widest line that is not a rule, in characters: what a "fit the screen" zoom should
     /// measure, since a rule is as wide as the pane whatever the text is.
     static func widest(of text: String) -> Int {
-        text.components(separatedBy: "\n").filter { kind(of: $0) != .rule }.map(\.count).max() ?? 0
+        text.components(separatedBy: "\n").map(unedged).filter { kind(of: $0) != .rule }.map(\.count).max() ?? 0
     }
 }
