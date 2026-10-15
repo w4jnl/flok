@@ -44,6 +44,11 @@ func TestFramesTravelDeflated(t *testing.T) {
 		defer mu.Unlock()
 		return logged.String()
 	}
+	t.Cleanup(func() { // a frame that never reached an app (seen twice on CI): the relay's side of the story
+		if t.Failed() {
+			t.Logf("relay log:\n%s", log())
+		}
+	})
 
 	deflating, resp := dialAppWith(t, srv, "dev-tok", websocket.CompressionContextTakeover)
 	if !deflated(resp.Header) {

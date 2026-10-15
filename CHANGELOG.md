@@ -12,6 +12,11 @@ updates this file first. Dates are the tag dates.
   strip that scrolls sideways. The push's card cuts its dividers the same way, and a double tap
   fits the widest line of text, not the widest rule.
 
+- **A host that refuses your key says so.** Now and then a full-mode host whose ssh refused the
+  key showed as `unreachable` with `read |0: file already closed` for a detail instead of
+  `needs auth` with its hint: the pipe closed under the reader as the process ended, and the
+  read error spoke before the exit did. The exit speaks first now, before the hello and after it.
+
 ## 0.8.0 (2026-10-15)
 
 - **Talk to an agent from the phone.** Hold the microphone next to the reply field and speak;

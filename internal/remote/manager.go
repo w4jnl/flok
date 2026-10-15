@@ -616,6 +616,27 @@ func (c *conn) attemptFull(ctx context.Context) (State, string) {
 		}
 		return Classify(exit, stderr), Detail(stderr)
 	}
+	// readEnded is the reader stopping. At EOF the process is ending: its exit says why. Any
+	// other read error usually means the same thing: Wait reaped the process and closed the pipe
+	// under the reader ("read |0: file already closed"), so the exit is given a moment to speak
+	// before the read error is taken at its word; a key ssh refused is then "needs auth", never
+	// "unreachable" with a pipe's error for a detail.
+	readEnded := func() (State, string) {
+		if readErr == io.EOF {
+			<-exited
+			return ended()
+		}
+		select {
+		case <-exited:
+			st, detail := ended()
+			if detail == "" {
+				detail = Detail(readErr.Error())
+			}
+			return st, detail
+		case <-time.After(time.Second):
+			return Unreachable, Detail(readErr.Error())
+		}
+	}
 	timeout := time.NewTimer(time.Duration(c.m.d.Cfg.Hosts.ConnectTimeoutS)*time.Second + 5*time.Second)
 	defer timeout.Stop()
 	var hello *proto.Hello
@@ -634,11 +655,7 @@ func (c *conn) attemptFull(ctx context.Context) (State, string) {
 		case <-exited:
 			return ended()
 		case <-readDone:
-			if readErr == io.EOF {
-				<-exited
-				return ended()
-			}
-			return Unreachable, Detail(readErr.Error())
+			return readEnded()
 		case <-timeout.C:
 			return Unreachable, "no hello from flok serve"
 		case <-actx.Done():
@@ -749,11 +766,7 @@ func (c *conn) attemptFull(ctx context.Context) (State, string) {
 		case <-exited:
 			return ended()
 		case <-readDone:
-			if readErr == io.EOF {
-				<-exited
-				return ended()
-			}
-			return Unreachable, Detail(readErr.Error())
+			return readEnded()
 		case <-actx.Done():
 			return Unreachable, "closed"
 		}

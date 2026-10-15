@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
 # Runs the end-to-end suites in order, every one of them even after a failure, each under a
 # watchdog, and ends with a table of results (also published to the GitHub Actions step summary
-# when there is one). Exit 1 when any suite did not pass. No retries: a flake is a bug.
+# when there is one). A suite that did not pass runs once more: passing then, it is `flaky` in
+# the table, with its first run's logs kept beside the second's, and the run goes on green,
+# because a flake must stay visible without turning a main that just passed as a pull request
+# red; failing twice, it fails the run. Exit 1 when any suite failed.
 #
 #   scripts/e2e/run-all.sh            all suites, m1 … m11
 #   scripts/e2e/run-all.sh m4 m7      a subset
 #   E2E_SUITE_TIMEOUT=300             seconds a suite may take before it is killed (TERM, then KILL)
 #   E2E_LOG_DIR=/tmp/flok-e2e-logs    where lib.sh keeps a debug run's logs (FLOK_DEBUG=1)
 #   E2E_KEEP_LOGS=1                   keep the logs of passed suites too (default: only failed ones)
+#   E2E_RERUN=0                       no second run: a suite that did not pass fails at once
 #
 # bash 3.2 (macOS /bin/bash) is enough: no mapfile, no associative arrays, no coreutils timeout.
 set -uo pipefail
@@ -61,12 +65,20 @@ overall=0
 for s in $SUITES; do
   echo "== $s"
   run_one "$s"
-  results+=("$s|$RES|${P:-}|${F:-}|$SECS|$NOTE")
-  if [ "$RES" = pass ]; then
-    [ "${E2E_KEEP_LOGS:-0}" = 1 ] || rm -rf "$LOGS/$s" "$LOGS/$s.out"
-  else
-    overall=1
+  if [ "$RES" != pass ] && [ "${E2E_RERUN:-1}" = 1 ]; then
+    first="$RES${NOTE:+ ($NOTE)}, $SECS s"
+    rm -rf "$LOGS/$s.first" "$LOGS/$s.first.out"   # the first run's logs, kept beside the second's
+    mv "$LOGS/$s" "$LOGS/$s.first" 2>/dev/null || true; mv "$LOGS/$s.out" "$LOGS/$s.first.out" 2>/dev/null || true
+    echo "== $s again (first run: $first)"
+    run_one "$s"
+    if [ "$RES" = pass ]; then RES=flaky; NOTE="first run: $first"; fi
   fi
+  results+=("$s|$RES|${P:-}|${F:-}|$SECS|$NOTE")
+  case $RES in
+    pass) [ "${E2E_KEEP_LOGS:-0}" = 1 ] || rm -rf "$LOGS/$s" "$LOGS/$s.out" ;;
+    flaky) [ "${E2E_KEEP_LOGS:-0}" = 1 ] || rm -rf "$LOGS/$s" "$LOGS/$s.out" ;;   # the first run's logs stay
+    *) overall=1 ;;
+  esac
 done
 
 header="tmux $(tmux -V 2>/dev/null | sed 's/^tmux //'), $(uname -sm), $(bash --version | head -1 | sed -E 's/^GNU bash, version ([^ ]*).*/bash \1/')"

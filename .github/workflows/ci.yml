@@ -30,7 +30,7 @@ jobs:
       - name: gofmt
         run: test -z "$(gofmt -l ./cmd ./internal ./assets)" || { gofmt -l ./cmd ./internal ./assets; exit 1; }
       - run: go vet ./...
-      - run: go test ./...
+      - run: go test -timeout 120s ./...  # a hung test ends the job in two minutes, not ten
       - run: make build
       - run: ./bin/flok version
       - name: flok-bar version (macOS only)
@@ -71,7 +71,8 @@ jobs:
 
   # The tmux RHEL 9 ships (3.2a). tmux 2.7 (RHEL 8) is flok's floor but no longer exercised here
   # (2026-10-04). tar/gzip/git go in first because checkout and setup-go need them inside the
-  # container.
+  # container. Only the e2e suites run here: no unit test needs a tmux (they use tmuxtest.Fake),
+  # the test job above covers them.
   e2e-el:
     name: e2e (${{ matrix.name }}, tmux ${{ matrix.tmux }})
     runs-on: ubuntu-latest
@@ -95,7 +96,6 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-      - run: go test ./...
       - name: run suites (every one, in order, each under a watchdog; the table lands in the step summary)
         env:
           FLOK_DEBUG: "1"

@@ -116,6 +116,19 @@ func (p *fakeProc) exit(code int, stderr string) {
 	})
 }
 
+// exitClosed ends the fake process the way exec's Wait can under a concurrent reader: the
+// stdout read fails with the closed pipe's error instead of EOF, and Wait returns at once.
+func (p *fakeProc) exitClosed(code int, stderr string) {
+	p.once.Do(func() {
+		p.mu.Lock()
+		p.code, p.stderr = code, stderr
+		p.mu.Unlock()
+		_ = p.outW.CloseWithError(errors.New("read |0: file already closed"))
+		_ = p.inR.Close()
+		close(p.exitc)
+	})
+}
+
 func (p *fakeProc) send(t *testing.T, f proto.Frame) {
 	t.Helper()
 	if err := proto.Write(p.outW, f); err != nil {
@@ -305,6 +318,26 @@ func TestFullModeSession(t *testing.T) {
 	}
 	if !killed {
 		t.Fatal("disabling must kill the session")
+	}
+}
+
+// A read that fails because Wait closed the pipe under the reader is the process ending, not a
+// network error: the exit and stderr classify it (seen on CI as "unreachable: read |0: file
+// already closed" for a key ssh refused), before the hello and after it alike.
+func TestReadErrorAtExitIsTheExit(t *testing.T) {
+	h := newHarness(t, hosts.ModeFull)
+	h.manager(nil)
+	h.proc().exitClosed(255, "jaro@beta: Permission denied (publickey).")
+	if msg := h.state(Auth); !strings.Contains(msg.Detail, "Permission denied") {
+		t.Fatalf("before the hello: %+v", msg)
+	}
+	<-h.slept
+	p := h.proc()
+	p.send(t, proto.Frame{Type: proto.TypeHello, Hello: &proto.Hello{Proto: proto.Version, Version: "x", Hostname: "beta"}})
+	h.state(Connected)
+	p.exitClosed(255, "jaro@beta: Permission denied (publickey).")
+	if msg := h.state(Auth); !strings.Contains(msg.Detail, "Permission denied") {
+		t.Fatalf("after the hello: %+v", msg)
 	}
 }
 
