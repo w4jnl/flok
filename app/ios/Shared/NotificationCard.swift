@@ -89,12 +89,13 @@ struct NotificationCard: View {
     }
 
     /// The last lines of a screen that hold anything, right-trimmed, so a prompt at the bottom
-    /// of a mostly empty pane is what shows.
+    /// of a mostly empty pane is what shows. A rule as wide as the pane is cut to the card's
+    /// width (about 56 columns of the 10 pt mono), so it takes one of the lines, not three.
     nonisolated static func tail(_ text: String, lines n: Int) -> String {
         var lines = text.components(separatedBy: "\n").map { line in
             var l = Substring(line)
             while l.last == " " { l.removeLast() }
-            return String(l)
+            return ScreenLines.kind(of: String(l)) == .rule ? ScreenLines.fit(String(l), columns: 56) : String(l)
         }
         while let last = lines.last, last.isEmpty { lines.removeLast() }
         return lines.suffix(n).joined(separator: "\n")

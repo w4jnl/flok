@@ -398,7 +398,9 @@ struct AgentView: View {
 }
 
 /// A pane's text, monospaced, following the bottom as it changes. Wide lines scroll sideways
-/// or wrap (wrap); a pinch zooms the text, a double tap fits the widest line to the screen.
+/// or wrap (wrap): prose at words, a rule cut to the width, a table in a block of its own that
+/// scrolls sideways (ScreenLines); a pinch zooms the text, a double tap fits the widest line
+/// of text to the screen.
 struct ScreenView: View {
     let text: String?
     let fontSize: Double
@@ -411,12 +413,17 @@ struct ScreenView: View {
         GeometryReader { geo in
             ScrollViewReader { proxy in
                 ScrollView(wrap ? [.vertical] : [.vertical, .horizontal]) {
-                    Text(trimmed)
-                        .font(.system(size: fontSize * pinch, design: .monospaced))
-                        .fixedSize(horizontal: !wrap, vertical: false)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(8)
-                        .textSelection(.enabled)
+                    if wrap {
+                        wrapped(width: geo.size.width - 16)
+                            .padding(8)
+                    } else {
+                        Text(trimmed)
+                            .font(.system(size: fontSize * pinch, design: .monospaced))
+                            .fixedSize(horizontal: true, vertical: false)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(8)
+                            .textSelection(.enabled)
+                    }
                     Color.clear.frame(width: 1, height: 1).id("bottom").frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .background(Color(UIColor.secondarySystemBackground))
@@ -448,11 +455,47 @@ struct ScreenView: View {
         }
     }
 
-    /// The font size at which the widest line of the screen just fits width points.
+    /// The screen in wrap mode, block by block: prose wraps, a rule is cut to the columns that
+    /// fit, a table keeps its lines whole and scrolls sideways on its own.
+    @ViewBuilder private func wrapped(width: CGFloat) -> some View {
+        let size = fontSize * pinch
+        let font = Font.system(size: size, design: .monospaced)
+        let cols = max(8, Int(width / max(Self.em(size), 1)) - 1) // one column short of the edge: no ellipsis from a rounding
+
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(ScreenLines.blocks(of: trimmed)) { block in
+                switch block.kind {
+                case .prose:
+                    Text(block.text).font(font)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                case .rule:
+                    ForEach(Array(block.lines.enumerated()), id: \.offset) { _, line in
+                        Text(ScreenLines.fit(line, columns: cols)).font(font).lineLimit(1)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                case .boxed:
+                    ScrollView(.horizontal) {
+                        Text(block.text).font(font)
+                            .fixedSize(horizontal: true, vertical: false)
+                            .textSelection(.enabled)
+                    }
+                }
+            }
+        }
+    }
+
+    /// The width of one character of the monospaced system font at size points.
+    static func em(_ size: Double) -> Double {
+        ("M" as NSString).size(withAttributes: [.font: UIFont.monospacedSystemFont(ofSize: size, weight: .regular)]).width
+    }
+
+    /// The font size at which the widest line of text just fits width points; rules do not
+    /// count, they are as wide as the pane whatever it shows.
     static func fitting(_ text: String, width: CGFloat) -> Double {
-        let cols = max(20, text.components(separatedBy: "\n").map(\.count).max() ?? 80)
-        let em = ("M" as NSString).size(withAttributes: [.font: UIFont.monospacedSystemFont(ofSize: 10, weight: .regular)]).width / 10
-        return max(5, min(24, (Double(width) / (Double(cols) * em)).rounded(.down)))
+        let widest = ScreenLines.widest(of: text)
+        let cols = max(20, widest == 0 ? 80 : widest)
+        return max(5, min(24, (Double(width) / (Double(cols) * em(10) / 10)).rounded(.down)))
     }
 
     private var trimmed: String {
