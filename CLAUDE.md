@@ -69,8 +69,12 @@ old row first, `wait_json` on `last_connected`/`served`/`snapshot.json`), becaus
 `serve_pid` instead of raw `kill-server`/`pkill -f`/`pgrep -f` (system-wide); the e2e config
 samples screens every 500 ms. `set -Eeuo pipefail` with an ERR trap: a command failing outside
 a check prints `ABORT file:line: cmd` and the summary says `aborted`; `scripts/e2e/run-all.sh`
-(what CI runs) runs every suite even after a failure, kills one after `E2E_SUITE_TIMEOUT`, and
-writes the per-suite table to the step summary; the debug artifact keeps only failed suites.
+(what CI runs) runs every suite even after a failure, kills one after `E2E_SUITE_TIMEOUT`, runs
+a suite that did not pass once more (passing then it is `flaky` in the table and the run stays
+green, so a flake stays visible without a red main; `E2E_RERUN=0` turns that off), and writes
+the per-suite table to the step summary; the debug artifact keeps the suites that did not pass
+and the first run of a flaky one (`<suite>.first`). The unit tests run only in the `test` job:
+none needs a tmux (`tmuxtest.Fake`), and a hung package ends it after `-timeout 120s`.
 
 ## Architecture
 

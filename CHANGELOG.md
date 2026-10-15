@@ -4,6 +4,13 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
+## Unreleased
+
+- **A host that refuses your key says so.** Now and then a full-mode host whose ssh refused the
+  key showed as `unreachable` with `read |0: file already closed` for a detail instead of
+  `needs auth` with its hint: the pipe closed under the reader as the process ended, and the
+  read error spoke before the exit did. The exit speaks first now, before the hello and after it.
+
 ## 0.8.0 (2026-10-15)
 
 - **Talk to an agent from the phone.** Hold the microphone next to the reply field and speak;
