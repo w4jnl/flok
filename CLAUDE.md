@@ -269,7 +269,9 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
   `m.fed`, local answers through `remote.TypeAnswer` on the inner server, remote ones through
   `Manager.Answer`: an `answer` frame and its `ack` in full mode, `send-keys` over ssh in plain
   mode; screens: local and plain-mode panes captured every second from the sidebar, full-mode
-  ones by serve on a `capture` frame → `screen` frames, resent after a host reconnects), logs
+  ones by serve on a `capture` frame → `screen` frames, resent after a host reconnects; always
+  `poller.CaptureShown`, rows as the terminal shows them, never the rules' `-J` capture, which
+  glues a row onto one whose wrapped flag stuck after an in-place repaint), logs
   every command to `events.log` and puts the link's state in the footer (after 30 s down),
   `snapshot.json` (`link`) and at the right end of the brand line (`ui/brand.go` `linkMark`).
   `flok link on|off|toggle` (`cli/link.go`, `prefix U`, flok-bar's "Relay link" row via

@@ -11,6 +11,10 @@ struct ScreenLinesTests {
         #expect(ScreenLines.kind(of: "──────── trading-journal (2) ─") == .prose) // short: nothing to cut
         #expect(ScreenLines.kind(of: "=========================") == .rule)
         #expect(ScreenLines.kind(of: "   ----") == .rule)
+        // the thick edges of a TUI's box, block elements, are rules too, and are cut like one
+        #expect(ScreenLines.kind(of: String(repeating: "▀", count: 116)) == .rule)
+        #expect(ScreenLines.kind(of: "│" + String(repeating: "▁", count: 116)) == .rule)
+        #expect(ScreenLines.fit(String(repeating: "▀", count: 116), columns: 49).count == 49)
         #expect(ScreenLines.kind(of: "│ ES=F day source, Oct 13 and earlier │ yahoo │") == .boxed)
         #expect(ScreenLines.kind(of: "├──────────────┼───────┤") == .boxed)
         #expect(ScreenLines.kind(of: "╭──────────────────────╮") == .boxed)

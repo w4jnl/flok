@@ -52,6 +52,30 @@ func TestCaptureAllFallsBackForMissingPane(t *testing.T) {
 	}
 }
 
+// The phone gets the rows as the terminal shows them: no -J, which would glue a row onto the
+// one before it whenever that one still carries the wrapped flag from an overflow long since
+// repainted.
+func TestCaptureShownTakesRowsApart(t *testing.T) {
+	f := &tmuxtest.Fake{Screens: map[string]string{"%1": "│ text\n│ more\n", "%2": "two\n"}}
+	got := CaptureShown(f, []string{"%1", "%2"})
+	if got["%1"] != f.Screens["%1"] || got["%2"] != f.Screens["%2"] || len(f.Calls) != 1 {
+		t.Fatalf("got %q in %d calls", got, len(f.Calls))
+	}
+	for i, a := range f.Calls[0] {
+		if a == "-J" {
+			t.Errorf("the phone's capture joins wrapped lines: %q", f.Calls[0])
+		}
+		if a == "capture-pane" && (f.Calls[0][i+1] != "-p" || f.Calls[0][i+2] != "-t") {
+			t.Errorf("want capture-pane -p -t <pane>, got %q", f.Calls[0][i:])
+		}
+	}
+	// the rules' capture still joins, with the scrollback it is given
+	CaptureAll(f, []string{"%1"}, 3)
+	if want := []string{"capture-pane", "-p", "-J", "-t", "%1", "-S", "-3"}; !reflect.DeepEqual(f.Calls[1][6:], want) {
+		t.Errorf("rules capture %q, want %q", f.Calls[1][6:], want)
+	}
+}
+
 func TestStoreEventWanted(t *testing.T) {
 	root := "/s"
 	for name, want := range map[string]bool{

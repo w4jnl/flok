@@ -17,8 +17,10 @@ enum ScreenLines {
         var text: String { lines.joined(separator: "\n") }
     }
 
-    /// Horizontal rule characters: box drawing and the ASCII stand-ins.
-    static let ruleChars: Set<Character> = ["─", "━", "═", "╌", "╍", "┄", "┅", "┈", "┉", "-", "=", "_", "⎯", "―", "—"]
+    /// Horizontal rule characters: box drawing, the ASCII stand-ins, and the block elements a
+    /// TUI draws a thick edge with (`▀▀▀` over a box, `▁▁▁` under it, `███` as a bar).
+    static let ruleChars: Set<Character> = ["─", "━", "═", "╌", "╍", "┄", "┅", "┈", "┉", "-", "=", "_", "⎯", "―", "—",
+                                            "▀", "▄", "█", "▔", "▁", "▂", "▃", "▅", "▆", "▇", "▬"]
     /// Vertical edges, corners and tees: a table row or a box edge has two or more of them.
     static let boxChars: Set<Character> = ["│", "┃", "║", "┆", "┇", "┊", "┋", "╎", "╏",
                                            "┌", "┐", "└", "┘", "├", "┤", "┬", "┴", "┼", "╭", "╮", "╰", "╯",

@@ -35,7 +35,7 @@ final class Settings {
         let launched = defaults.volatileDomain(forName: UserDefaults.argumentDomain)["deviceToken"] as? String
         deviceToken = launched ?? Keychain.get("deviceToken") ?? defaults.string(forKey: "deviceToken") ?? ""
         fontSize = defaults.object(forKey: "fontSize") as? Double ?? 11
-        wrapLines = defaults.bool(forKey: "wrapLines")
+        wrapLines = defaults.object(forKey: "wrapLines") as? Bool ?? true   // wrap until the user says otherwise
         voiceCleanup = defaults.object(forKey: "voiceCleanup") as? Bool ?? true
         voiceSendOnRelease = defaults.bool(forKey: "voiceSendOnRelease")
         voiceLocale = defaults.string(forKey: "voiceLocale") ?? ""
