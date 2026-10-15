@@ -45,6 +45,20 @@ func (f *fakePush) Send(_ context.Context, d apns.Device, n apns.Notification) e
 type wsApp struct {
 	conn *websocket.Conn
 	got  chan wire.Frame
+	mu   sync.Mutex
+	err  error    // why the reader stopped, when it did
+	seen []string // the types of every frame read, for a wait that found none of the kind
+}
+
+// story says what the app has seen so far and whether its reader is still alive.
+func (a *wsApp) story() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	s := fmt.Sprintf("%d frames read: %s", len(a.seen), strings.Join(a.seen, " "))
+	if a.err != nil {
+		s += fmt.Sprintf("; the reader stopped: %v", a.err)
+	}
+	return s
 }
 
 func dialApp(t *testing.T, srv *httptest.Server, token string) *wsApp {
@@ -67,10 +81,18 @@ func dialAppWith(t *testing.T, srv *httptest.Server, token string, mode websocke
 		for {
 			_, data, err := conn.Read(context.Background())
 			if err != nil {
+				a.mu.Lock()
+				a.err = err
+				a.mu.Unlock()
 				return
 			}
 			var f wire.Frame
-			_ = json.Unmarshal(data, &f)
+			if err := json.Unmarshal(data, &f); err != nil {
+				f.Type = "unparsable:" + err.Error()
+			}
+			a.mu.Lock()
+			a.seen = append(a.seen, f.Type)
+			a.mu.Unlock()
 			a.got <- f
 		}
 	}()
@@ -96,7 +118,7 @@ func (a *wsApp) next(t *testing.T, want func(wire.Frame) bool) wire.Frame {
 				return f
 			}
 		case <-deadline:
-			t.Fatal("the app got nothing of the kind")
+			t.Fatalf("the app got nothing of the kind (%s)", a.story())
 		}
 	}
 }
@@ -373,6 +395,17 @@ func TestRelayReplacesALink(t *testing.T) {
 	first := dial()
 	app := dialApp(t, srv, "dev-tok")
 	app.next(t, func(f wire.Frame) bool { return f.Type == wire.TypeInstances })
+	// the first link must be the registered one before the second comes, or the second's hello
+	// can be read first and the first replaces it (CI hung on that twice)
+	for deadline := time.Now().Add(5 * time.Second); ; {
+		if _, out := api(t, srv, "", "GET", "/healthz", nil); out["online"] == 1.0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the first link never came online")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	second := dial()
 	defer second.CloseNow()
 	rctx, rcancel := context.WithTimeout(context.Background(), 10*time.Second) // a replacement that never comes fails, instead of hanging the run
