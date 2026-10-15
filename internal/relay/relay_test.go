@@ -791,9 +791,27 @@ func TestRelayLongTextAndFiles(t *testing.T) {
 	cl.Start()
 	defer cl.Close()
 	app := dialApp(t, srv, "dev-tok")
-	f := app.next(t, func(f wire.Frame) bool { return f.Type == wire.TypeInstance && f.Inst != nil && f.Inst.Snap != nil })
-	if !strings.Contains(strings.Join(f.Inst.Features, " "), wire.FeatureFiles) || !strings.Contains(strings.Join(f.Inst.Features, " "), wire.FeatureLongText) {
-		t.Fatalf("features: %v", f.Inst.Features)
+	// the instance with its snapshot, in whichever frame brings it: the list the app gets on
+	// connect when the publish landed first, its own frame when the app came first (waiting for
+	// the latter alone failed once on CI)
+	var inst *wire.Instance
+	app.next(t, func(f wire.Frame) bool {
+		switch f.Type {
+		case wire.TypeInstance:
+			if f.Inst != nil && f.Inst.Snap != nil {
+				inst = f.Inst
+			}
+		case wire.TypeInstances:
+			for i := range f.Instances {
+				if f.Instances[i].Name == "home" && f.Instances[i].Snap != nil {
+					inst = &f.Instances[i]
+				}
+			}
+		}
+		return inst != nil
+	})
+	if !strings.Contains(strings.Join(inst.Features, " "), wire.FeatureFiles) || !strings.Contains(strings.Join(inst.Features, " "), wire.FeatureLongText) {
+		t.Fatalf("features: %v", inst.Features)
 	}
 	// a long text with newlines, through HTTP
 	long := strings.Repeat("a line of text\n", 30)
