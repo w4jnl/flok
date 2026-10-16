@@ -124,6 +124,8 @@ func (m Model) agentByRef(ref string) (agent.Agent, bool) {
 // linkCommand performs what the phone asked.
 func (m *Model) linkCommand(c link.Command) tea.Cmd {
 	switch c.Kind {
+	case "phone": // the relay's answer to flok phone, or a phone that paired
+		return m.linkPhone(c)
 	case "reset": // the connection ended: the relay subscribes again when it is back
 		for ref := range m.linkSubs {
 			m.setCapture(ref, false)

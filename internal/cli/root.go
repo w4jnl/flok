@@ -25,6 +25,8 @@ usage: flok <command>
               (off by default, no argument toggles; macOS only)
   link        [on|off|toggle|status] [--notify]: switch the relay link ([link] url) off and on
               again (no argument toggles; it stays off across restarts until on)
+  phone       pair [--open|--json] | list | forget <name|id>: pair the phone app with the relay
+              by a code and its QR shown here (through the relay link), list or revoke phones
   sidebar     run the sidebar UI in the current pane (used by up)
   status      print sessions and agents once (--json for machine output)
   jump        switch the inner client to the newest agent needing input (else newest done)
@@ -83,6 +85,8 @@ func Main(args []string) int {
 		return runKeepAwake(cfg, args[1:])
 	case "link":
 		return runLink(cfg, args[1:])
+	case "phone":
+		return runPhone(cfg, args[1:])
 	case "sidebar":
 		return runSidebar(cfg)
 	case "status":

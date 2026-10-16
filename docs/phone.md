@@ -30,9 +30,9 @@ plain mode: `send-keys` over ssh, the files streamed into `~/.local/state/flok/a
 
 1. Run the relay: [`deploy/relay`](../deploy/relay) has the image (`ghcr.io/w4jnl/flok-relay`,
    amd64 and arm64), a compose stack for Portainer with Traefik labels and the example configs.
-   `flok-relay token` makes the tokens: one per flok instance, one for the phone. Pushes need an
-   APNs key from your Apple developer account (`FLOK_RELAY_APNS_*`); without one the relay runs
-   and the app works, only nothing is pushed.
+   `flok-relay token` makes the instance tokens, one per flok; a phone needs none, it pairs
+   (step 4). Pushes need an APNs key from your Apple developer account (`FLOK_RELAY_APNS_*`);
+   without one the relay runs and the app works, only nothing is pushed.
 2. Link every flok you want on the phone:
    ```toml
    [link]
@@ -44,7 +44,16 @@ plain mode: `send-keys` over ssh, the files streamed into `~/.local/state/flok/a
    then `flok reload`; `flok doctor` and `flok link status` say whether it connected.
 3. The app: build [`app/ios`](../app/ios) with your Apple team (Xcode, `make ios-project`; the
    simulator needs no signing) and install it from Xcode or TestFlight (`make ios-testflight`).
-   In its Settings: the relay's address, the phone's token, then *Enable notifications*.
+4. Pair the phone: `flok phone pair` on a Mac that runs flok shows a code and its QR (in a tmux
+   popup with `--open`, or `p` in the sidebar's servers panel). Scan it with the Camera app,
+   which opens flok, or in the app's Pair sheet, or type the code and the relay's address there;
+   then *Enable notifications* in the app's Settings. The code lasts five minutes and pairs one
+   phone; the relay keeps the pairing (`phones.json` in its data dir) with a key of that phone's
+   own, and the request travels over this flok's relay link, so it works through the encrypted
+   tunnel too. `flok phone list` shows the phones, `flok phone forget <name>` revokes one: its
+   key stops working, its pushes stop, and its app asks to pair again. The same phone paired
+   again replaces its old pairing as soon as its push token registers. A static token from the
+   relay's optional `device_tokens` still signs a phone in, under *Enter a device token instead*.
 
 ## What the phone shows
 
@@ -96,6 +105,7 @@ has all of it:
 
 ```
 GET  /healthz                                       is it up (no token)
+POST /api/pair     {"code","name"}                  a phone redeems the code from flok phone pair for its key (no token; once; 5 min)
 GET  /api/instances                                 every instance with its last snapshot
 POST /api/answer   {"instance","pane","text","keys"}   type into an agent pane; waits for the instance's ack
 POST /api/seen     {"instance","pane"}
@@ -106,8 +116,11 @@ GET  /api/ws                                        the live stream: instances, 
 ```
 
 `flok-relay tail -url https://flok.example.net -token … [-subscribe home:%12]` prints that
-stream as JSON lines, which is the quickest way to see what the phone would. Tokens come from
-`flok-relay token`; the instance's goes into its `[link] token`, the phone's into the app.
+stream as JSON lines, which is the quickest way to see what the phone would. Instance tokens
+come from `flok-relay token` and go into `[link] token`; a phone's key comes from pairing
+(`flok phone pair`, over the link: the relay mints the code, the phone redeems it at
+`/api/pair`), the relay keeps it hashed in `phones.json`, and `flok phone list` / `forget` and
+`flok-relay phones` manage the pairings. A static `device_tokens` entry still works for a shell.
 `flok doctor` reports the link as the sidebar sees it (or probes the relay's `/healthz` when
 the sidebar is not running), the footer says when the relay has been out of reach for half a
 minute, and `snapshot.json` carries the link's state.

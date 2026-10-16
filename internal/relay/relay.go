@@ -40,12 +40,14 @@ type Pusher interface {
 // Config of the relay.
 type Config struct {
 	InstanceTokens []string // what instances dial in with ([link] token)
-	DeviceTokens   []string // what the app (and curl) call the API with
-	DataDir        string   // devices.json lives here; "" = in memory
+	DeviceTokens   []string // static tokens the API takes besides the paired phones' own (curl, scripts); optional
+	DataDir        string   // devices.json and phones.json live here; "" = in memory
 	Push           Pusher   // nil = no pushes
 	Logf           func(string, ...any)
 	// AnswerWait bounds how long an answer waits for the instance's ack; 0 = 8 s.
 	AnswerWait time.Duration
+	// PairTTL is how long a pairing code lives; 0 = 5 min.
+	PairTTL time.Duration
 	// SyncDelay gathers the agents that stopped waiting into one silent sync push; 0 = 3 s.
 	SyncDelay time.Duration
 	// LiveDelay gathers snapshot changes into one round of Live Activity pushes; 0 = 1.5 s.
@@ -68,6 +70,9 @@ type Server struct {
 	instances map[string]*instance
 	apps      map[*app]struct{}
 	devices   *deviceStore
+	phones    *phoneStore
+	codes     map[string]pairCode // instance → its live pairing code
+	pairLimit *ipLimiter
 	started   time.Time
 	closed    bool
 	syncDue   *time.Timer // a sync push is on its way
@@ -101,8 +106,10 @@ type instance struct {
 }
 
 type app struct {
-	out  chan wire.Frame
-	subs map[[2]string]bool // {instance, pane}
+	out   chan wire.Frame
+	subs  map[[2]string]bool // {instance, pane}
+	conn  frameConn          // its stream, for a close with a reason; nil for one look (GET /api/screen)
+	phone string             // the paired phone it signed in as; "" = a static device token
 }
 
 // New builds a relay.
@@ -125,11 +132,19 @@ func New(cfg Config) (*Server, error) {
 	if cfg.AgentLinger <= 0 {
 		cfg.AgentLinger = 10 * time.Minute
 	}
+	if cfg.PairTTL <= 0 {
+		cfg.PairTTL = 5 * time.Minute
+	}
 	ds, err := loadDevices(cfg.DataDir)
 	if err != nil {
 		return nil, err
 	}
-	return &Server{cfg: cfg, instances: map[string]*instance{}, apps: map[*app]struct{}{}, devices: ds, started: time.Now(),
+	ps, err := loadPhones(cfg.DataDir)
+	if err != nil {
+		return nil, err
+	}
+	return &Server{cfg: cfg, instances: map[string]*instance{}, apps: map[*app]struct{}{}, devices: ds, phones: ps, started: time.Now(),
+		codes: map[string]pairCode{}, pairLimit: newIPLimiter(5, 30*time.Second, 15*time.Minute),
 		liveSent: map[string]string{}, liveWaiting: map[string]int{}, liveStarted: map[string]time.Time{}, liveAlert: map[string]pendingAlert{}}, nil
 }
 
@@ -139,6 +154,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 	mux.HandleFunc("GET /link", s.handleLink)
 	mux.HandleFunc("GET /link/tls", s.handleLinkTunnel)
+	mux.HandleFunc("POST /api/pair", s.handlePair) // the one API call without a token: it is how a phone gets one
 	mux.HandleFunc("GET /api/ws", s.withDevice(s.handleAppWS))
 	mux.HandleFunc("GET /api/instances", s.withDevice(s.handleInstances))
 	mux.HandleFunc("POST /api/answer", s.withDevice(s.handleAnswer))
@@ -180,14 +196,29 @@ func tokenIn(tok string, list []string) bool {
 	return ok
 }
 
+// withDevice lets a request through with a static device token or a paired phone's own key; a
+// phone's id rides in the context (phoneOf) so what it registers is known as its.
 func (s *Server) withDevice(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !tokenIn(bearer(r), s.cfg.DeviceTokens) {
-			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "a device token is needed (Authorization: Bearer …)"})
+		tok := bearer(r)
+		if tokenIn(tok, s.cfg.DeviceTokens) {
+			h(w, r)
 			return
 		}
-		h(w, r)
+		if p, ok := s.phones.byToken(tok); ok {
+			h(w, r.WithContext(context.WithValue(r.Context(), phoneKey{}, p.ID)))
+			return
+		}
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "a device token is needed (Authorization: Bearer …): pair this phone with flok phone pair"})
 	}
+}
+
+type phoneKey struct{}
+
+// phoneOf is the paired phone a request signed in as; "" for a static device token.
+func phoneOf(r *http.Request) string {
+	id, _ := r.Context().Value(phoneKey{}).(string)
+	return id
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -339,6 +370,10 @@ func (s *Server) serveLink(ctx context.Context, conn frameConn, remote, how stri
 			}
 		case wire.TypeAck:
 			s.ack(in, f.ID, f.Error)
+		case wire.TypePhone:
+			if f.Phone != nil && hasFeature(hello.Hello.Features, wire.FeaturePhone) {
+				s.phoneOp(in, gen, f.ID, *f.Phone)
+			}
 		case wire.TypeBye:
 			if f.Reason == wire.ByeOff {
 				s.mu.Lock()
@@ -452,22 +487,24 @@ func (s *Server) tooOldFor(instance string, a answer.Answer) string {
 	if in == nil {
 		return ""
 	}
-	has := func(want string) bool {
-		for _, f := range features {
-			if f == want {
-				return true
-			}
-		}
-		return false
-	}
 	who := "flok " + version + " on " + instance
 	switch {
-	case len(a.Files) > 0 && !has(wire.FeatureFiles):
+	case len(a.Files) > 0 && !hasFeature(features, wire.FeatureFiles):
 		return who + " cannot take files: update flok there"
-	case answer.Long(a.Text) && !has(wire.FeatureLongText):
+	case answer.Long(a.Text) && !hasFeature(features, wire.FeatureLongText):
 		return fmt.Sprintf("%s takes at most %d characters on one line: update flok there for longer text", who, answer.MaxText)
 	}
 	return ""
+}
+
+// hasFeature reports whether a hello's features name one.
+func hasFeature(features []string, want string) bool {
+	for _, f := range features {
+		if f == want {
+			return true
+		}
+	}
+	return false
 }
 
 // gone says why an instance cannot take a request; the caller holds s.mu.
@@ -861,10 +898,13 @@ func (s *Server) handleAppWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	conn.SetReadLimit(wire.MaxAppFrame)
-	a := &app{out: make(chan wire.Frame, 256), subs: map[[2]string]bool{}}
+	a := &app{out: make(chan wire.Frame, 256), subs: map[[2]string]bool{}, conn: wsConn{conn}, phone: phoneOf(r)}
 	s.mu.Lock()
 	s.apps[a] = struct{}{}
 	s.mu.Unlock()
+	if a.phone != "" {
+		s.phones.touch(a.phone, time.Now())
+	}
 	ctx := r.Context()
 	wctx, stop := context.WithCancel(ctx)
 	defer stop()
@@ -986,7 +1026,7 @@ func (s *Server) handleDevicesList(w http.ResponseWriter, r *http.Request) {
 	list := s.devices.list()
 	out := make([]map[string]any, 0, len(list))
 	for _, d := range list {
-		out = append(out, map[string]any{"token": short(d.Token), "name": d.Name, "sandbox": d.Sandbox, "added": d.Added, "prefs": d.Prefs})
+		out = append(out, map[string]any{"token": short(d.Token), "name": d.Name, "sandbox": d.Sandbox, "added": d.Added, "prefs": d.Prefs, "phone": d.Phone})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"devices": out, "push": s.cfg.Push != nil})
 }
@@ -1002,13 +1042,145 @@ func (s *Server) handleDeviceAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Prefs.prune(time.Now())
-	d := device{Token: req.Token, Name: req.Name, Sandbox: req.Sandbox, Added: time.Now(), Prefs: req.Prefs}
+	prev, had := s.devices.get(req.Token)
+	d := device{Token: req.Token, Name: req.Name, Sandbox: req.Sandbox, Added: time.Now(), Prefs: req.Prefs, Phone: phoneOf(r)}
 	if err := s.devices.add(d); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 		return
 	}
 	s.cfg.Logf("device %s registered", d.label())
+	// the same push token under a new pairing is the same phone paired again: the old pairing,
+	// with no device left to it, is forgotten, so its key stops working
+	if had && prev.Phone != "" && d.Phone != "" && prev.Phone != d.Phone && !s.devices.anyFor(prev.Phone) {
+		if old, ok := s.forgetPhone(prev.Phone); ok {
+			s.cfg.Logf("phone %s (%s) paired again as %s: the old pairing is forgotten", old.Name, old.ID, d.Phone)
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "push": s.cfg.Push != nil})
+}
+
+// --- phones ------------------------------------------------------------------------------------
+
+type pairReq struct {
+	Code string `json:"code"`
+	Name string `json:"name,omitempty"`
+}
+
+// handlePair is how a phone gets its key: the code the terminal shows (flok phone pair), scanned
+// or typed, for a token of its own. One answer covers a code unknown, used or expired, and an
+// address that keeps guessing is slowed (ipLimiter); the code is 40 bits and lives five minutes.
+func (s *Server) handlePair(w http.ResponseWriter, r *http.Request) {
+	ip, now := clientIP(r), time.Now()
+	if ok, retry := s.pairLimit.allow(ip, now); !ok {
+		retry = retry.Round(time.Second)
+		if retry < time.Second {
+			retry = time.Second
+		}
+		w.Header().Set("Retry-After", fmt.Sprint(int(retry.Seconds())))
+		writeJSON(w, http.StatusTooManyRequests, map[string]any{"error": "too many attempts: try again in " + retry.String()})
+		return
+	}
+	var req pairReq
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "a pairing code is needed (code, and the phone's name)"})
+		return
+	}
+	code := NormalizeCode(req.Code)
+	if len(code) != PairCodeLen {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "a pairing code is eight letters and digits, as flok phone pair shows it"})
+		return
+	}
+	instance, reqID, ok := s.redeemCode(code, now)
+	if !ok {
+		s.pairLimit.failed(ip, now)
+		s.cfg.Logf("pair: a code from %s was not valid", ip)
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "that code is not valid any more: run flok phone pair again"})
+		return
+	}
+	s.pairLimit.succeeded(ip)
+	tok := NewToken()
+	p := phone{ID: newPhoneID(), Name: phoneName(req.Name), TokenSHA256: hashToken(tok), Paired: now, LastSeen: now, Instance: instance}
+	if err := s.phones.add(p); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return
+	}
+	s.cfg.Logf("phone %s (%s) paired through %s", p.Name, p.ID, instance)
+	info := p.info()
+	s.mu.Lock()
+	if in := s.instances[instance]; in != nil && in.online { // the terminal that shows the code hears it was taken
+		select {
+		case in.out <- wire.Frame{Type: wire.TypePhone, ID: reqID, Phone: &wire.Phone{Op: "paired", Phone: &info}}:
+		default:
+		}
+	}
+	s.mu.Unlock()
+	writeJSON(w, http.StatusCreated, map[string]any{"token": tok, "phone": map[string]any{"id": p.ID, "name": p.Name}, "relay": map[string]any{"version": s.cfg.Version}})
+}
+
+// phoneOp answers an instance's phone frame: pair mints its code, list says what is paired,
+// forget revokes a phone. The reply goes back under the frame's id.
+func (s *Server) phoneOp(in *instance, gen uint64, id string, p wire.Phone) {
+	reply := wire.Frame{Type: wire.TypePhone, ID: id, Phone: &wire.Phone{Op: p.Op}}
+	now := time.Now()
+	switch p.Op {
+	case "pair":
+		s.mu.Lock()
+		code, expires := s.mintCodeLocked(in.name, id, now)
+		s.mu.Unlock()
+		reply.Phone.Code, reply.Phone.ExpiresAt = FormatCode(code), expires
+		s.cfg.Logf("pair: %s shows a code, good for %s", in.name, s.cfg.PairTTL)
+	case "list":
+		reply.Phone.Phones = s.phoneInfos()
+	case "forget":
+		ph, ok := s.phones.find(p.Name)
+		switch {
+		case strings.TrimSpace(p.Name) == "":
+			reply.Error = "a phone's name or id is needed (flok phone list)"
+		case !ok:
+			reply.Error = "no phone " + strings.TrimSpace(p.Name) + " (flok phone list; two of one name go by id)"
+		default:
+			old, _ := s.forgetPhone(ph.ID)
+			info := old.info()
+			reply.Phone.Phone = &info
+			reply.Phone.Phones = s.phoneInfos()
+			s.cfg.Logf("phone %s (%s) forgotten by %s", old.Name, old.ID, in.name)
+		}
+	default:
+		reply.Error = "unknown phone request " + p.Op
+	}
+	s.mu.Lock()
+	if in.gen == gen && in.online {
+		select {
+		case in.out <- reply:
+		default:
+		}
+	}
+	s.mu.Unlock()
+}
+
+// forgetPhone revokes a phone: its key stops working, the devices it registered go (its pushes
+// stop) and its open streams are closed with wire.CloseForgotten, outside s.mu (a close shakes
+// hands). False when there is no such phone.
+func (s *Server) forgetPhone(id string) (phone, bool) {
+	p, ok := s.phones.remove(id)
+	if !ok {
+		return phone{}, false
+	}
+	for _, d := range s.devices.removeByPhone(id) {
+		s.cfg.Logf("device %s removed with its phone", d.label())
+	}
+	s.mu.Lock()
+	var conns []frameConn
+	for a := range s.apps {
+		if a.phone == id && a.conn != nil {
+			conns = append(conns, a.conn)
+		}
+	}
+	s.mu.Unlock()
+	for _, c := range conns {
+		_ = c.Close(websocket.StatusPolicyViolation, wire.CloseForgotten)
+	}
+	return p, true
 }
 
 // handleDevicePrefs replaces a phone's notification settings (the app sends them whole).

@@ -6,11 +6,18 @@ struct InstancesView: View {
     @Environment(Relay.self) private var relay
     @Environment(Settings.self) private var settings
     @Binding var showSettings: Bool
+    @Binding var showPair: Bool
     @State private var needsYouOnly = false
 
     var body: some View {
         List {
-            if case .failed(let why) = relay.state {
+            if relay.state == .forgotten {
+                HStack {
+                    Label(relay.state.label, systemImage: "iphone.slash").foregroundStyle(.secondary).font(.footnote)
+                    Spacer()
+                    Button("Pair") { showPair = true }.buttonStyle(.borderedProminent).controlSize(.small)
+                }
+            } else if case .failed(let why) = relay.state {
                 Label(why, systemImage: "wifi.exclamationmark").foregroundStyle(.secondary).font(.footnote)
             } else if relay.state == .connecting && relay.instances.isEmpty {
                 Label("connecting…", systemImage: "antenna.radiowaves.left.and.right").foregroundStyle(.secondary).font(.footnote)
@@ -35,11 +42,12 @@ struct InstancesView: View {
         .overlay {
             if !settings.isConfigured {
                 ContentUnavailableView {
-                    Label("Set up the relay", systemImage: "antenna.radiowaves.left.and.right")
+                    Label("Pair this phone", systemImage: "qrcode")
                 } description: {
-                    Text("The relay's address and a device token connect this phone to your flok instances.")
+                    Text("Run `flok phone pair` on a Mac that runs flok and scan the code it shows: this phone gets its own key to your relay.")
                 } actions: {
-                    Button("Settings") { showSettings = true }.buttonStyle(.borderedProminent)
+                    Button("Pair") { showPair = true }.buttonStyle(.borderedProminent)
+                    Button("Settings") { showSettings = true }
                 }
             } else if relay.instances.isEmpty, relay.state == .connected {
                 ContentUnavailableView("No instance has linked in yet", systemImage: "desktopcomputer",

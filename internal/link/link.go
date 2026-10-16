@@ -54,14 +54,18 @@ type Status struct {
 	Compressed bool `json:"compressed,omitempty"`
 }
 
-// Command is what the relay asks of the instance, on behalf of the phone. Reset is the link's
-// own: the connection ended, so every subscription is void (the relay subscribes again).
+// Command is what the relay asks of the instance, on behalf of the phone, or answers it. Reset
+// is the link's own: the connection ended, so every subscription is void (the relay subscribes
+// again). Phone is the relay's reply to a phone frame (Client.Phone), or its word that a phone
+// paired with the code that frame asked for; Error is what the relay said instead.
 type Command struct {
 	ID     string
-	Kind   string // answer | seen | subscribe | reset
+	Kind   string // answer | seen | subscribe | phone | reset
 	Answer answer.Answer
 	Pane   string
 	On     bool
+	Phone  *wire.Phone
+	Error  string
 }
 
 // Msg is delivered on Messages: a status change, or a command.
@@ -178,6 +182,31 @@ func NormalizeURL(s string) string {
 	if u.Path == "" || u.Path == "/" {
 		u.Path = "/link"
 	}
+	return u.String()
+}
+
+// OriginURL is the relay as the app addresses it, for a link URL: https://flok.example.net, with
+// a path prefix kept and the link's own path (/link, /link/tls, /api/ws) taken off. It is what
+// the pairing QR carries as relay=, and what the app's RelayURL.base makes of what one types
+// there. "" when the link URL is not one.
+func OriginURL(s string) string {
+	u, err := url.Parse(strings.TrimSpace(s))
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	switch u.Scheme {
+	case "https", "wss":
+		u.Scheme = "https"
+	case "http", "ws":
+		u.Scheme = "http"
+	default:
+		return ""
+	}
+	p := strings.TrimSuffix(u.Path, "/")
+	for _, tail := range []string{"/link/tls", "/link", "/api/ws"} {
+		p = strings.TrimSuffix(p, tail)
+	}
+	u.Path, u.RawPath, u.RawQuery, u.Fragment = strings.TrimSuffix(p, "/"), "", "", ""
 	return u.String()
 }
 
@@ -328,6 +357,24 @@ func (c *Client) Forget(pane string) {
 	delete(c.screens, pane)
 	delete(c.shown, pane)
 	c.mu.Unlock()
+}
+
+// Phone asks the relay about phones (flok phone pair | list | forget); the reply comes back as
+// a Command of kind phone under the same id, and for pair, later, the word that a phone took
+// the code. Dropped while the link is off or down: the caller's wait says so.
+func (c *Client) Phone(id string, p wire.Phone) {
+	if id == "" {
+		return
+	}
+	c.mu.Lock()
+	if c.off {
+		c.mu.Unlock()
+		return
+	}
+	c.queue = append(c.queue, wire.Frame{Type: wire.TypePhone, ID: id, Phone: &p})
+	c.trim()
+	c.mu.Unlock()
+	c.kick()
 }
 
 // Ack reports an answer's outcome to the relay (and through it, the phone).
@@ -544,6 +591,10 @@ func (c *Client) session(ctx context.Context) (State, string) {
 			case wire.TypeSubscribe:
 				if f.Pane != "" {
 					c.deliver(Msg{Command: &Command{Kind: "subscribe", Pane: f.Pane, On: f.On}})
+				}
+			case wire.TypePhone:
+				if f.ID != "" && (f.Phone != nil || f.Error != "") {
+					c.deliver(Msg{Command: &Command{ID: f.ID, Kind: "phone", Phone: f.Phone, Error: f.Error}})
 				}
 			case wire.TypeError:
 				c.cfg.Logf("link: relay says: %s", f.Error)

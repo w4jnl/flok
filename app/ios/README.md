@@ -19,8 +19,16 @@ instances, then the `FlokScreens` UI test (`make ios-screens`, its own scheme, s
 never runs it) walks the app on the iPhone 15 Pro simulator, asks the script for a push, and
 writes the list, an agent's screen, the push's card and the Lock Screen as PNGs.
 
-The simulator runs the app against a real relay: Settings → the relay's address and a device
-token (`flok-relay token`, one of the relay's `device_tokens`). For a scripted start:
+The simulator runs the app against a real relay. It pairs like a phone, without a camera: run
+`flok phone pair --json` on an instance linked to that relay and open the URL it prints, or type
+the code in the app's Pair sheet:
+
+```sh
+xcrun simctl openurl booted 'flok://pair?code=AB7Q-K2MN&relay=https%3A%2F%2Fflok.example.net'
+```
+
+A static device token (one of the relay's optional `device_tokens`) still works, typed under
+*Enter a device token instead* or given at a scripted start:
 
 ```sh
 xcrun simctl launch booted nl.w4j.flok -relayURL https://flok.example.net -deviceToken <token> [-open Home:%12]
@@ -55,8 +63,11 @@ entitlement, and nothing else changes.
    App Store Connect API key (Users and Access → Integrations, role Admin) in `Local.xcconfig`
    (`FLOK_ASC_KEY_ID`, `FLOK_ASC_ISSUER_ID`, the `.p8` in `~/.appstoreconnect/private_keys/`)
    takes its place.
-4. In the app: Settings → relay and device token → Save and connect → Enable notifications.
-   The APNs token is handed to the relay (`/api/devices`) and shows as registered.
+4. Pair the phone: `flok phone pair` on a Mac that runs flok shows a code and its QR; scan it
+   with the Camera app (it opens flok) or in the app's Pair sheet, then Settings → Enable
+   notifications. The phone gets a key of its own from the relay (`POST /api/pair`), and the
+   APNs token is handed to the relay (`/api/devices`) and shows as registered. `flok phone forget`
+   on the Mac revokes a phone.
 
 ## Notifications
 

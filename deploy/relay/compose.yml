@@ -2,7 +2,7 @@
 # environment (stack.env, or Portainer's environment variables), never from this file.
 #
 #   FLOK_RELAY_INSTANCE_TOKENS   comma-separated; one per flok instance ([link] token)
-#   FLOK_RELAY_DEVICE_TOKENS     comma-separated; what the app signs in with
+#   FLOK_RELAY_DEVICE_TOKENS     comma-separated, optional: static keys for curl and scripts (phones pair with flok phone pair)
 #   FLOK_RELAY_APNS_KEY_B64      the .p8 as one base64 line (base64 -i AuthKey_XXXX.p8 | tr -d '\n'), else empty
 #   FLOK_RELAY_APNS_KEY_ID       10-character key id of the .p8
 #   FLOK_RELAY_APNS_TEAM_ID      Apple team id
@@ -25,7 +25,7 @@ services:
     restart: unless-stopped
     environment:
       FLOK_RELAY_INSTANCE_TOKENS: ${FLOK_RELAY_INSTANCE_TOKENS:?set the instance tokens}
-      FLOK_RELAY_DEVICE_TOKENS: ${FLOK_RELAY_DEVICE_TOKENS:?set the device tokens}
+      FLOK_RELAY_DEVICE_TOKENS: ${FLOK_RELAY_DEVICE_TOKENS:-}
       FLOK_RELAY_APNS_KEY_B64: ${FLOK_RELAY_APNS_KEY_B64:-}
       FLOK_RELAY_APNS_KEY_ID: ${FLOK_RELAY_APNS_KEY_ID:-}
       FLOK_RELAY_APNS_TEAM_ID: ${FLOK_RELAY_APNS_TEAM_ID:-}

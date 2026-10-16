@@ -53,7 +53,7 @@ observes the BEL), m8 `flok resurrect save`, m9 keep-awake (`pmset -g assertions
 sidebar pid on macOS, the macOS-only message elsewhere), m10 remote hosts: `fake_ssh_setup` /
 `fake_host` in lib.sh put a fake `ssh` on PATH that runs the remote command locally against
 isolated servers `e2e-<host>` with per-host state and config (`$T/down-<host>` / `$T/auth-<host>`
-simulate failures) and `rhook` replays a hook on a host, m11 flok on the phone: it builds and runs
+simulate failures) and `rhook` replays a hook on a host, m11 flok on the phone (pairing too: `flok phone pair --json` through the sidebar, `/api/pair`, list, forget): it builds and runs
 the real `flok-relay` on 127.0.0.1 with a stand-in APNs (`scripts/e2e/fakehttp`, the Go HTTP
 stand-in m2 also uses for ntfy: it listens before it reports its port, because on macOS a connect to
 a bound-but-unlistened port is dropped, not refused) and a generated P-256 key (openssl), links the sidebar to it through `E2E_EXTRA_CONFIG`, drives the relay's API with curl
@@ -295,7 +295,7 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
   update named) and `proto.FeatureLongText`/`FeatureFiles` in a serve's hello
   (`ui.hostFeatureNotice`). The relay's `/api/answer` body may be `answer.MaxBody` (36 MB),
   frames from the relay to an instance `wire.MaxRelayFrame` (36 MB); the app's socket stays small.
-  `internal/relay` is `flok-relay` (`cmd/flok-relay`: serve, tail, token, pin, health): `/link` for
+  `internal/relay` is `flok-relay` (`cmd/flok-relay`: serve, tail, token, phones, pin, health): `/link` for
   instances (bearer instance token; the newest connection under a name replaces the older), and
   `/link/tls`, the same frames inside TLS 1.3 to the relay's own key (`internal/link/tunnel`:
   `websocket.NetConn` + `crypto/tls`, lines of JSON inside, deflated after the auth exchange
@@ -304,7 +304,12 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
   `flok-relay pin`; the instance pins it with `[link] pin`, sends its token as the first frame
   inside, and a proxy that inspects HTTPS reads nothing; `relay/linkconn.go` puts both behind
   `frameConn`; `tunnel_only` refuses the plain path; m11 checks it through a byte-logging tap),
-  `/api/*` for the app (bearer device token; `/api/ws` live stream, `/api/answer` waits for the
+  `/api/*` for the app (bearer: an optional static device token, or a paired phone's own key,
+  kept hashed in `phones.json`, `relay/phones.go`; `POST /api/pair`, the one call without a
+  token and per-IP throttled (`pairlimit.go`), redeems a code the relay minted for an
+  instance's `phone` link frame, one live code per instance, 5 min, once, and tells that
+  instance `paired` under the request's id; `forgetPhone` drops the key, the phone's devices and
+  closes its streams with `wire.CloseForgotten`; `/api/ws` live stream, `/api/answer` waits for the
   instance's ack, `/api/screen` one look at a pane for the expanded notification), subscriptions
   refcounted per instance and pane (a watched pane's last screen is kept, so a second viewer gets
   it at once), the last snapshot kept while offline, per-device notification settings
@@ -322,7 +327,14 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
   410 forgets the device) to the devices in `devices.json`. `deploy/relay` has the Dockerfile
   (scratch + CA bundle), the Portainer compose with Traefik labels and the example configs; the
   release workflow publishes `ghcr.io/w4jnl/flok-relay` for amd64 and arm64 with plain docker
-  (no third-party actions). The iOS app lives in `app/ios` (SwiftUI, iOS 17+, Swift 6 strict
+  (no third-party actions). Pairing a phone: `flok phone pair|list|forget` (`internal/cli/phone.go`;
+  `--open` a popup, `p` in the servers panel) files a `phone` request in the mailbox, the
+  sidebar (`ui/phone.go`) sends the `phone` link frame, and the relay's reply (and the later
+  `paired`) is written to `$FLOK_STATE/phone/<id>.json` for the command to poll; the QR
+  (`internal/qr`, the journal's encoder with a half-block terminal renderer) holds
+  `flok://pair?code=…&relay=<link.OriginURL>`, which the app's `FlokLink.pairing` reads from a
+  scan (`QRScanner`, VisionKit) or the Camera app and `PairView` redeems at `/api/pair`;
+  `Relay.State.forgotten` follows a 401 on a paired key or the `forgotten` close reason. The iOS app lives in `app/ios` (SwiftUI, iOS 17+, Swift 6 strict
   concurrency; XcodeGen `project.yml` → `Flok.xcodeproj`, not committed; `make ios-project`,
   `ios-build`, `ios-test` against the iPhone 15 simulator, no signing; `ios-device` installs on
   the phone on the cable, `ios-testflight` archives and uploads with `ExportOptions.plist`;

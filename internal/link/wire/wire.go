@@ -15,11 +15,11 @@ import (
 // Proto is the protocol version an instance's hello carries.
 const Proto = 1
 
-// Frame types. Instance to relay: hello, snap, event, screen, ack, bye. Relay to instance: answer,
-// seen, subscribe. Relay to app: instances, instance, event, screen, ack. App to relay: answer,
-// seen, subscribe. Ping/pong are WebSocket control frames, not these. Inside the encrypted
-// link (/link/tls) the instance's first frame is auth with its token, and the relay answers
-// auth (go on) or error (refused) before the hello.
+// Frame types. Instance to relay: hello, snap, event, screen, ack, bye, phone. Relay to instance:
+// answer, seen, subscribe, phone. Relay to app: instances, instance, event, screen, ack. App to
+// relay: answer, seen, subscribe. Ping/pong are WebSocket control frames, not these. Inside the
+// encrypted link (/link/tls) the instance's first frame is auth with its token, and the relay
+// answers auth (go on) or error (refused) before the hello.
 const (
 	TypeAuth      = "auth"
 	TypeHello     = "hello"
@@ -31,6 +31,7 @@ const (
 	TypeAnswer    = "answer"
 	TypeSeen      = "seen"
 	TypeSubscribe = "subscribe"
+	TypePhone     = "phone"     // instance to relay: pair | list | forget (ID = the request); relay to instance: the reply under that ID, or paired, unsolicited, under the ID the code was asked with
 	TypeInstances = "instances" // relay to app on connect: every instance the relay knows
 	TypeInstance  = "instance"  // relay to app: one instance changed (online, offline, a new snapshot)
 	TypeError     = "error"     // either way: a message for the log
@@ -51,11 +52,37 @@ type Frame struct {
 	Error    string             `json:"error,omitempty"`
 	Token    string             `json:"token,omitempty"`  // auth: the instance token, only ever inside the tunnel
 	Reason   string             `json:"reason,omitempty"` // bye: ByeOff
+	Phone    *Phone             `json:"phone,omitempty"`  // phone: a pairing request and its reply
 	// Instances is the relay's view of every instance (TypeInstances), Inst one of them
 	// (TypeInstance).
 	Instances []Instance `json:"instances,omitempty"`
 	Inst      *Instance  `json:"inst,omitempty"`
 }
+
+// Phone is what flok phone asks the relay over the link (pair, list, forget) and what the relay
+// answers: a pairing code for the QR, the phones paired, the one a request was about. The relay
+// never sends a phone's key over the link; the phone alone gets it, once, from POST /api/pair.
+type Phone struct {
+	Op        string      `json:"op"`                  // pair | list | forget; paired: the relay's word that a code was redeemed
+	Name      string      `json:"name,omitempty"`      // forget: the phone's name or id, as typed
+	Code      string      `json:"code,omitempty"`      // pair: the code, AB7Q-K2MN
+	ExpiresAt time.Time   `json:"expires_at,omitzero"` // pair: when the code dies
+	Phones    []PhoneInfo `json:"phones,omitempty"`    // list, forget: the phones paired (after the forget)
+	Phone     *PhoneInfo  `json:"phone,omitempty"`     // paired, forget: the one it is about
+}
+
+// PhoneInfo is one paired phone as the relay keeps it, without its key.
+type PhoneInfo struct {
+	ID       string    `json:"id"`
+	Name     string    `json:"name"`
+	Paired   time.Time `json:"paired"`
+	LastSeen time.Time `json:"last_seen,omitzero"`
+	Instance string    `json:"instance,omitempty"` // the instance that showed the code
+}
+
+// CloseForgotten is the reason the relay closes an app's stream with when its phone was
+// forgotten (flok phone forget): the app asks to pair again instead of retrying.
+const CloseForgotten = "forgotten: pair this phone again"
 
 // Hello opens an instance's link.
 type Hello struct {
@@ -105,10 +132,11 @@ const (
 	FeatureScreen   = "screen"    // streams screens on subscribe
 	FeatureLongText = "long-text" // an answer's text may be long and multi-line (pasted); without it at most answer.MaxText on one line
 	FeatureFiles    = "files"     // an answer may carry a file, saved next to the agent and typed as its path
+	FeaturePhone    = "phone"     // sends phone frames (flok phone pair | list | forget) and takes the replies
 )
 
 // InstanceFeatures is what this flok's link advertises.
-var InstanceFeatures = []string{FeatureAnswer, FeatureScreen, FeatureLongText, FeatureFiles}
+var InstanceFeatures = []string{FeatureAnswer, FeatureScreen, FeatureLongText, FeatureFiles, FeaturePhone}
 
 // MaxFrame bounds one frame from an instance (a snapshot of a busy site is a few hundred KB).
 const MaxFrame = 8 << 20

@@ -570,13 +570,16 @@ func (m Model) gotoCmd(host, sess, win, pane string, keepFocus bool) tea.Cmd {
 }
 
 // hostKey runs a servers-panel key on the selected row: c connect, d disconnect, r reconnect
-// now, m flip the mode, x remove (after y/n), i details. The registry keys go through
-// hosts.json like the CLI; the file change comes back as a hostsMsg and the manager follows.
+// now, m flip the mode, x remove (after y/n), i details, p pair a phone (any row: the relay
+// link is this flok's). The registry keys go through hosts.json like the CLI; the file change
+// comes back as a hostsMsg and the manager follows.
 func (m Model) hostKey(k, host string) (tea.Model, tea.Cmd) {
-	if host == "" && k != "i" {
+	if host == "" && k != "i" && k != "p" {
 		return m, nil
 	}
 	switch k {
+	case "p": // a popup over the outer shows the pairing code and its QR
+		return m, m.runFlok("phone", "pair", "--open")
 	case "c":
 		return m, m.hostEnabledCmd(host, true)
 	case "d":

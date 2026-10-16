@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"text/tabwriter"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -41,6 +42,7 @@ usage: flok-relay <command>
   serve    run the relay (-config relay.toml, -listen :8080, -data /data; env FLOK_RELAY_*)
   tail     connect as the app and print what it would see (-url, -token, -subscribe inst:%12)
   token    print a fresh random token for the config
+  phones   list the phones paired with the relay (-data /data; reads phones.json)
   pin      print the pin of the relay's key for [link] pin (-data /data; created when missing)
   health   GET /healthz and exit 0 when the relay answers (-url)
   version  print the version
@@ -74,6 +76,8 @@ func main() {
 		rc = runTail(os.Args[2:])
 	case "token":
 		fmt.Println(relay.NewToken())
+	case "phones":
+		rc = runPhones(os.Args[2:])
 	case "pin":
 		rc = runPin(os.Args[2:])
 	case "health":
@@ -110,7 +114,7 @@ func runServe(args []string) int {
 	fs := flag.NewFlagSet("flok-relay serve", flag.ContinueOnError)
 	cfgPath := fs.String("config", env("CONFIG", ""), "TOML config file (optional; the environment overrides it)")
 	listen := fs.String("listen", "", "address to listen on (default :8080)")
-	data := fs.String("data", "", "data dir for devices.json (default from config, else none)")
+	data := fs.String("data", "", "data dir for devices.json, phones.json and the link key (default from config, else none)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -139,8 +143,8 @@ func runServe(args []string) int {
 	if v := env("TUNNEL_ONLY", ""); v != "" {
 		fc.TunnelOnly = v == "1" || strings.EqualFold(v, "true")
 	}
-	if len(fc.InstanceTokens) == 0 || len(fc.DeviceTokens) == 0 {
-		fmt.Fprintln(os.Stderr, "flok-relay: instance_tokens and device_tokens are both needed (flok-relay token prints one)")
+	if len(fc.InstanceTokens) == 0 {
+		fmt.Fprintln(os.Stderr, "flok-relay: instance_tokens are needed (flok-relay token prints one); phones pair with flok phone pair, device_tokens are optional")
 		return 1
 	}
 	logger := log.New(os.Stdout, "", log.LstdFlags)
@@ -205,7 +209,10 @@ func runServe(args []string) int {
 		defer cancel()
 		_ = hs.Shutdown(sctx)
 	}()
-	logger.Printf("flok-relay %s listening on %s (%d instance tokens, %d device tokens)", version, *listen, len(fc.InstanceTokens), len(fc.DeviceTokens))
+	if *data == "" {
+		logger.Printf("phones: kept in memory (no data dir): pairings do not survive a restart")
+	}
+	logger.Printf("flok-relay %s listening on %s (%d instance tokens, %d device tokens, %d phones paired)", version, *listen, len(fc.InstanceTokens), len(fc.DeviceTokens), srv.PhoneCount())
 	if err := hs.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		fmt.Fprintln(os.Stderr, "flok-relay:", err)
 		return 1
@@ -216,6 +223,36 @@ func runServe(args []string) int {
 
 // linkKeyFile holds the relay's key and self-signed certificate for the encrypted link.
 const linkKeyFile = "link-key.pem"
+
+// runPhones lists the phones paired with the relay, from its phones.json: for an admin at the
+// container. Pairing and forgetting go through an instance (flok phone pair | forget).
+func runPhones(args []string) int {
+	fs := flag.NewFlagSet("flok-relay phones", flag.ContinueOnError)
+	data := fs.String("data", env("DATA_DIR", "/data"), "the relay's data dir")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	list, err := relay.ListPhones(*data)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "flok-relay:", err)
+		return 1
+	}
+	if len(list) == 0 {
+		fmt.Println("no phones paired (flok phone pair on an instance shows the code)")
+		return 0
+	}
+	tw := tabwriter.NewWriter(os.Stdout, 0, 8, 2, ' ', 0)
+	fmt.Fprintln(tw, "ID\tNAME\tPAIRED\tLAST SEEN\tVIA")
+	for _, p := range list {
+		seen := "never"
+		if !p.LastSeen.IsZero() {
+			seen = p.LastSeen.Local().Format("2006-01-02 15:04")
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", p.ID, p.Name, p.Paired.Local().Format("2006-01-02 15:04"), seen, p.Instance)
+	}
+	_ = tw.Flush()
+	return 0
+}
 
 // runPin prints the pin of the relay's key, creating the key the way serve would.
 func runPin(args []string) int {

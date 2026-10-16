@@ -55,6 +55,36 @@ expect "the device list never shows the whole token" '^0$' "$(GET /api/devices |
 expect "the phone reports a Live Activity" '"ok":true' "$(PUT /api/devices/e2edevicetoken0001/activity '{"activities":[{"id":"A1","token":"e2eoverviewtoken","kind":"overview"}]}')"
 expect_soon "… which gets the overview as a liveactivity push" '^/3/device/e2eoverviewtoken[|].*[|]liveactivity$' cat "$APNS_LOG"
 
+# --- a phone pairs by the code the terminal shows ---------------------------------------------
+# flok phone pair asks the relay over the sidebar's link (the request mailbox, a phone frame);
+# the phone redeems the code at /api/pair for a key of its own, which the relay keeps in
+# phones.json; forget revokes the key and takes the phone's device with it
+PAIR=$("$BIN" phone pair --json)
+expect "flok phone pair mints a code through the sidebar and the link" '"code":"[A-Z2-9]{4}-[A-Z2-9]{4}".*"url":"flok://pair\?code=[A-Z2-9-]{9}&relay=http%3A%2F%2F127.0.0.1%3A'"$RELAY_PORT"'"' "$PAIR"
+CODE=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["code"])' "$PAIR")
+expect "a wrong code gets the one answer" 'not valid any more' "$(curl -s -m 5 -d '{"code":"AAAA-AAAA","name":"x"}' "http://127.0.0.1:$RELAY_PORT/api/pair")"
+PAIRED=$(curl -s -m 5 -d '{"code":"'"$CODE"'","name":"e2e iPhone"}' "http://127.0.0.1:$RELAY_PORT/api/pair")
+expect "the phone redeems it for a key of its own" '"phone":\{"id":"[0-9a-f]+","name":"e2e iPhone"\}.*"token":"[0-9a-f]{48}"' "$PAIRED"
+PHONE_TOK=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["token"])' "$PAIRED")
+expect "the code is good once" 'not valid any more' "$(curl -s -m 5 -d '{"code":"'"$CODE"'"}' "http://127.0.0.1:$RELAY_PORT/api/pair")"
+expect_soon "the sidebar hears that the phone paired" '"cmd":"phone","name":"e2e iPhone","op":"paired"' cat "$T/state/events.log"
+expect "the key opens the API" '"name":"e2e"' "$(curl -s -m 5 -H "Authorization: Bearer $PHONE_TOK" "http://127.0.0.1:$RELAY_PORT/api/instances")"
+expect "… and registers the phone's device as its own" '"ok":true' "$(curl -s -m 5 -H "Authorization: Bearer $PHONE_TOK" -d '{"token":"e2ephonedevice0001","name":"e2e iPhone"}' "http://127.0.0.1:$RELAY_PORT/api/devices")"
+expect "the device carries its pairing" '"name":"e2e iPhone","phone":"[0-9a-f]{12}"' "$(GET /api/devices)"
+expect "flok phone list shows the phone" 'e2e iPhone.*e2e' "$("$BIN" phone list)"
+expect "flok-relay phones reads the relay's file" 'e2e iPhone' "$("$RELAY" phones -data "$RELAY_DATA")"
+expect "flok phone forget revokes it" 'e2e iPhone forgotten' "$("$BIN" phone forget 'e2e iPhone')"
+expect_soon "the key is refused from then on" '^401$' curl -s -m 5 -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $PHONE_TOK" "http://127.0.0.1:$RELAY_PORT/api/instances"
+expect "its device went with it" '^0$' "$(GET /api/devices | grep -c e2ephonedevice || true)"
+expect "the relay logged the pairing and the forget" 'phone e2e iPhone (.*) paired through e2e.*phone e2e iPhone (.*) forgotten by e2e' "$(tr '\n' ' ' < "$RELAY_LOG")"
+# a relay needs instance tokens alone: phones come by pairing
+P2=$(free_port)
+FLOK_RELAY_INSTANCE_TOKENS=$INST_TOK "$RELAY" serve -listen "127.0.0.1:$P2" > "$T/relay2.log" 2>&1 &
+R2_PID=$!
+expect_soon "a relay starts with instance tokens alone" '"ok":true' "$RELAY" health -url "http://127.0.0.1:$P2/healthz"
+expect "… and says its pairings live in memory without a data dir" 'phones: kept in memory' "$(cat "$T/relay2.log")"
+kill "$R2_PID" 2>/dev/null || true; wait "$R2_PID" 2>/dev/null || true
+
 # --- a blocked agent: the app hears it, the phone gets a push ----------------------------------
 "$RELAY" tail -url "http://127.0.0.1:$RELAY_PORT" -token "$DEV_TOK" -subscribe "e2e:$AGENT" > "$T/tail.out" 2>&1 &
 TAIL_PID=$!
@@ -75,7 +105,7 @@ expect "the log holds no typed text" '^0$' "$(grep -c '"y"' "$T/state/events.log
 # a long reply with newlines is pasted through a tmux buffer; a file is saved under the state
 # dir and typed as its path (what an image for Claude Code looks like); the relay tells the app
 # what the instance takes, and refuses what it does not
-expect "the relay lists what the instance takes" '"features":\["answer","screen","long-text","files"\]' "$(GET /api/instances)"
+expect "the relay lists what the instance takes" '"features":\["answer","screen","long-text","files","phone"\]' "$(GET /api/instances)"
 expect "a long reply with newlines is taken" '"ok":true' "$(POST /api/answer '{"instance":"e2e","pane":"'"$AGENT"'","text":"first long line\nsecond long line","keys":["Enter"]}')"
 expect_soon "the pane shows both lines" '^first long line *$' IN capture-pane -p -J -t "$AGENT"
 expect "… the second as well" '^second long line *$' "$(IN capture-pane -p -J -t "$AGENT")"
