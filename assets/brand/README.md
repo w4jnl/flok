@@ -31,6 +31,7 @@ it has a right to.
 | `flok-lockup-tagline.svg` | lockup + "agent sidebar for tmux" |
 | `flok-wordmark.svg` | `[flok]` — primary wordmark, mark-free contexts |
 | `favicon.svg` | 32px, teal tile, white mark |
+| `flok-appicon.svg` | the phone app's icon: the mark in working cyan on a dark gradient tile, 1024px; `app/ios/Flok/Assets.xcassets/AppIcon.appiconset/AppIcon.png` is its render, flattened (the App Store refuses an alpha channel) |
 | `flok-hero.png` | README banner, rendered from `hero.html` (the tagline lockup on the ground colour) by `render-hero.sh` |
 
 Wordmark SVGs reference JetBrains Mono 700 by name. Convert text to outlines
