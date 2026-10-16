@@ -10,6 +10,7 @@ scripts/e2e/m4.sh      # one suite (make e2e SUITES="m4 m7" for a few)
 make relay             # bin/flok-relay, the phone's relay (cgo-free)
 make ios-build         # the iOS app for the simulator, no signing (ios-test runs its unit tests)
 make icons             # regenerate the menu bar template icons (assets/icons/gen)
+assets/brand/flok-appicon.svg   # the phone app's icon; its 1024 px render, flattened (the App Store refuses an alpha channel), is the asset catalog's AppIcon.png
 assets/demo/record.sh  # the README's GIF; menubar.sh the menu bar picture; phone.sh the phone screens
 assets/diagram/render.sh   # the README's architecture picture
 scripts/spike/m0-outer.sh check   # nested-outer passthrough checks

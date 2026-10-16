@@ -6,6 +6,8 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+- **A new app icon** on the phone: the mark in the brand's cyan on a dark tile, drawn larger.
+  The master is `assets/brand/flok-appicon.svg`.
 - **The screen holds still while you read.** An agent's screen on the phone went to its bottom
   at every refresh, so scrolling up to read something earlier lost the place a second later. It
   now follows the bottom only while you are there: scroll up and it stays put as the screen
