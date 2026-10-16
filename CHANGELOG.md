@@ -4,7 +4,7 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
-## Unreleased
+## 0.8.1 (2026-10-16)
 
 - **A new app icon** on the phone: the mark in the brand's cyan on a dark tile, drawn larger.
   The master is `assets/brand/flok-appicon.svg`.
