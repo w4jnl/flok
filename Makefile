@@ -45,11 +45,13 @@ IOS_SCREENS_SIM ?= platform=iOS Simulator,name=iPhone 15 Pro
 ios-screens: ios-project
 	cd app/ios && TEST_RUNNER_FLOK_RELAY='$(RELAY)' TEST_RUNNER_FLOK_DEVICE_TOKEN='$(TOKEN)' TEST_RUNNER_FLOK_SHOTS='$(SHOTS)' \
 	xcodebuild -project Flok.xcodeproj -scheme FlokScreens -configuration Debug -destination '$(IOS_SCREENS_SIM)' -derivedDataPath build/DerivedData -allowProvisioningUpdates $(ASC_AUTH) test -quiet
-# Build, install and launch on the iPhone (unlocked; cable, or Wi-Fi once paired); signs with Local.xcconfig's team.
+# Build, install and launch on the iPhone or iPad (unlocked; cable, or Wi-Fi once paired); signs with
+# Local.xcconfig's team and registers a new device in the developer account on the way. The first
+# device devicectl lists as reachable is taken; IOS_DEVICE=<udid> picks one.
 ios-device: ios-project
-	@udid=$$(xcrun devicectl list devices 2>/dev/null | grep -v simulated | grep -E ' connected | available \(paired\) ' | grep -oE '[0-9A-F]{8}-[0-9A-F]{16}' | head -1); \
-	[ -n "$$udid" ] || { echo "ios-device: no iPhone reachable: unlock it, on a cable or on the same Wi-Fi (a locked or absent phone shows as unavailable)"; exit 1; }; \
-	cd app/ios && xcodebuild -project Flok.xcodeproj -scheme Flok -configuration Debug -destination "id=$$udid" -derivedDataPath build/DerivedData -allowProvisioningUpdates $(ASC_AUTH) build -quiet && \
+	@udid=$(IOS_DEVICE); [ -n "$$udid" ] || udid=$$(xcrun devicectl list devices 2>/dev/null | grep -v simulated | grep -E ' connected | available \(paired\) ' | grep -oE '[0-9A-F]{8}-[0-9A-F]{16}' | head -1); \
+	[ -n "$$udid" ] || { echo "ios-device: no iPhone or iPad reachable: unlock it, on a cable or on the same Wi-Fi (a locked or absent device shows as unavailable)"; exit 1; }; \
+	cd app/ios && xcodebuild -project Flok.xcodeproj -scheme Flok -configuration Debug -destination "id=$$udid" -derivedDataPath build/DerivedData -allowProvisioningUpdates -allowProvisioningDeviceRegistration $(ASC_AUTH) build -quiet && \
 	xcrun devicectl device install app --device "$$udid" build/DerivedData/Build/Products/Debug-iphoneos/Flok.app >/dev/null && \
 	xcrun devicectl device process launch --terminate-existing --device "$$udid" nl.w4j.flok >/dev/null && echo "ios-device: installed and launched on $$udid"
 

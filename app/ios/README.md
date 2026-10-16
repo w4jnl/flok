@@ -54,7 +54,9 @@ entitlement, and nothing else changes.
 2. In the developer account: an App ID `nl.w4j.flok` with Push Notifications enabled, and under
    Keys one key for the Apple Push Notifications service. The `.p8`, its key id, the team id and
    the bundle id go into the relay (`deploy/relay`, `FLOK_RELAY_APNS_*`).
-3. Build and run on the device from Xcode (`make ios-device` with the phone on the cable). A
+3. Build and run on the device from Xcode (`make ios-device` with the phone or iPad on the
+   cable; it takes the first reachable device, `IOS_DEVICE=<udid>` picks one, and a device new to
+   your developer account is registered on the way). A
    build installed this way is a development build and registers a sandbox token; a TestFlight
    build (`make ios-testflight`, after creating the app record for `nl.w4j.flok` in App Store
    Connect; or Product → Archive → Distribute) a production one. The relay pushes each phone through
