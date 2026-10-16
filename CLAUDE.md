@@ -336,7 +336,7 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
   scan (`QRScanner`, VisionKit) or the Camera app and `PairView` redeems at `/api/pair`;
   `Relay.State.forgotten` follows a 401 on a paired key or the `forgotten` close reason. The iOS app lives in `app/ios` (SwiftUI, iOS 17+, Swift 6 strict
   concurrency; XcodeGen `project.yml` → `Flok.xcodeproj`, not committed; `make ios-project`,
-  `ios-build`, `ios-test` against the iPhone 15 simulator, no signing; `ios-device` installs on
+  `ios-build`, `ios-test` against the iPhone 15 simulator, no signing; `ios-device` (`IOS_DEVICE=<udid>` picks one; a new device is registered in the developer account on the way) installs on
   the phone on the cable, `ios-testflight` archives and uploads with `ExportOptions.plist`;
   `Local.xcconfig` holds the team id and, optional, the App Store Connect API key the Makefile signs in with (`ASC_AUTH`); `Shared/` is compiled into the app and its two notification
   extensions: `FlokNotificationService` puts the brand state tile on a push (`Tiles/`, from
