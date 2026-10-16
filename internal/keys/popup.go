@@ -18,10 +18,16 @@ const popupStyle = "fg=default,bg=default"
 
 // PopupArgsTitled is PopupArgs with the popup's title (shown from 3.3 on).
 func PopupArgsTitled(f tmux.Features, client, cmd, title string) []string {
+	return PopupArgsSized(f, client, cmd, title, "80%", "85%")
+}
+
+// PopupArgsSized is PopupArgsTitled with the popup's size (tmux's -w and -h: cells or a
+// percentage), for a popup drawn to a fixed picture such as the pairing QR.
+func PopupArgsSized(f tmux.Features, client, cmd, title, width, height string) []string {
 	if !f.Popup {
 		return nil
 	}
-	args := []string{"display-popup", "-E", "-w", "80%", "-h", "85%"}
+	args := []string{"display-popup", "-E", "-w", width, "-h", height}
 	if client != "" {
 		args = append(args, "-c", client)
 	}

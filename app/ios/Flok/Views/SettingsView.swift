@@ -4,8 +4,7 @@ struct SettingsView: View {
     @Environment(Relay.self) private var relay
     @Environment(Settings.self) private var settings
     @Environment(\.dismiss) private var dismiss
-    @State private var url = ""
-    @State private var token = ""
+    @State private var showPair = false
     @State private var notifications = Notifications.shared
     @State private var voiceLocales: [Locale] = []
 
@@ -23,22 +22,14 @@ struct SettingsView: View {
         @Bindable var settings = settings
         Form {
             Section {
-                TextField("https://flok.example.net", text: $url)
-                    .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
-                SecureField("device token", text: $token)
-                    .textInputAutocapitalization(.never).autocorrectionDisabled()
-                Button("Save and connect") {
-                    settings.relayURL = url
-                    settings.deviceToken = token.trimmingCharacters(in: .whitespacesAndNewlines)
-                    relay.connect()
-                    Task { await notifications.registerIfNeeded() }
-                }
-                .disabled(RelayURL.base(url) == nil || token.trimmingCharacters(in: .whitespaces).isEmpty)
+                LabeledContent("Relay", value: settings.relayURL.isEmpty ? "none yet" : (settings.baseURL?.host() ?? settings.relayURL))
+                LabeledContent("Paired as", value: settings.pairedPhoneName ?? (settings.deviceToken.isEmpty ? "not yet" : "a device token"))
+                Button(settings.isConfigured ? "Pair this phone again…" : "Pair this phone…") { showPair = true }
                 LabeledContent("Status", value: relay.state.label)
             } header: {
                 Text("Relay")
             } footer: {
-                Text("One of the relay's device_tokens (FLOK_RELAY_DEVICE_TOKENS in the stack). Not an instance's [link] token: that one logs a flok in, this one logs the phone in.")
+                Text("Pairing gives this phone a key of its own on the relay: `flok phone pair` on a Mac shows the code, `flok phone forget` revokes it. A device token from the relay's config still works, under Pair.")
             }
             Section {
                 LabeledContent("Permission", value: permissionLabel)
@@ -96,9 +87,8 @@ struct SettingsView: View {
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
-        .onAppear {
-            url = settings.relayURL
-            token = settings.deviceToken
+        .sheet(isPresented: $showPair) {
+            NavigationStack { PairView() }
         }
     }
 

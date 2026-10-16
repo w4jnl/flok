@@ -7,9 +7,13 @@ binary, no database: the only state is `devices.json` (the phones registered for
 ## Run it behind Traefik with Portainer
 
 1. DNS: point `flok.example.net` at the host Traefik runs on.
-2. Tokens: `flok-relay token` (or `openssl rand -hex 24`) once per flok instance and once for
-   the phone. Copy `stack.env.example` to `stack.env` and fill them in, with `FLOK_HOST` and the
-   names of your Traefik network, HTTPS entrypoint and certificate resolver.
+2. Tokens: `flok-relay token` (or `openssl rand -hex 24`) once per flok instance. Phones need
+   none: once an instance is linked, `flok phone pair` there shows a code and its QR, and the
+   relay keeps the phones it pairs in `phones.json` on the data volume (`flok-relay phones`
+   lists them, `flok phone list | forget` on an instance manages them). A static device token
+   is optional, for curl and scripts. Copy `stack.env.example` to `stack.env` and fill it in,
+   with `FLOK_HOST` and the names of your Traefik network, HTTPS entrypoint and certificate
+   resolver.
 3. APNs (optional until the app exists): in the developer account, Keys → a key with the Apple
    Push Notifications service; download the `.p8`, note its key id and your team id. The key
    travels as one base64 line in `FLOK_RELAY_APNS_KEY_B64` (`base64 -i AuthKey_XXXX.p8 | tr -d
@@ -72,7 +76,11 @@ flok-relay tail -url … -token … -subscribe home:%12                         
 flok-relay tail -url … -token … -answer home:%12 -text y -keys Enter               # type an answer, exit
 curl -s -H "Authorization: Bearer <device token>" https://flok.example.net/api/instances | jq .
 curl -s -H "Authorization: Bearer <device token>" -d '{"instance":"home","pane":"%12","keys":["Escape"]}' https://flok.example.net/api/answer
+docker exec flok-relay /flok-relay phones                                          # the phones paired, from phones.json
 ```
+
+The device token here is a paired phone's key (the app got it from `POST /api/pair`; nothing
+prints it again) or one of the optional static `device_tokens`.
 
 ## What it accepts, and what it never does
 

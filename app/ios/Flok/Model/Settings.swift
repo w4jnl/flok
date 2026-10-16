@@ -22,6 +22,9 @@ final class Settings {
     var voiceLocale: String { didSet { defaults.set(voiceLocale, forKey: "voiceLocale") } }
     /// "<relay>|<apns token>" of the last device registration, so it is not repeated at every start.
     var registered: String? { didSet { defaults.set(registered, forKey: "registered") } }
+    /// The pairing this phone's key came from (flok phone pair); nil when a device token was typed.
+    var pairedPhoneID: String? { didSet { defaults.set(pairedPhoneID, forKey: "pairedPhoneID") } }
+    var pairedPhoneName: String? { didSet { defaults.set(pairedPhoneName, forKey: "pairedPhoneName") } }
     /// What this phone wants pushed; Relay.updatePrefs changes it and tells the relay.
     var notificationPrefs: NotificationPrefs {
         didSet { defaults.set(try? JSONEncoder().encode(notificationPrefs), forKey: "notificationPrefs") }
@@ -40,6 +43,8 @@ final class Settings {
         voiceSendOnRelease = defaults.bool(forKey: "voiceSendOnRelease")
         voiceLocale = defaults.string(forKey: "voiceLocale") ?? ""
         registered = defaults.string(forKey: "registered")
+        pairedPhoneID = defaults.string(forKey: "pairedPhoneID")
+        pairedPhoneName = defaults.string(forKey: "pairedPhoneName")
         notificationPrefs = defaults.data(forKey: "notificationPrefs").flatMap { try? JSONDecoder().decode(NotificationPrefs.self, from: $0) } ?? NotificationPrefs()
         // Saved again at every start: an item from a build before the shared keychain group moves
         // into it, and the extension finds the relay even when only the token was in the keychain.

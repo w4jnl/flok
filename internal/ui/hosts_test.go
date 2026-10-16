@@ -469,12 +469,26 @@ func TestInstallKeyAndNoFlokNotice(t *testing.T) {
 	if cmd := m.runRequest(state.Request{Cmd: "reconnect", Host: "BETA"}); cmd != nil || m.errText != "" {
 		t.Fatalf("reconnect without a manager: %v %q", cmd, m.errText)
 	}
-	found := false
+	found, foundP := false, false
 	for _, b := range SidebarKeySections(true)[1].Bindings {
 		found = found || b.Key == "I"
+		foundP = foundP || b.Key == "p"
 	}
-	if !found {
-		t.Fatal("the servers help lists I")
+	if !found || !foundP {
+		t.Fatal("the servers help lists I and p")
+	}
+	// p pairs a phone from any row, the local one too: a detached `flok phone pair --open`
+	started = nil
+	if _, cmd := m.hostKey("p", ""); cmd == nil {
+		t.Fatal("p on the local row does nothing")
+	} else {
+		cmd()
+	}
+	if _, cmd := m.hostKey("p", "beta"); cmd != nil {
+		cmd()
+	}
+	if len(started) != 2 || started[0] != "/x/flok phone pair --open" || started[1] != "/x/flok phone pair --open" {
+		t.Fatalf("p started %q", started)
 	}
 }
 

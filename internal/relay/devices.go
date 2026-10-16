@@ -17,6 +17,7 @@ type device struct {
 	Sandbox bool      `json:"sandbox,omitempty"`
 	Added   time.Time `json:"added"`
 	Prefs   *Prefs    `json:"prefs,omitempty"` // what the phone wants pushed; nil = everything
+	Phone   string    `json:"phone,omitempty"` // the paired phone that registered it (phones.json id); "" = a static device token did
 	// Live Activities (Dynamic Island, Lock Screen): the token that starts one by push, and
 	// the ones running with their own update tokens; the app reports both (PUT …/activity).
 	ActivityStart string     `json:"activity_start,omitempty"`
@@ -95,6 +96,9 @@ func (ds *deviceStore) add(d device) error {
 		if d.Prefs == nil { // a registration without settings (curl) keeps the phone's
 			d.Prefs = old.Prefs
 		}
+		if d.Phone == "" { // a registration with a static token keeps the pairing it had
+			d.Phone = old.Phone
+		}
 		d.ActivityStart, d.Activities = old.ActivityStart, old.Activities
 	}
 	ds.byTk[d.Token] = d
@@ -107,6 +111,43 @@ func (ds *deviceStore) add(d device) error {
 		return err
 	}
 	return nil
+}
+
+// get is the device registered under a push token.
+func (ds *deviceStore) get(tok string) (device, bool) {
+	ds.mu.Lock()
+	defer ds.mu.Unlock()
+	d, ok := ds.byTk[tok]
+	return d, ok
+}
+
+// anyFor reports whether a paired phone still has a device registered.
+func (ds *deviceStore) anyFor(phone string) bool {
+	ds.mu.Lock()
+	defer ds.mu.Unlock()
+	for _, d := range ds.byTk {
+		if d.Phone == phone {
+			return true
+		}
+	}
+	return false
+}
+
+// removeByPhone drops every device a paired phone registered and returns them.
+func (ds *deviceStore) removeByPhone(phone string) []device {
+	ds.mu.Lock()
+	defer ds.mu.Unlock()
+	var gone []device
+	for tok, d := range ds.byTk {
+		if d.Phone == phone {
+			gone = append(gone, d)
+			delete(ds.byTk, tok)
+		}
+	}
+	if len(gone) > 0 {
+		_ = ds.saveLocked()
+	}
+	return gone
 }
 
 // setPrefs replaces a device's settings; false when the token is not registered.

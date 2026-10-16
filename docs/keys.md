@@ -34,6 +34,7 @@ Inside the sidebar (`prefix g`, a click, or `flok focus`):
 | `m` | servers panel: flip the host's mode, full ↔ plain |
 | `x` | servers panel: remove the host (asks `y/n` in the footer) |
 | `i` | servers panel: host details (target, mode, state and hint, flok and tmux versions, agents) |
+| `p` | servers panel: pair a phone, a popup shows the code and its QR (`flok phone pair --open`) |
 | `Enter` | open the selected row and hand the keyboard to the work pane (a servers row brings that host's work pane to the front) |
 | `1`-`9` | open agent N; `!` `@` `#` … open session N |
 | `g` / `G` | first / last row |

@@ -54,7 +54,7 @@ struct RelayAPI: Sendable {
         }
         let (data, resp) = try await session.data(for: req)
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
-        if code != 200 {
+        if !(200...299).contains(code) {
             let msg = (try? JSONDecoder().decode([String: String].self, from: data))?["error"] ?? ""
             throw RelayError.http(code, msg)
         }

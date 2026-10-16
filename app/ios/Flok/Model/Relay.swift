@@ -24,6 +24,9 @@ final class Relay {
     enum State: Equatable {
         case off, connecting, connected
         case failed(String)
+        /// The relay no longer knows this phone's key (flok phone forget there): pairing again is
+        /// the way back, not a retry.
+        case forgotten
 
         var label: String {
             switch self {
@@ -31,6 +34,7 @@ final class Relay {
             case .connecting: "connecting"
             case .connected: "connected"
             case .failed(let why): why
+            case .forgotten: "this phone was forgotten on the relay: pair it again"
             }
         }
     }
@@ -111,6 +115,7 @@ final class Relay {
         }
         defer { pinger.cancel() }
         var failure = "connection closed"
+        var forgotten = false
         do {
             while generation == gen {
                 let msg = try await ws.receive()
@@ -131,16 +136,26 @@ final class Relay {
                 }
             }
         } catch {
-            if let code = (ws.response as? HTTPURLResponse)?.statusCode, code == 401 || code == 403 {
-                failure = "the relay refused the token: it needs one of its device_tokens (an instance's [link] token is a different one)"
-            } else if let code = (ws.response as? HTTPURLResponse)?.statusCode, code != 101 {
-                failure = "relay answered \(code)"
+            let status = (ws.response as? HTTPURLResponse)?.statusCode
+            let reason = ws.closeReason.map { String(decoding: $0, as: UTF8.self) } ?? ""
+            if let status, status == 401 || status == 403, settings.pairedPhoneID != nil {
+                forgotten = true // a paired key the relay refuses: forgotten there
+            } else if let status, status == 401 || status == 403 {
+                failure = "the relay refused the token: it needs one of its device_tokens, or pair this phone (an instance's [link] token is a different one)"
+            } else if ws.closeCode == .policyViolation, reason.hasPrefix("forgotten") {
+                forgotten = true // closed under us by flok phone forget
+            } else if let status, status != 101 {
+                failure = "relay answered \(status)"
             } else {
                 failure = (error as? URLError)?.localizedDescription ?? error.localizedDescription
             }
         }
         guard generation == gen else { return }
         task = nil
+        if forgotten { // no retry: the key is gone for good, the Pair button starts over
+            state = .forgotten
+            return
+        }
         state = .failed(failure)
         let delay = min(30.0, pow(2.0, Double(min(attempt, 5))))
         attempt += 1
@@ -250,6 +265,23 @@ final class Relay {
 
     func markSeen(_ t: Target) async throws {
         try await post("/api/seen", SeenBody(instance: t.instance, pane: t.pane))
+    }
+
+    // MARK: pairing
+
+    /// Pairs this phone with a relay by the code `flok phone pair` shows: the key the relay gives
+    /// replaces whatever token was here, and the stream and the push registration start over.
+    func pair(relay: String, code: String) async throws -> PairedPhone {
+        guard let base = RelayURL.base(relay) else { throw RelayError.notConfigured }
+        let r = try await RelayAPI.pair(relay: base, code: code, name: UIDevice.current.name)
+        settings.relayURL = base.absoluteString
+        settings.deviceToken = r.token
+        settings.pairedPhoneID = r.phone.id
+        settings.pairedPhoneName = r.phone.name
+        settings.registered = nil
+        connect()
+        Task { await Notifications.shared.registerIfNeeded() }
+        return r.phone
     }
 
     func registerDevice(apnsToken: String) async throws {

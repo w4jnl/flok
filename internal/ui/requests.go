@@ -62,6 +62,8 @@ func (m *Model) runRequest(r state.Request) tea.Cmd {
 		return m.frontCmd(r.Host)
 	case "last": // `flok last session|window|pane|server`: back along the focus history
 		return m.lastCmd(r.Kind)
+	case "phone": // `flok phone pair|list|forget`: asked of the relay over the link
+		return m.phoneRequest(r)
 	case "reconnect": // `flok host reconnect`, or `flok host install` after an upgrade in place
 		if _, ok := m.hostSet.Get(r.Host); !ok || r.Host == "" {
 			m.errText = "no host " + r.Host

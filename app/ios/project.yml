@@ -61,7 +61,7 @@ targets:
         # recognition as well), and a photo for an agent
         NSMicrophoneUsageDescription: Hold the microphone to dictate a reply to an agent; the words are recognised on this phone.
         NSSpeechRecognitionUsageDescription: On an iPhone before iOS 26 the dictation uses Apple's speech recognition service.
-        NSCameraUsageDescription: Take a photo to send to an agent.
+        NSCameraUsageDescription: Take a photo for an agent, or scan the code that pairs this phone with your relay.
         CFBundleURLTypes:
           - CFBundleURLName: nl.w4j.flok
             CFBundleURLSchemes: [flok]

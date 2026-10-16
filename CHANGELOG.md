@@ -4,6 +4,19 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
+## Unreleased
+
+- **Pair the phone by scanning a code.** `flok phone pair` on a Mac that runs flok shows a code
+  and its QR in the terminal (in a tmux popup with `--open`, or `p` in the sidebar's servers
+  panel); scan it with the Camera app or in the app's new Pair sheet, or type the code there, and
+  the relay gives that phone a key of its own. The phone's token leaves the relay's config:
+  `device_tokens` is optional now (a static one still works, for curl and scripts), the relay
+  keeps its phones in `phones.json`, and `flok phone list` / `flok phone forget <name>` show and
+  revoke them: a forgotten phone's key stops working, its pushes stop, and its app asks to pair
+  again. The request travels over the instance's relay link, so it works through the encrypted
+  tunnel too; `flok-relay phones` lists the pairings at the container. Needs flok-relay updated;
+  an older relay says so.
+
 ## 0.8.1 (2026-10-16)
 
 - **A new app icon** on the phone: the mark in the brand's cyan on a dark tile, drawn larger.

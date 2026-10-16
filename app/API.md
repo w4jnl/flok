@@ -5,19 +5,34 @@ an Android app would use the same calls. JSON everywhere, snake_case keys, RFC 3
 
 ## Authentication
 
-Every call carries `Authorization: Bearer <device token>`, one of the relay's
-`device_tokens`. (Instances use `instance_tokens` on `/link`; an app never needs those.)
-`GET /healthz` is the only call without a token.
+Every call carries `Authorization: Bearer <device token>`: the key this phone got from pairing
+(`POST /api/pair`, below), or one of the relay's optional static `device_tokens`. (Instances use
+`instance_tokens` on `/link`; an app never needs those.) `GET /healthz` and `POST /api/pair` are
+the calls without a token.
+
+Pairing: `flok phone pair` on an instance asks the relay, over its link, for a code of eight
+letters and digits (`AB7Q-K2MN`, alphabet `ABCDEFGHJKLMNPQRSTUVWXYZ23456789`, five minutes, one
+use, one live code per instance) and shows it with a QR holding
+`flok://pair?code=AB7Q-K2MN&relay=https%3A%2F%2Fflok.example.net`. The app posts the code
+(any case, dash optional) with the phone's name and gets a 48-hex key of its own, which it keeps
+and uses as its device token from then on. A wrong, used or expired code is one 400; an address
+that keeps guessing gets 429 with `Retry-After`. The relay ties the phone's push registrations
+to that key: `flok phone forget` on an instance revokes it, removes its devices and closes its
+`/api/ws` streams with code 1008 and the reason `forgotten: pair this phone again`, on which the
+app asks to pair again instead of retrying; a 401 on a paired key means the same. A push token
+registered under a new pairing moves to it and the old pairing is dropped when no device is
+left to it (the same phone paired again).
 
 ## Endpoints
 
 | call | body | answer |
 |---|---|---|
 | `GET /healthz` | | `{"ok":true,"service":"flok-relay","version","instances","online","push","uptime_s"}` |
+| `POST /api/pair` | `{"code","name"?}` | 201 `{"token","phone":{"id","name"},"relay":{"version"}}`; 400 `{"error"}` for a code unknown, used or expired; 429 + `Retry-After` after too many wrong codes from one address |
 | `GET /api/instances` | | an `instances` frame (below) |
 | `POST /api/answer` | `{"instance","pane","text"?,"keys"?,"files"?}` | `{"ok":true}`, or `{"error"}` with 400 (refused by the relay) / 502 (refused or unreachable instance) |
 | `POST /api/seen` | `{"instance","pane"}` | `{"ok":true}` or `{"error"}` |
-| `GET /api/devices` | | `{"devices":[{"token":"short…","name","sandbox","added","prefs"?}],"push":bool}` |
+| `GET /api/devices` | | `{"devices":[{"token":"short…","name","sandbox","added","prefs"?,"phone"?}],"push":bool}`; `phone` is the id of the pairing that registered it |
 | `POST /api/devices` | `{"token","name"?,"sandbox"?,"prefs"?}` | `{"ok":true,"push":bool}`; `token` is the platform push token (APNs hex, later an FCM token); a registration without `prefs` keeps the device's |
 | `PUT /api/devices/{token}/prefs` | `Prefs` | `{"ok":true}`; 404 for a device the relay does not know (register again) |
 | `PUT /api/devices/{token}/activity` | `{"start_token"?,"activities":[{"id","token","kind":"overview"\|"agent","instance"?,"pane"?}]}` | `{"ok":true}`: the device's Live Activity tokens, sent whole (below) |

@@ -16,6 +16,7 @@ var commands = []command{
 	{"down", "stop the outer session", nil},
 	{"keep-awake", "keep the Mac awake while flok runs", nil},
 	{"link", "switch the relay link off and on", nil},
+	{"phone", "pair the phone app by QR, list or forget phones", nil},
 	{"status", "print sessions and agents once", []string{"--json"}},
 	{"jump", "switch to the newest agent needing input", []string{"--client"}},
 	{"next", "next agent pane", []string{"--client"}},
@@ -83,6 +84,7 @@ func bashCompletion() string {
 	b.WriteString("    case \"$cmd\" in\n")
 	b.WriteString("        completion) COMPREPLY=( $(compgen -W \"bash zsh\" -- \"$cur\") ) ;;\n")
 	b.WriteString("        keep-awake|link) COMPREPLY=( $(compgen -W \"on off toggle status\" -- \"$cur\") ) ;;\n")
+	b.WriteString("        phone) [ \"$COMP_CWORD\" -eq 2 ] && COMPREPLY=( $(compgen -W \"pair list forget\" -- \"$cur\") ) ;;\n")
 	b.WriteString("        explain) COMPREPLY=( $(compgen -W \"$(tmux list-panes -a -F '#{pane_id}' 2>/dev/null)\" -- \"$cur\") ) ;;\n")
 	b.WriteString("        jump|next|prev)\n            if [ \"$prev\" = --client ]; then\n")
 	b.WriteString("                COMPREPLY=( $(compgen -W \"$(tmux list-clients -F '#{client_tty}' 2>/dev/null)\" -- \"$cur\") )\n")
@@ -121,7 +123,7 @@ func bashCompletion() string {
 `)
 	for _, c := range commands {
 		switch c.name {
-		case "completion", "explain", "jump", "next", "prev", "keys", "host":
+		case "completion", "explain", "jump", "next", "prev", "keys", "host", "phone":
 			continue
 		}
 		if len(c.flags) > 0 {
@@ -146,6 +148,7 @@ func zshCompletion() string {
 	b.WriteString("        completion) _values 'shell' bash zsh ;;\n")
 	b.WriteString("        keep-awake) _values 'keep-awake' on off toggle status ;;\n")
 	b.WriteString("        link) _values 'link' on off toggle status ;;\n")
+	b.WriteString("        phone) (( CURRENT == 3 )) && _values 'phone' 'pair[show a code and its QR for the app]' 'list[the phones paired]' 'forget[revoke a phone]' ;;\n")
 	b.WriteString("        explain)\n            local -a panes\n            panes=(${(f)\"$(tmux list-panes -a -F '#{pane_id}' 2>/dev/null)\"})\n            _describe -t panes 'pane' panes ;;\n")
 	b.WriteString("        jump|next|prev)\n            _arguments '--client[inner client tty to drive]:tty:($(tmux list-clients -F \"#{client_tty}\" 2>/dev/null))' ;;\n")
 	b.WriteString("        keys)\n            _arguments '--print[dump the help as text]' '--filter[keep bindings matching a substring]:filter' ;;\n")
@@ -189,7 +192,7 @@ func zshCompletion() string {
 `)
 	for _, c := range commands {
 		switch c.name {
-		case "completion", "explain", "jump", "next", "prev", "keys", "host":
+		case "completion", "explain", "jump", "next", "prev", "keys", "host", "phone":
 			continue
 		}
 		if len(c.flags) == 0 {

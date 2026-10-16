@@ -298,3 +298,32 @@ struct SettingsTests {
         #expect(Settings().wrapLines)
     }
 }
+
+struct PairTests {
+    @Test func readsThePairingLink() {
+        let p = FlokLink.pairing(URL(string: "flok://pair?code=AB7Q-K2MN&relay=https%3A%2F%2Fflok.example.net")!)
+        #expect(p?.relay == "https://flok.example.net" && p?.code == "AB7Q-K2MN")
+        let bare = FlokLink.pairing(URL(string: "flok://pair?code=ab7qk2mn&relay=http%3A%2F%2F127.0.0.1%3A8080")!)
+        #expect(bare?.relay == "http://127.0.0.1:8080" && bare?.code == "AB7Q-K2MN")
+        #expect(FlokLink.pairing(URL(string: "flok://agent?instance=home&pane=%251")!) == nil)
+        #expect(FlokLink.pairing(URL(string: "flok://pair?relay=https%3A%2F%2Fflok.example.net")!) == nil)
+        #expect(FlokLink.pairing(URL(string: "flok://pair?code=AB7Q&relay=https%3A%2F%2Fflok.example.net")!) == nil)
+        #expect(FlokLink.target(URL(string: "flok://pair?code=AB7Q-K2MN&relay=x")!) == nil)
+    }
+
+    @Test func codesAreTypedAnyWay() {
+        #expect(PairCode.normalize(" ab7q k2mn ") == "AB7QK2MN")
+        #expect(PairCode.normalize("AB7Q–K2MN") == "AB7QK2MN")
+        #expect(PairCode.format("ab7qk2mn") == "AB7Q-K2MN")
+        #expect(PairCode.format("ab7") == "AB7" && PairCode.format("ab7qk") == "AB7Q-K")
+        #expect(PairCode.isComplete("AB7Q-K2MN") && !PairCode.isComplete("AB7Q-K2M"))
+    }
+
+    @Test func pairBodiesMatchTheRelay() throws {
+        let body = String(decoding: try Wire.encoder.encode(PairBody(code: "AB7QK2MN", name: "Jaro's iPhone")), as: UTF8.self)
+        #expect(body.contains(#""code":"AB7QK2MN""#) && body.contains(#""name":"Jaro's iPhone""#))
+        let json = #"{"token":"0123456789abcdef0123456789abcdef0123456789abcdef","phone":{"id":"a1b2c3d4e5f6","name":"Jaro's iPhone"},"relay":{"version":"v0.9.0"}}"#
+        let r = try Wire.decoder.decode(PairResponse.self, from: Data(json.utf8))
+        #expect(r.token.count == 48 && r.phone == PairedPhone(id: "a1b2c3d4e5f6", name: "Jaro's iPhone") && r.relay?.version == "v0.9.0")
+    }
+}
