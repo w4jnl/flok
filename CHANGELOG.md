@@ -6,6 +6,11 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+- **The screen holds still while you read.** An agent's screen on the phone went to its bottom
+  at every refresh, so scrolling up to read something earlier lost the place a second later. It
+  now follows the bottom only while you are there: scroll up and it stays put as the screen
+  changes under it, scroll back down (or tap the arrow in the corner) and it follows again.
+  On iOS 18 and later; an iOS 17 phone keeps to the bottom as before.
 - **Wrapped screens keep their shape.** With long lines wrapped on the phone, prose wraps at
   words as before, but a divider as wide as the Mac's pane is cut to the screen instead of
   folding into three rows, and a table (box drawing, `|` columns) keeps its rows whole in a

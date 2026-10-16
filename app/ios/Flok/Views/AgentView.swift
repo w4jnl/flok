@@ -397,10 +397,11 @@ struct AgentView: View {
     }
 }
 
-/// A pane's text, monospaced, following the bottom as it changes. Wide lines scroll sideways
-/// or wrap (wrap): prose at words, a rule cut to the width, a table in a block of its own that
-/// scrolls sideways (ScreenLines); a pinch zooms the text, a double tap fits the widest line
-/// of text to the screen.
+/// A pane's text, monospaced, following the bottom as it changes while the reader is there:
+/// scrolled up, it holds still as the screen refreshes under it (BottomFollower), and an arrow
+/// in the corner leads back. Wide lines scroll sideways or wrap (wrap): prose at words, a rule
+/// cut to the width, a table in a block of its own that scrolls sideways (ScreenLines); a pinch
+/// zooms the text, a double tap fits the widest line of text to the screen.
 struct ScreenView: View {
     let text: String?
     let fontSize: Double
@@ -408,23 +409,26 @@ struct ScreenView: View {
     var onZoom: (Double) -> Void = { _ in }
     @State private var waitedLong = false
     @State private var pinch: CGFloat = 1
+    @State private var follow = BottomFollower()
 
     var body: some View {
         GeometryReader { geo in
             ScrollViewReader { proxy in
                 ScrollView(wrap ? [.vertical] : [.vertical, .horizontal]) {
-                    if wrap {
-                        wrapped(width: geo.size.width - 16)
-                            .padding(8)
-                    } else {
-                        Text(trimmed)
-                            .font(.system(size: fontSize * pinch, design: .monospaced))
-                            .fixedSize(horizontal: true, vertical: false)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(8)
-                            .textSelection(.enabled)
+                    VStack(alignment: .leading, spacing: 0) {
+                        if wrap {
+                            wrapped(width: geo.size.width - 16)
+                                .padding(8)
+                        } else {
+                            Text(trimmed)
+                                .font(.system(size: fontSize * pinch, design: .monospaced))
+                                .fixedSize(horizontal: true, vertical: false)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(8)
+                                .textSelection(.enabled)
+                        }
+                        Color.clear.frame(width: 1, height: 1).id("bottom").frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    Color.clear.frame(width: 1, height: 1).id("bottom").frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .background(Color(UIColor.secondarySystemBackground))
                 .scrollDismissesKeyboard(.immediately)
@@ -435,7 +439,24 @@ struct ScreenView: View {
                         pinch = 1
                     })
                 .onTapGesture(count: 2) { onZoom(Self.fitting(trimmed, width: geo.size.width - 16)) }
-                .onChange(of: text) { _, _ in withAnimation(.linear(duration: 0.1)) { proxy.scrollTo("bottom", anchor: UnitPoint(x: 0, y: 1)) } } // follow the bottom, keep the left edge
+                .modifier(FollowWatch(follow: follow))
+                .onChange(of: text) { _, _ in if follow.following { toBottom(proxy) } }
+                .onChange(of: geo.size) { _, _ in if follow.following { toBottom(proxy) } } // the keyboard came up, the phone turned
+                .overlay(alignment: .bottomTrailing) {
+                    if !follow.following, text != nil {
+                        Button {
+                            follow.resume()
+                            toBottom(proxy)
+                        } label: {
+                            Image(systemName: "arrow.down").fontWeight(.semibold).padding(10)
+                        }
+                        .background(.thinMaterial, in: Circle())
+                        .padding(12)
+                        .accessibilityLabel("Back to the bottom of the screen, following it again")
+                        .transition(.opacity)
+                    }
+                }
+                .animation(.easeInOut(duration: 0.15), value: follow.following)
                 .overlay {
                     if text == nil {
                         VStack(spacing: 8) {
@@ -503,6 +524,38 @@ struct ScreenView: View {
         var lines = text.split(separator: "\n", omittingEmptySubsequences: false).map { $0.replacingOccurrences(of: "\\s+$", with: "", options: .regularExpression) }
         while let last = lines.last, last.isEmpty { lines.removeLast() }
         return lines.joined(separator: "\n")
+    }
+
+    /// Scrolls to the bottom, keeping the left edge; the frames the scroll passes through are
+    /// the view's doing, not the reader's, so they do not end the following.
+    private func toBottom(_ proxy: ScrollViewProxy) {
+        follow.settle()
+        withAnimation(.linear(duration: 0.1)) { proxy.scrollTo("bottom", anchor: UnitPoint(x: 0, y: 1)) }
+    }
+}
+
+/// Tells the follower where the reader is after every scroll and every layout, from the scroll
+/// view's own geometry (iOS 18). Before it the follower hears nothing and the screen follows the
+/// bottom as it always did: a GeometryReader in the content, reporting its frame in the scroll
+/// view's coordinate space through a preference, gave one empty frame and never spoke again.
+private struct FollowWatch: ViewModifier {
+    let follow: BottomFollower
+
+    struct Place: Equatable {
+        let distance: CGFloat
+        let offset: CGFloat
+    }
+
+    func body(content: Content) -> some View {
+        if #available(iOS 18, *) {
+            content.onScrollGeometryChange(for: Place.self) { g in
+                Place(distance: g.contentSize.height - g.visibleRect.maxY, offset: g.contentOffset.y)
+            } action: { _, place in
+                follow.look(distance: place.distance, offset: place.offset)
+            }
+        } else {
+            content
+        }
     }
 }
 
