@@ -74,3 +74,40 @@ struct ScreenLinesTests {
         #expect(ScreenLines.widest(of: screen) == "Some prose here".count)
     }
 }
+
+struct BottomFollowerTests {
+    @MainActor @Test func followsTheBottomUntilTheReaderLeavesIt() {
+        let f = BottomFollower()
+        #expect(f.following)
+        // the first screen, taller than the view, before the view scrolled to its end
+        f.look(distance: 400, offset: 0)
+        #expect(f.following)
+        // the view's own scroll to the end: the frames on the way are not the reader's doing
+        f.settle(for: 5)
+        f.look(distance: 200, offset: 200)
+        #expect(f.following)
+        f.look(distance: 0, offset: 400)
+        #expect(f.following)
+        // a refresh moves the end away without moving the reader: still following
+        f.look(distance: 60, offset: 400)
+        #expect(f.following)
+        // the reader scrolls up: the view holds still from here on
+        f.settle(for: 0)
+        f.look(distance: 300, offset: 160)
+        #expect(!f.following)
+        f.look(distance: 360, offset: 160)
+        #expect(!f.following)
+        f.look(distance: 380, offset: 140)
+        #expect(!f.following)
+        // back within a couple of rows of the end, or over it (the bounce): following again
+        f.look(distance: BottomFollower.slack, offset: 488)
+        #expect(f.following)
+        f.look(distance: -20, offset: 540)
+        #expect(f.following)
+        // the arrow: back to the bottom from wherever the reader is
+        f.look(distance: 300, offset: 240)
+        #expect(!f.following)
+        f.resume()
+        #expect(f.following)
+    }
+}

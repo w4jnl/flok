@@ -54,7 +54,10 @@ plain mode: `send-keys` over ssh, the files streamed into `~/.local/state/flok/a
   long lines wrap: prose at words, a divider cut to the width rather than folded, a table kept
   whole in a strip that scrolls sideways, the right edge of a box wider than the phone left
   out rather than dropped on a row of its own; the *Aa* menu or Settings switches to scrolling
-  sideways instead, and the choice is kept), a key bar (`1 2 3 y n ↵ esc ↑ ↓`, Ctrl-C behind a
+  sideways instead, and the choice is kept). It follows the bottom while you are there; scroll
+  up to read and it holds still as the screen changes under it, until you scroll back down or
+  tap the arrow in the corner (iOS 18 and later; before it the screen keeps to the bottom).
+  Below it a key bar (`1 2 3 y n ↵ esc ↑ ↓`, Ctrl-C behind a
   confirmation) and a reply field. Next to it a paperclip attaches photos, screenshots or the
   clipboard's picture, up to six (shrunk on the phone; the agent gets them as files and reads
   them) and a
