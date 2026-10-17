@@ -24,16 +24,16 @@ for _ in $(seq 1 100); do [ -s "$FH/port" ] && break; sleep 0.1; done
 APNS_PORT=$(cat "$FH/port")
 # a provider key for the relay's JWTs (what the .p8 from the developer account is)
 openssl ecparam -name prime256v1 -genkey -noout 2>/dev/null | openssl pkcs8 -topk8 -nocrypt -out "$APNS_KEY" 2>/dev/null || true
-INST_TOK=$("$RELAY" token); DEV_TOK=$("$RELAY" token)
+INST_TOK=$("$RELAY" token); DEV_TOK=$("$RELAY" token); ADM_TOK=$("$RELAY" token)
 start_relay() {
-  FLOK_RELAY_ADMIN_TOKENS=$INST_TOK FLOK_RELAY_DEVICE_TOKENS=$DEV_TOK FLOK_RELAY_APNS_KEY_FILE=$APNS_KEY \
+  FLOK_RELAY_INSTANCE_TOKENS=$INST_TOK FLOK_RELAY_ADMIN_TOKENS=$ADM_TOK FLOK_RELAY_DEVICE_TOKENS=$DEV_TOK FLOK_RELAY_APNS_KEY_FILE=$APNS_KEY \
   FLOK_RELAY_APNS_KEY_ID=KEY1234567 FLOK_RELAY_APNS_TEAM_ID=TEAM123456 FLOK_RELAY_APNS_TOPIC=nl.w4j.flok.e2e \
   FLOK_RELAY_APNS_URL=http://127.0.0.1:$APNS_PORT \
     "$RELAY" serve -listen "127.0.0.1:$RELAY_PORT" -data "$RELAY_DATA" >> "$RELAY_LOG" 2>&1 &
   RELAY_PID=$!
 }
 start_relay
-E2E_EXTRA_CONFIG=$(printf '[link]\nname = "e2e"\nurl = "http://127.0.0.1:%s"\ntoken = "%s"\n' "$RELAY_PORT" "$INST_TOK")
+E2E_EXTRA_CONFIG=$(printf '[link]\nname = "e2e"\nurl = "http://127.0.0.1:%s"\ntoken = "%s"\nadmin = "%s"\n' "$RELAY_PORT" "$INST_TOK" "$ADM_TOK")
 export E2E_EXTRA_CONFIG
 source "$(dirname "$0")/lib.sh"
 m11_cleanup() { kill "${RELAY_PID:-}" "${APNS_PID:-}" "${TAIL_PID:-}" "${TAP_PID:-}" 2>/dev/null || true; rm -rf "$FH" "$RELAY_LOG" "$RELAY_DATA" "$APNS_KEY" "$T/tail.out" 2>/dev/null || true; }
@@ -118,8 +118,14 @@ wait "$JOIN3_PID" || true
 expect "flok link forget revokes a flok" 'e2e-third forgotten: its key no longer works' "$("$BIN" link forget e2e-third)"
 expect "… and the other" 'e2e-office forgotten' "$("$BIN" link forget e2e-office)"
 expect "the records are gone" 'no flok joined by code' "$("$RELAY" instances -data "$RELAY_DATA")"
-# tenants: this flok links with an admin token, so it manages them
+# tenants: this flok's link carries the admin token ([link] admin, the X-Flok-Admin header; inside
+# the tunnel the auth frame), so it manages them
 expect "flok tenant list shows the relay's own tenant" 'default.*the relay.s own' "$("$BIN" tenant list)"
+expect "flok tenant rename calls the relay's own tenant something else" 'renamed default to e2ehome' "$("$BIN" tenant rename default e2ehome)"
+expect "… which the list shows" 'e2ehome.*the relay.s own' "$("$BIN" tenant list)"
+expect "… and the relay's file" 'e2ehome' "$("$RELAY" tenants -data "$RELAY_DATA")"
+expect "… and the phone, with its instances" '"tenant_info":\{"id":"default","name":"e2ehome"' "$(GET /api/instances)"
+expect "the relay's own tenant answers to its id still" 'renamed default to default' "$("$BIN" tenant rename default default)"
 FLOK_STATE=$JOIN_STATE "$BIN" link join "http://127.0.0.1:$RELAY_PORT" --name e2e-lab --json > "$T/join2.out" 2>&1 &
 JOIN2_PID=$!
 expect_soon "a flok asks to join a tenant of its own" '"code":"[A-Z2-9]{4}-[A-Z2-9]{4}"' cat "$T/join2.out"
@@ -256,6 +262,8 @@ expect "an answer goes through the tunnel" '"ok":true' "$(POST /api/answer '{"in
 expect_soon "the pane shows it" 'tunnelreply' IN capture-pane -p -t "$AGENT"
 expect "the link went through the tap, to the encrypted path" 'GET /link/tls' "$(cat "$FH/tap.log")"
 expect "the tap never saw the instance token" '^0$' "$(grep -c -a -F "$INST_TOK" "$FH/tap.log" || true)"
+expect "… nor the admin token" '^0$' "$(grep -c -a -F "$ADM_TOK" "$FH/tap.log" || true)"
+expect "flok tenant works through the encrypted link too" 'default.*the relay.s own' "$("$BIN" tenant list)"
 expect "the tap never saw the answer" '^0$' "$(grep -c -a -F tunnelreply "$FH/tap.log" || true)"
 expect "flok doctor reports the encrypted link" 'link: connected to ws://127.0.0.1:[0-9]+/link/tls as "e2e", encrypted to the pinned key, compressed' "$("$BIN" doctor 2>&1)"
 sed -i.bak "s#^pin = .*#pin = \"sha256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\"#" "$FLOK_CONFIG" && rm -f "$FLOK_CONFIG.bak"

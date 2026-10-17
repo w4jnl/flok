@@ -271,6 +271,11 @@ func TestLinkOpsAndTenantThroughTheSidebar(t *testing.T) {
 				PhoneList: []wire.PhoneInfo{{ID: "p2", Name: "Lab phone", Paired: when, Instance: "lab"}}}}}
 		case "tenant approve":
 			return wire.Frame{Tenant: &wire.Tenant{Op: "approve", Tenant: &wire.TenantInfo{Name: r.Name}, Pending: &wire.Joining{Name: "lab", Hostname: "lab-box", Version: "v9"}}}
+		case "tenant rename":
+			if r.Tenant == "default" {
+				return wire.Frame{Error: "default is the relay's own tenant's name"}
+			}
+			return wire.Frame{Tenant: &wire.Tenant{Op: "rename", Tenant: &wire.TenantInfo{ID: "default", Name: r.Tenant, Static: true}}}
 		case "tenant remove":
 			return wire.Frame{Tenant: &wire.Tenant{Op: "remove", Tenant: &wire.TenantInfo{Name: "acme", Instances: 1, Phones: 1}}}
 		}
@@ -322,12 +327,24 @@ func TestLinkOpsAndTenantThroughTheSidebar(t *testing.T) {
 		t.Fatalf("tenant approve without a tenant: %d %s", rc, errw)
 	}
 	out.Reset()
+	if rc := tc.run([]string{"rename", "default", "jaro"}); rc != 0 || !strings.Contains(out.String(), "renamed default to jaro") {
+		t.Fatalf("tenant rename: %d %s %s", rc, out, errw)
+	}
+	errw.Reset()
+	if rc := tc.run([]string{"rename", "acme", "default"}); rc != 1 || !strings.Contains(errw.String(), "relay's own tenant's name") {
+		t.Fatalf("tenant rename to default: %d %s", rc, errw)
+	}
+	out.Reset()
 	if rc := tc.run([]string{"remove", "acme"}); rc != 0 || !strings.Contains(out.String(), "acme removed: 1 floks and 1 phones lost their keys") {
 		t.Fatalf("tenant remove: %d %s", rc, out)
 	}
 	mu.Lock()
-	last := asked[len(asked)-2]
+	last := asked[len(asked)-4]
+	ren := asked[len(asked)-3]
 	mu.Unlock()
+	if ren.Cmd != "tenant" || ren.Op != "rename" || ren.Name != "default" || ren.Tenant != "jaro" {
+		t.Fatalf("the rename request: %+v", ren)
+	}
 	if last.Cmd != "tenant" || last.Op != "approve" || last.Code != "AB7Q-K2MN" || last.Name != "acme" {
 		t.Fatalf("the tenant approve request: %+v", last)
 	}

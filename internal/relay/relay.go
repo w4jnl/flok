@@ -20,12 +20,14 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
 
 	"github.com/w4jnl/flok/internal/agent"
 	"github.com/w4jnl/flok/internal/answer"
+	"github.com/w4jnl/flok/internal/link"
 	"github.com/w4jnl/flok/internal/link/tunnel"
 	"github.com/w4jnl/flok/internal/link/wire"
 	"github.com/w4jnl/flok/internal/relay/apns"
@@ -90,18 +92,24 @@ type Server struct {
 // tenant is the live side of one tenant: its instances, their pairing codes, and the timers of
 // what its phones get as a whole (the sync push, the overview activity).
 type tenant struct {
-	id, name  string
-	instances map[string]*instance // by name
-	codes     map[string]pairCode  // instance → its live pairing code
-	syncDue   *time.Timer          // a sync push is on its way
+	id        string
+	nm        atomic.Pointer[string] // its name: renamed under s.mu, read anywhere (label)
+	instances map[string]*instance   // by name
+	codes     map[string]pairCode    // instance → its live pairing code
+	syncDue   *time.Timer            // a sync push is on its way
 
 	liveDue        *time.Timer // a round of activity pushes is on its way
 	liveWasActive  bool        // something worked or waited in the last round
 	liveQuietSince time.Time   // since when nothing works, waits or is unseen
 }
 
+// Name is the tenant's name as it is now.
+func (t *tenant) Name() string { return *t.nm.Load() }
+
+func (t *tenant) setName(name string) { t.nm.Store(&name) }
+
 func (t *tenant) info() wire.TenantInfo {
-	return wire.TenantInfo{ID: t.id, Name: t.name, Static: t.id == DefaultTenant}
+	return wire.TenantInfo{ID: t.id, Name: t.Name(), Static: t.id == DefaultTenant}
 }
 
 type instance struct {
@@ -138,7 +146,7 @@ func (in *instance) label() string {
 	if in.tenant == nil || in.tenant.id == DefaultTenant {
 		return in.name
 	}
-	return in.tenant.name + "/" + in.name
+	return in.tenant.Name() + "/" + in.name
 }
 
 // ErrNothingLinks is New's answer to a relay nothing could ever link in to.
@@ -205,7 +213,8 @@ func (s *Server) tenantLocked(id string) *tenant {
 	if !ok {
 		return nil
 	}
-	t := &tenant{id: rec.ID, name: rec.Name, instances: map[string]*instance{}, codes: map[string]pairCode{}}
+	t := &tenant{id: rec.ID, instances: map[string]*instance{}, codes: map[string]pairCode{}}
+	t.setName(rec.Name)
 	s.tenants[id] = t
 	return t
 }
@@ -346,17 +355,27 @@ type linkIdentity struct {
 }
 
 // linkAuth tells a link's token: a static instance token or an admin token from the config,
-// both of the relay's own tenant, or a flok's own key from a join.
-func (s *Server) linkAuth(tok string) (linkIdentity, bool) {
+// both of the relay's own tenant, or a flok's own key from a join. An admin token presented
+// besides it ([link] admin) gives the link tenant powers whichever way it linked, and links a
+// flok that has nothing else (the first flok on a fresh relay, before it joins a tenant).
+func (s *Server) linkAuth(tok, admin string) (linkIdentity, bool) {
+	var who linkIdentity
 	switch rec, ok := s.istore.byKey(tok); {
 	case tokenIn(tok, s.cfg.AdminTokens):
-		return linkIdentity{tenant: DefaultTenant, admin: true}, true
+		who = linkIdentity{tenant: DefaultTenant, admin: true}
 	case tokenIn(tok, s.cfg.InstanceTokens):
-		return linkIdentity{tenant: DefaultTenant}, true
+		who = linkIdentity{tenant: DefaultTenant}
 	case ok:
-		return linkIdentity{tenant: rec.Tenant, rec: &rec}, true
+		who = linkIdentity{tenant: rec.Tenant, rec: &rec}
+	case tok == "" && tokenIn(admin, s.cfg.AdminTokens): // [link] admin alone: it links like an instance token, with the powers
+		who = linkIdentity{tenant: DefaultTenant, admin: true}
+	default:
+		return linkIdentity{}, false
 	}
-	return linkIdentity{}, false
+	if tokenIn(admin, s.cfg.AdminTokens) {
+		who.admin = true
+	}
+	return who, true
 }
 
 // linkRefused is what an instance hears when its token opens nothing.
@@ -367,7 +386,7 @@ func (s *Server) handleLink(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "this relay takes encrypted links only: set [link] pin (flok-relay pin prints it)", http.StatusForbidden)
 		return
 	}
-	who, ok := s.linkAuth(bearer(r))
+	who, ok := s.linkAuth(bearer(r), r.Header.Get(link.AdminHeader))
 	if !ok {
 		http.Error(w, linkRefused, http.StatusUnauthorized)
 		return
@@ -418,7 +437,7 @@ func (s *Server) handleLinkTunnel(w http.ResponseWriter, r *http.Request) {
 	var who linkIdentity
 	ok := false
 	if err == nil && json.Unmarshal(data, &auth) == nil && auth.Type == wire.TypeAuth {
-		who, ok = s.linkAuth(auth.Token)
+		who, ok = s.linkAuth(auth.Token, auth.Admin)
 	}
 	if !ok {
 		tc.Close(websocket.StatusPolicyViolation, linkRefused)
@@ -989,7 +1008,13 @@ func Alert(instance string, ev wire.Event, badge int, session string) apns.Notif
 func (s *Server) snapshotFrame(t *tenant) wire.Frame {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	f := wire.Frame{Type: wire.TypeInstances, Instances: []wire.Instance{}}
+	return s.snapshotFrameLocked(t)
+}
+
+// snapshotFrameLocked is snapshotFrame for a caller that holds s.mu.
+func (s *Server) snapshotFrameLocked(t *tenant) wire.Frame {
+	info := t.info()
+	f := wire.Frame{Type: wire.TypeInstances, Instances: []wire.Instance{}, TenantInfo: &info}
 	for _, in := range t.instances {
 		f.Instances = append(f.Instances, *s.view(in))
 	}
@@ -1346,7 +1371,7 @@ func (s *Server) handlePair(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.Unlock()
 	writeJSON(w, http.StatusCreated, map[string]any{"token": tok, "phone": map[string]any{"id": p.ID, "name": p.Name},
-		"tenant": map[string]any{"id": t.id, "name": t.name}, "relay": map[string]any{"version": s.cfg.Version}})
+		"tenant": map[string]any{"id": t.id, "name": t.Name()}, "relay": map[string]any{"version": s.cfg.Version}})
 }
 
 // phoneOp answers an instance's phone frame: pair mints its code, list says what is paired,

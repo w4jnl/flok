@@ -31,16 +31,18 @@ plain mode: `send-keys` over ssh, the files streamed into `~/.local/state/flok/a
 1. Run the relay: [`deploy/relay`](../deploy/relay) has the image (`ghcr.io/w4jnl/flok-relay`,
    amd64 and arm64), a compose stack for Portainer with Traefik labels and the example configs.
    `flok-relay token` makes one **admin token** for the flok you manage the relay from (it
-   links with it like any flok and can let others in, below); every other flok joins by a code,
-   a phone pairs (step 4), so neither needs a token in the relay's config. Pushes need an APNs
+   goes in that flok's `[link] admin`, and lets it let others in, below); every flok joins by
+   a code and every phone pairs (step 4), so neither needs a token in the relay's config
+   (`instance_tokens` stay as a static alternative). Pushes need an APNs
    key from your Apple developer account (`FLOK_RELAY_APNS_*`); without one the relay runs and
    the app works, only nothing is pushed.
-2. Link your first flok with the admin token:
+2. Link your first flok with the admin token (an admin token links like an instance token):
    ```toml
    [link]
    name = "home"                          # how the phone names this flok
    url = "https://flok.example.net"
-   token = "…"                            # the relay's admin token (or one of its instance tokens)
+   token = "…"                            # the admin token, or one of the relay's instance tokens
+   admin = "…"                            # the admin token: this flok manages the tenants (flok tenant)
    # pin = "sha256:…"                     # behind a proxy that reads HTTPS: flok-relay pin
    ```
    then `flok reload`; `flok doctor` and `flok link status` say whether it connected. Every
@@ -148,19 +150,27 @@ that showed it the pairing code. The tokens in the relay's config (`instance_tok
 is where a relay from before tenants finds all its phones and devices after an upgrade: nothing
 changes for them.
 
-The flok that links with an **admin token** (`admin_tokens` in the relay's config, as its
-`[link] token`) manages the tenants from its terminal:
+A flok whose `[link] admin` holds one of the relay's `admin_tokens` manages the tenants from
+its terminal, whichever tenant it lives in and however it linked (its own key from a join, or a
+token; an admin token in `[link] token`, or `[link] admin` alone, links it into the relay's own
+tenant with the same powers, which is how the first flok on a fresh relay gets in):
 
 ```sh
 flok tenant list                          # the tenants with their counts
 flok tenant show jaro                     # one tenant's floks and phones
 flok tenant approve AB7Q-K2MN --tenant x  # a waiting flok into a tenant, made when the name is new
+flok tenant rename default jaro           # call a tenant something else, the relay's own one too
 flok tenant remove x                      # everything of it: keys, links, pushes
 ```
 
 It sees the directory only: tenant, flok and phone names, hostnames, when they were last seen;
 never another tenant's agents, screens or events. `flok-relay tenants` and `flok-relay
-instances` at the container list the same from the relay's files.
+instances` at the container list the same from the relay's files. The admin token travels
+like the instance token: in a header on the plain link, inside the TLS tunnel on the encrypted
+one. To move your own floks out of the default tenant, join from each with `flok link join`
+and approve into the new tenant with `flok tenant approve`, then pair the phones again there
+(a phone belongs to the tenant of the flok that showed its code); or keep them where they are
+and rename the default.
 `flok doctor` reports the link as the sidebar sees it (or probes the relay's `/healthz` when
 the sidebar is not running), the footer says when the relay has been out of reach for half a
 minute, and `snapshot.json` carries the link's state.

@@ -56,11 +56,12 @@ var tenantNameShape = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 func ValidTenantName(s string) bool { return tenantNameShape.MatchString(s) }
 
 // tenantStore keeps the tenants in tenants.json under the data dir (in memory without one). The
-// default tenant is never in the file; it is always there.
+// default tenant is always there; the file holds a record for it only once it was renamed.
 type tenantStore struct {
 	path string
 	mu   sync.Mutex
-	byID map[string]tenantRec
+	byID map[string]tenantRec // the others
+	def  string               // the default tenant's name when renamed; "" = DefaultTenant
 }
 
 func loadTenants(dir string) (*tenantStore, error) {
@@ -77,35 +78,49 @@ func loadTenants(dir string) (*tenantStore, error) {
 		return nil, err
 	}
 	for _, t := range list {
-		if t.ID != DefaultTenant {
-			ts.byID[t.ID] = t
+		if t.ID == DefaultTenant {
+			if t.Name != "" && t.Name != DefaultTenant {
+				ts.def = t.Name
+			}
+			continue
 		}
+		ts.byID[t.ID] = t
 	}
 	return ts, nil
 }
 
+// defaultLocked is the default tenant's record, under whatever name it has.
+func (ts *tenantStore) defaultLocked() tenantRec {
+	name := ts.def
+	if name == "" {
+		name = DefaultTenant
+	}
+	return tenantRec{ID: DefaultTenant, Name: name}
+}
+
 // get is the tenant with this id; the default tenant always exists.
 func (ts *tenantStore) get(id string) (tenantRec, bool) {
-	if id == DefaultTenant {
-		return tenantRec{ID: DefaultTenant, Name: DefaultTenant}, true
-	}
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
+	if id == DefaultTenant {
+		return ts.defaultLocked(), true
+	}
 	t, ok := ts.byID[id]
 	return t, ok
 }
 
-// find is the tenant with this id, else the one with this name (case does not matter).
+// find is the tenant with this id, else the one with this name (case does not matter); the
+// default answers to its id as well as its name.
 func (ts *tenantStore) find(nameOrID string) (tenantRec, bool) {
 	nameOrID = strings.TrimSpace(nameOrID)
 	if nameOrID == "" {
 		return tenantRec{}, false
 	}
-	if strings.EqualFold(nameOrID, DefaultTenant) {
-		return tenantRec{ID: DefaultTenant, Name: DefaultTenant}, true
-	}
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
+	if def := ts.defaultLocked(); strings.EqualFold(nameOrID, DefaultTenant) || strings.EqualFold(nameOrID, def.Name) {
+		return def, true
+	}
 	if t, ok := ts.byID[nameOrID]; ok {
 		return t, true
 	}
@@ -122,13 +137,62 @@ func (ts *tenantStore) list() []tenantRec {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 	out := make([]tenantRec, 0, len(ts.byID)+1)
-	out = append(out, tenantRec{ID: DefaultTenant, Name: DefaultTenant})
+	out = append(out, ts.defaultLocked())
 	rest := make([]tenantRec, 0, len(ts.byID))
 	for _, t := range ts.byID {
 		rest = append(rest, t)
 	}
 	sort.Slice(rest, func(i, j int) bool { return rest[i].Created.Before(rest[j].Created) })
 	return append(out, rest...)
+}
+
+// rename gives a tenant a new name; the default tenant too (its record then goes into the
+// file). The reason it cannot be done is returned as text.
+func (ts *tenantStore) rename(id, name string) (tenantRec, string) {
+	name = strings.TrimSpace(name)
+	if !ValidTenantName(name) {
+		return tenantRec{}, "a tenant's name is letters, digits, dots, dashes and underscores, at most 64"
+	}
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	if strings.EqualFold(name, DefaultTenant) && id != DefaultTenant {
+		return tenantRec{}, "default is the relay's own tenant's name"
+	}
+	for _, t := range ts.byID {
+		if t.ID != id && strings.EqualFold(t.Name, name) {
+			return tenantRec{}, "a tenant is called " + t.Name + " already"
+		}
+	}
+	if def := ts.defaultLocked(); id != DefaultTenant && strings.EqualFold(def.Name, name) {
+		return tenantRec{}, "the relay's own tenant is called " + def.Name + " already"
+	}
+	var rec tenantRec
+	if id == DefaultTenant {
+		old := ts.def
+		ts.def = name
+		if name == DefaultTenant {
+			ts.def = ""
+		}
+		if err := ts.saveLocked(); err != nil {
+			ts.def = old
+			return tenantRec{}, err.Error()
+		}
+		rec = ts.defaultLocked()
+	} else {
+		t, ok := ts.byID[id]
+		if !ok {
+			return tenantRec{}, "no such tenant"
+		}
+		old := t
+		t.Name = name
+		ts.byID[id] = t
+		if err := ts.saveLocked(); err != nil {
+			ts.byID[id] = old
+			return tenantRec{}, err.Error()
+		}
+		rec = t
+	}
+	return rec, ""
 }
 
 func (ts *tenantStore) count() int {
@@ -161,11 +225,14 @@ func (ts *tenantStore) remove(id string) (tenantRec, bool) {
 }
 
 func (ts *tenantStore) saveLocked() error {
-	list := make([]tenantRec, 0, len(ts.byID))
+	list := make([]tenantRec, 0, len(ts.byID)+1)
 	for _, t := range ts.byID {
 		list = append(list, t)
 	}
 	sort.Slice(list, func(i, j int) bool { return list[i].Created.Before(list[j].Created) })
+	if ts.def != "" { // the default, once renamed, has a record for its name alone
+		list = append([]tenantRec{ts.defaultLocked()}, list...)
+	}
 	return saveList(ts.path, list)
 }
 

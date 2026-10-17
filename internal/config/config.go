@@ -85,7 +85,8 @@ type Notify struct {
 type Link struct {
 	Name  string `toml:"name"`  // "" = the machine's short hostname
 	URL   string `toml:"url"`   // wss://flok.example.net/link (https://flok.example.net works too); "" = off
-	Token string `toml:"token"` // one of the relay's instance_tokens
+	Token string `toml:"token"` // one of the relay's instance_tokens (or admin_tokens); not needed once this flok joined by code
+	Admin string `toml:"admin"` // one of the relay's admin_tokens, besides whatever links this flok: it may manage the tenants (flok tenant)
 	Pin   string `toml:"pin"`   // the relay's key (flok-relay pin): the link goes encrypted inside TLS to it; "" = plain
 }
 

@@ -35,8 +35,13 @@ func doctorLink(cfg config.Config, add func(level, format string, args ...any)) 
 			add("ok", "link: [link] token in config.toml is not used while this flok is joined by code")
 		}
 	}
-	if settings.Token == "" {
-		add("warn", "link: [link] token is empty; the relay will refuse %s", name)
+	switch {
+	case settings.Token == "" && cfg.Link.Admin == "":
+		add("warn", "link: [link] token is empty; the relay will refuse %s (flok link join <relay> gets it a key of its own)", name)
+	case settings.Token == "":
+		add("ok", "link: [link] admin alone links %s into the relay's own tenant, with the tenants in its hands (flok tenant; flok link join moves it to a tenant of its own)", name)
+	case cfg.Link.Admin != "":
+		add("ok", "link: [link] admin is set: %s may manage the relay's tenants (flok tenant)", name)
 	}
 	how := ""
 	if p := settings.Pin; p != "" {

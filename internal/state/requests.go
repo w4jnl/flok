@@ -26,7 +26,7 @@ type Request struct {
 	Op      string    `json:"op,omitempty"`     // phone: pair | list | forget; link: lookup | approve | list | forget; tenant: list | show | approve | remove
 	Name    string    `json:"name,omitempty"`   // forget: the phone's or flok's name or id; tenant show | remove: the tenant's
 	Code    string    `json:"code,omitempty"`   // link approve, tenant approve: the joining flok's code
-	Tenant  string    `json:"tenant,omitempty"` // tenant approve: the tenant to let it into
+	Tenant  string    `json:"tenant,omitempty"` // tenant rename: the new name
 	At      time.Time `json:"at"`
 }
 

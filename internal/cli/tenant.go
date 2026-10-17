@@ -20,12 +20,14 @@ const tenantUsage = `usage: flok tenant <command>
   show <name> [--json]             a tenant's floks and phones
   approve <code> --tenant <name>   let a flok that shows a code (flok link join) into a tenant;
                                    a name the relay does not know makes a new tenant
+  rename <name> <new-name>         call a tenant something else (the relay's own one too)
   remove <name>                    remove a tenant with all it holds: its floks' keys and links,
                                    its phones' keys and pushes
 
 A tenant is the set of floks and phones that see each other on the relay. Managing them takes
-an admin token: one of the relay's admin_tokens as this flok's [link] token. The relay's own
-tenant, default, is where the tokens of its config link and sign in; it stays.`
+an admin token: one of the relay's admin_tokens as this flok's [link] admin (or as its [link]
+token). The relay's own tenant, default, is where the tokens of its config link and sign in; it
+can be renamed, not removed.`
 
 // tenantCmd is `flok tenant`.
 type tenantCmd struct{ relayCmd }
@@ -47,6 +49,8 @@ func (c tenantCmd) run(args []string) int {
 		return c.show(args[1:])
 	case "approve":
 		return c.approve(args[1:])
+	case "rename":
+		return c.rename(args[1:])
 	case "remove":
 		return c.remove(args[1:])
 	case "help", "-h", "--help":
@@ -171,6 +175,26 @@ func (c tenantCmd) approve(args []string) int {
 		return c.fail(errors.New("the relay's answer carried nothing"))
 	}
 	fmt.Fprintf(c.out, "approved %s (%s, flok %s) into %s: it links once it accepts there\n", p.Name, p.Hostname, p.Version, t.Name)
+	return 0
+}
+
+func (c tenantCmd) rename(args []string) int {
+	if len(args) != 2 {
+		fmt.Fprintf(c.errw, "flok tenant rename: need <name> <new-name>\n\n%s\n", tenantUsage)
+		return 2
+	}
+	if _, err := c.ready(); err != nil {
+		return c.fail(err)
+	}
+	f, err := c.askOnce(state.Request{Op: "rename", Name: args[0], Tenant: args[1]})
+	if err != nil {
+		return c.fail(err)
+	}
+	t := f.Tenant.Tenant
+	if t == nil {
+		return c.fail(errors.New("the relay's answer carried nothing"))
+	}
+	fmt.Fprintf(c.out, "renamed %s to %s\n", args[0], t.Name)
 	return 0
 }
 

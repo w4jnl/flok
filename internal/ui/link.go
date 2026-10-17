@@ -57,7 +57,7 @@ func (m Model) newLinker() *link.Client {
 		return nil
 	}
 	hostname, _ := os.Hostname()
-	return link.New(link.Config{URL: settings.URL, Token: settings.Token, Pin: settings.Pin, Name: m.d.Cfg.InstanceName(),
+	return link.New(link.Config{URL: settings.URL, Token: settings.Token, Admin: l.Admin, Pin: settings.Pin, Name: m.d.Cfg.InstanceName(),
 		Off: off, Version: m.d.Version, Hostname: hostname, Logf: m.debugf})
 }
 

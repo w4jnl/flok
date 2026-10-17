@@ -48,6 +48,7 @@ type relay struct {
 	frames  []wire.Frame
 	conns   int
 	tokens  []string
+	admins  []string // the upgrades' X-Flok-Admin header
 	offers  []string // the upgrades' Sec-WebSocket-Extensions
 	deflate websocket.CompressionMode
 	conn    *websocket.Conn
@@ -64,6 +65,7 @@ func newRelay(t *testing.T, refuse bool) *relay {
 		}
 		r.mu.Lock()
 		r.tokens = append(r.tokens, req.Header.Get("Authorization"))
+		r.admins = append(r.admins, req.Header.Get(AdminHeader))
 		r.offers = append(r.offers, req.Header.Get("Sec-WebSocket-Extensions"))
 		r.conns++
 		mode := r.deflate

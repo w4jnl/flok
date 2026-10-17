@@ -29,8 +29,8 @@ usage: flok <command>
               another flok (no token in config.toml); approve <code> | list | forget | leave
   phone       pair [--open|--json] | list | forget <name|id>: pair the phone app with the relay
               by a code and its QR shown here (through the relay link), list or revoke phones
-  tenant      list | show <name> | approve <code> --tenant <name> | remove <name>: the tenants
-              on the relay (each the floks and phones that see each other), with an admin token
+  tenant      list | show <name> | approve <code> --tenant <name> | rename | remove: the tenants
+              on the relay (each the floks and phones that see each other), with [link] admin
   sidebar     run the sidebar UI in the current pane (used by up)
   status      print sessions and agents once (--json for machine output)
   jump        switch the inner client to the newest agent needing input (else newest done)

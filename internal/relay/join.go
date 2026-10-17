@@ -181,7 +181,7 @@ func (s *Server) handleEnrollAccept(w http.ResponseWriter, r *http.Request) {
 	if s.cfg.LinkKey != nil {
 		pin, _ = tunnel.PinOf(*s.cfg.LinkKey)
 	}
-	s.cfg.Logf("join: %s (%s) joined %s, approved by %s", rec.Name, rec.ID, t.name, j.by)
+	s.cfg.Logf("join: %s (%s) joined %s, approved by %s", rec.Name, rec.ID, t.Name(), j.by)
 	writeJSON(w, http.StatusCreated, map[string]any{"token": key, "pin": pin, "tenant": t.info(), "instance": map[string]any{"id": rec.ID, "name": rec.Name},
 		"approved_by": j.by, "relay": map[string]any{"version": s.cfg.Version}})
 }
@@ -235,11 +235,11 @@ func (s *Server) approveJoinLocked(j *joining, t *tenant, by string) string {
 		return "that flok is approved already"
 	}
 	if in := t.instances[j.info.Name]; in != nil && in.online && in.rec != nil {
-		return fmt.Sprintf("%s is online in %s already: set [link] name on the new one, or flok link forget %s first", j.info.Name, t.name, j.info.Name)
+		return fmt.Sprintf("%s is online in %s already: set [link] name on the new one, or flok link forget %s first", j.info.Name, t.Name(), j.info.Name)
 	}
 	j.tenant, j.by, j.approved = t, by, true
 	close(j.done)
-	s.cfg.Logf("join: %s (%s) approved into %s by %s", j.info.Name, j.info.Hostname, t.name, by)
+	s.cfg.Logf("join: %s (%s) approved into %s by %s", j.info.Name, j.info.Hostname, t.Name(), by)
 	return ""
 }
 
@@ -289,7 +289,7 @@ func (s *Server) handleEnrollApprove(w http.ResponseWriter, r *http.Request) {
 // enrollOp answers an instance's enroll frame: lookup and approve for a flok waiting with a
 // code, list of its tenant's floks, forget to revoke one. The reply goes back under the frame's id.
 func (s *Server) enrollOp(in *instance, gen uint64, id string, e wire.Enroll) {
-	reply := wire.Frame{Type: wire.TypeEnroll, ID: id, Enroll: &wire.Enroll{Op: e.Op, Tenant: in.tenant.name}}
+	reply := wire.Frame{Type: wire.TypeEnroll, ID: id, Enroll: &wire.Enroll{Op: e.Op, Tenant: in.tenant.Name()}}
 	now := time.Now()
 	switch e.Op {
 	case "lookup", "approve":
@@ -375,7 +375,7 @@ func (s *Server) forgetInstance(t *tenant, nameOrID, reason string) (wire.Instan
 	}
 	if in == nil && !hasRec {
 		s.mu.Unlock()
-		return wire.InstanceInfo{}, "no flok " + nameOrID + " in " + t.name + " (flok link list)"
+		return wire.InstanceInfo{}, "no flok " + nameOrID + " in " + t.Name() + " (flok link list)"
 	}
 	if in != nil && in.rec == nil && !hasRec && in.online {
 		s.mu.Unlock()
@@ -418,12 +418,12 @@ func (s *Server) forgetInstance(t *tenant, nameOrID, reason string) (wire.Instan
 }
 
 // tenantOp answers an admin instance's tenant frame: the tenants and their counts, one tenant's
-// members, a waiting flok approved into a tenant (made when new), a tenant removed with all it
-// holds. An instance whose link holds no admin token is told so.
+// members, a waiting flok approved into a tenant (made when new), a tenant renamed, a tenant
+// removed with all it holds. An instance whose link holds no admin token is told so.
 func (s *Server) tenantOp(in *instance, gen uint64, id string, q wire.Tenant, admin bool) {
 	reply := wire.Frame{Type: wire.TypeTenant, ID: id, Tenant: &wire.Tenant{Op: q.Op}}
 	if !admin {
-		reply.Error = "this flok links with an instance token, not an admin token: tenants are managed with one of the relay's admin_tokens in [link] token"
+		reply.Error = "this flok's link holds no admin token: put one of the relay's admin_tokens in [link] admin (flok reload) to manage tenants"
 		s.replyTo(in, gen, reply)
 		return
 	}
@@ -477,6 +477,27 @@ func (s *Server) tenantOp(in *instance, gen uint64, id string, q wire.Tenant, ad
 		}
 		s.mu.Unlock()
 		reply.Error = why
+	case "rename":
+		rec, ok := s.tstore.find(q.Name)
+		if !ok {
+			reply.Error = "no tenant " + strings.TrimSpace(q.Name) + " (flok tenant list)"
+			break
+		}
+		old := rec.Name
+		rec, why := s.tstore.rename(rec.ID, q.NewName)
+		if why != "" {
+			reply.Error = why
+			break
+		}
+		s.mu.Lock()
+		if t := s.tenantLocked(rec.ID); t != nil {
+			t.setName(rec.Name)
+			s.fanout(t, s.snapshotFrameLocked(t)) // the phones learn the name
+		}
+		info := s.tenantInfoLocked(rec, false)
+		s.mu.Unlock()
+		reply.Tenant.Tenant = &info
+		s.cfg.Logf("tenant %s renamed to %s by %s", old, rec.Name, in.label())
 	case "remove":
 		rec, ok := s.tstore.find(q.Name)
 		switch {

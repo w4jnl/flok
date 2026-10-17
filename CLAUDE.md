@@ -53,7 +53,7 @@ observes the BEL), m8 `flok resurrect save`, m9 keep-awake (`pmset -g assertions
 sidebar pid on macOS, the macOS-only message elsewhere), m10 remote hosts: `fake_ssh_setup` /
 `fake_host` in lib.sh put a fake `ssh` on PATH that runs the remote command locally against
 isolated servers `e2e-<host>` with per-host state and config (`$T/down-<host>` / `$T/auth-<host>`
-simulate failures) and `rhook` replays a hook on a host, m11 flok on the phone (pairing too: `flok phone pair --json` through the sidebar, `/api/pair`, list, forget; joining and tenants: `flok link join --json` from a second state dir approved by `flok link approve`, `/api/enroll/approve` and `flok tenant approve`, `flok link list|forget`, `flok tenant list|show|remove`; the sidebar links with the relay's admin token): it builds and runs
+simulate failures) and `rhook` replays a hook on a host, m11 flok on the phone (pairing too: `flok phone pair --json` through the sidebar, `/api/pair`, list, forget; joining and tenants: `flok link join --json` from a second state dir approved by `flok link approve`, `/api/enroll/approve` and `flok tenant approve`, `flok link list|forget`, `flok tenant list|show|rename|remove`; the sidebar links with an instance token plus `[link] admin`): it builds and runs
 the real `flok-relay` on 127.0.0.1 with a stand-in APNs (`scripts/e2e/fakehttp`, the Go HTTP
 stand-in m2 also uses for ntfy: it listens before it reports its port, because on macOS a connect to
 a bound-but-unlistened port is dropped, not refused) and a generated P-256 key (openssl), links the sidebar to it through `E2E_EXTRA_CONFIG`, drives the relay's API with curl
@@ -362,8 +362,14 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
   remove` go through the mailbox like `flok phone` (`relayCmd` in `cli/relaycmd.go`,
   `ui/relayops.go`, replies in `$FLOK_STATE/replies/<id>.json`); `forgetInstance` closes the
   link with `wire.CloseInstanceForgotten` and sends the phones an `instance` frame with `Gone`
-  (the app drops it); `removeTenant` forgets its floks and phones. `New` refuses a relay
-  nothing could link in to (`ErrNothingLinks`). The iOS app lives in `app/ios` (SwiftUI, iOS 17+, Swift 6 strict
+  (the app drops it); `removeTenant` forgets its floks and phones; `tenant rename` renames one,
+  the default too (`tenantStore.def`, a record in tenants.json for its name alone; the tenant's
+  name is an `atomic.Pointer` since `label` reads it without the lock; the phones get the
+  `instances` frame again, which carries `tenant_info`). An admin token rides besides the
+  flok's own credential: `[link] admin` → `link.AdminHeader` (`X-Flok-Admin`) on the plain
+  link, `Frame.Admin` in the tunnel's auth frame → `linkAuth(tok, admin)`, so a flok joined
+  into any tenant can manage tenants; an admin token as `[link] token`, or `[link] admin` alone
+  (no token, no join record yet), links into the default tenant with the same powers. `New` refuses a relay nothing could link in to (`ErrNothingLinks`). The iOS app lives in `app/ios` (SwiftUI, iOS 17+, Swift 6 strict
   concurrency; XcodeGen `project.yml` → `Flok.xcodeproj`, not committed; `make ios-project`,
   `ios-build`, `ios-test` against the iPhone 15 simulator, no signing; `ios-device` (`IOS_DEVICE=<udid>` picks one; a new device is registered in the developer account on the way) installs on
   the phone on the cable, `ios-testflight` archives and uploads with `ExportOptions.plist`;

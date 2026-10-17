@@ -79,7 +79,7 @@ A client that does not offer it gets the frames uncompressed.
 Relay → app:
 
 ```
-{"type":"instances","instances":[Instance…]}        on connect: every instance the relay knows
+{"type":"instances","instances":[Instance…],"tenant_info":{"id","name"}}   on connect: every instance of this phone's tenant, and the tenant (sent again when it is renamed)
 {"type":"instance","instance":"home","inst":Instance} one changed: online/offline, a new snapshot
 {"type":"event","instance":"home","event":{"pane","host"?,"agent","kind","reason"?,"at"}}
 {"type":"screen","instance":"home","screen":{"pane","text"}}   while subscribed, when it changed

@@ -21,12 +21,6 @@ struct PairedPhone: Decodable, Sendable, Equatable {
     var name: String
 }
 
-/// The tenant this phone belongs to: the set of floks and phones that see each other on the relay.
-struct TenantInfo: Decodable, Sendable, Equatable {
-    var id: String
-    var name: String
-}
-
 struct RelayInfo: Decodable, Sendable {
     var version: String?
 }
