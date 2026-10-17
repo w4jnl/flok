@@ -120,9 +120,11 @@ you already have, and reuses herdr's detection manifests and sounds under Apache
 - **The menu bar** (macOS, opt-in) and **keep awake**: the Mac and its display stay on while
   agents run unattended, and Teams or Slack keep showing you active if you like.
   [Menu bar and keep awake](docs/macos.md)
-- **flok on your phone**: the iOS app and `flok-relay`, a small service you host. Every flok
-  dials out to it: no port opened anywhere, `HTTPS_PROXY` honoured, TLS inside the link for a
-  proxy that reads HTTPS; `prefix U` switches it off. A plain message through ntfy works too.
+- **flok on your phone**: the iOS app and `flok-relay`, a small service you host, for your
+  floks and phones alone or for several households at once (tenants). Every flok joins it by
+  a code approved from the phone and dials out to it: no port opened anywhere, `HTTPS_PROXY`
+  honoured, TLS inside the link for a proxy that reads HTTPS; `prefix U` switches it off. A
+  plain message through ntfy works too.
   [flok on your phone](docs/phone.md)
 - **Zero footprint**: no plugin, no pane injected into your windows, no change to tmux.conf;
   the keys flok binds for the session are removed when it ends.

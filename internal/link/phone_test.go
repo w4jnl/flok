@@ -1,6 +1,7 @@
 package link
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -71,5 +72,42 @@ func TestLinkPhoneFrames(t *testing.T) {
 	case f := <-r.got:
 		t.Fatalf("a frame without an id went out: %+v", f)
 	case <-time.After(150 * time.Millisecond):
+	}
+}
+
+// Enroll and tenant requests go out under their ids and the replies come back as commands of
+// their kind; the hello advertises them.
+func TestLinkEnrollAndTenantFrames(t *testing.T) {
+	r := newRelay(t, false)
+	c := New(Config{URL: r.srv.URL, Token: "t0k", Name: "home", Version: "test", Hostname: "mac", BackoffMax: 300 * time.Millisecond})
+	c.Start()
+	defer c.Close()
+	hello := r.next(t, wire.TypeHello)
+	found := false
+	for _, f := range hello.Hello.Features {
+		found = found || f == wire.FeatureEnroll
+	}
+	if !found {
+		t.Fatalf("the hello does not advertise enroll frames: %v", hello.Hello.Features)
+	}
+	c.Enroll("abc123abc123", wire.Enroll{Op: "approve", Code: "AB7Q-K2MN"})
+	f := r.next(t, wire.TypeEnroll)
+	if f.ID != "abc123abc123" || f.Enroll == nil || f.Enroll.Op != "approve" || f.Enroll.Code != "AB7Q-K2MN" {
+		t.Fatalf("enroll frame: %+v", f)
+	}
+	r.send(t, wire.Frame{Type: wire.TypeEnroll, ID: "abc123abc123", Enroll: &wire.Enroll{Op: "approve", Tenant: "jaro", Pending: &wire.Joining{Name: "office", Hostname: "macmini"}}})
+	m := waitMsg(t, c, func(m Msg) bool { return m.Command != nil && m.Command.Kind == "enroll" })
+	if m.Command.ID != "abc123abc123" || m.Command.Enroll == nil || m.Command.Enroll.Pending.Hostname != "macmini" || m.Command.Enroll.Tenant != "jaro" {
+		t.Fatalf("enroll reply: %+v", m.Command)
+	}
+	c.Tenant("abc123abc124", wire.Tenant{Op: "list"})
+	f = r.next(t, wire.TypeTenant)
+	if f.ID != "abc123abc124" || f.Tenant == nil || f.Tenant.Op != "list" {
+		t.Fatalf("tenant frame: %+v", f)
+	}
+	r.send(t, wire.Frame{Type: wire.TypeTenant, ID: "abc123abc124", Error: "this flok links with an instance token, not an admin token"})
+	m = waitMsg(t, c, func(m Msg) bool { return m.Command != nil && m.Command.Kind == "tenant" })
+	if m.Command.ID != "abc123abc124" || !strings.Contains(m.Command.Error, "not an admin token") {
+		t.Fatalf("tenant reply: %+v", m.Command)
 	}
 }

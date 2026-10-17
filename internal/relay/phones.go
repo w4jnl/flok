@@ -22,6 +22,7 @@ import (
 // as. It is what flok phone pair makes and flok phone forget removes.
 type phone struct {
 	ID          string    `json:"id"`
+	Tenant      string    `json:"tenant,omitempty"` // the tenant of the instance that showed the code; "" in old files = the default
 	Name        string    `json:"name"`
 	TokenSHA256 string    `json:"token_sha256"`
 	Paired      time.Time `json:"paired"`
@@ -30,7 +31,7 @@ type phone struct {
 }
 
 func (p phone) info() wire.PhoneInfo {
-	return wire.PhoneInfo{ID: p.ID, Name: p.Name, Paired: p.Paired, LastSeen: p.LastSeen, Instance: p.Instance}
+	return wire.PhoneInfo{ID: p.ID, Name: p.Name, Paired: p.Paired, LastSeen: p.LastSeen, Instance: p.Instance, Tenant: p.Tenant}
 }
 
 // phoneStore keeps the phones in phones.json under the data dir (in memory without one).
@@ -63,6 +64,9 @@ func loadPhones(dir string) (*phoneStore, error) {
 		return nil, errors.New(ps.path + ": " + err.Error())
 	}
 	for _, p := range list {
+		if p.Tenant == "" {
+			p.Tenant = DefaultTenant
+		}
 		ps.byID[p.ID] = p
 		ps.byHash[p.TokenSHA256] = p.ID
 		ps.seen[p.ID] = p.LastSeen
@@ -84,12 +88,17 @@ func ListPhones(dir string) ([]wire.PhoneInfo, error) {
 }
 
 // list is the phones in the order they paired.
-func (ps *phoneStore) list() []phone {
+func (ps *phoneStore) list() []phone { return ps.listTenant("") }
+
+// listTenant is a tenant's phones ("" = every tenant's) in the order they paired.
+func (ps *phoneStore) listTenant(tenant string) []phone {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 	out := make([]phone, 0, len(ps.byID))
 	for _, p := range ps.byID {
-		out = append(out, p)
+		if tenant == "" || p.Tenant == tenant {
+			out = append(out, p)
+		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Paired.Before(out[j].Paired) })
 	return out
@@ -131,26 +140,33 @@ func (ps *phoneStore) byToken(tok string) (phone, bool) {
 	return p, ok
 }
 
-// find is the phone with this id, else the one with this name (case does not matter; two
-// phones of one name need the id).
-func (ps *phoneStore) find(nameOrID string) (phone, bool) {
+// find is a tenant's phone with this id, else the one with this name (case does not matter;
+// two phones of one name need the id).
+func (ps *phoneStore) find(tenant, nameOrID string) (phone, bool) {
 	nameOrID = strings.TrimSpace(nameOrID)
 	if nameOrID == "" {
 		return phone{}, false
 	}
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
-	if p, ok := ps.byID[nameOrID]; ok {
+	if p, ok := ps.byID[nameOrID]; ok && p.Tenant == tenant {
 		return p, true
 	}
 	var found phone
 	n := 0
 	for _, p := range ps.byID {
-		if strings.EqualFold(p.Name, nameOrID) {
+		if p.Tenant == tenant && strings.EqualFold(p.Name, nameOrID) {
 			found, n = p, n+1
 		}
 	}
 	return found, n == 1
+}
+
+func (ps *phoneStore) get(id string) (phone, bool) {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+	p, ok := ps.byID[id]
+	return p, ok
 }
 
 func (ps *phoneStore) remove(id string) (phone, bool) {
@@ -285,36 +301,38 @@ type pairCode struct {
 
 // mintCodeLocked makes an instance's pairing code; a fresh one replaces the one it had, so one
 // code per instance is live at a time. The caller holds s.mu.
-func (s *Server) mintCodeLocked(instance, reqID string, now time.Time) (string, time.Time) {
+func (s *Server) mintCodeLocked(in *instance, reqID string, now time.Time) (string, time.Time) {
 	code := newCode()
 	expires := now.Add(s.cfg.PairTTL)
-	s.codes[instance] = pairCode{hash: sha256.Sum256([]byte(code)), expires: expires, reqID: reqID}
+	in.tenant.codes[in.name] = pairCode{hash: sha256.Sum256([]byte(code)), expires: expires, reqID: reqID}
 	return code, expires
 }
 
-// redeemCode finds the instance whose live code this is and spends it: a code is good once.
-// False for one unknown, used or expired, which all look alike to the caller.
-func (s *Server) redeemCode(code string, now time.Time) (instance, reqID string, ok bool) {
+// redeemCode finds the instance, in whichever tenant, whose live code this is and spends it: a
+// code is good once. False for one unknown, used or expired, which all look alike to the caller.
+func (s *Server) redeemCode(code string, now time.Time) (t *tenant, instance, reqID string, ok bool) {
 	h := sha256.Sum256([]byte(code))
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for name, pc := range s.codes {
-		if !now.Before(pc.expires) {
-			delete(s.codes, name)
-			continue
-		}
-		if subtle.ConstantTimeCompare(pc.hash[:], h[:]) == 1 {
-			delete(s.codes, name)
-			return name, pc.reqID, true
+	for _, t := range s.tenants {
+		for name, pc := range t.codes {
+			if !now.Before(pc.expires) {
+				delete(t.codes, name)
+				continue
+			}
+			if subtle.ConstantTimeCompare(pc.hash[:], h[:]) == 1 {
+				delete(t.codes, name)
+				return t, name, pc.reqID, true
+			}
 		}
 	}
-	return "", "", false
+	return nil, "", "", false
 }
 
-// phoneInfos is every paired phone, for a reply.
-func (s *Server) phoneInfos() []wire.PhoneInfo {
+// phoneInfos is a tenant's paired phones, for a reply.
+func (s *Server) phoneInfos(tenant string) []wire.PhoneInfo {
 	var out []wire.PhoneInfo
-	for _, p := range s.phones.list() {
+	for _, p := range s.phones.listTenant(tenant) {
 		out = append(out, p.info())
 	}
 	return out
@@ -322,3 +340,9 @@ func (s *Server) phoneInfos() []wire.PhoneInfo {
 
 // PhoneCount is how many phones are paired, for the start-up log.
 func (s *Server) PhoneCount() int { return s.phones.count() }
+
+// TenantCount is how many tenants there are, the relay's own included, for the start-up log.
+func (s *Server) TenantCount() int { return s.tstore.count() }
+
+// InstanceCount is how many floks joined by code, for the start-up log.
+func (s *Server) InstanceCount() int { return s.istore.count() }

@@ -39,19 +39,25 @@ const usage = `flok-relay — the relay between flok instances and the phone
 
 usage: flok-relay <command>
 
-  serve    run the relay (-config relay.toml, -listen :8080, -data /data; env FLOK_RELAY_*)
-  tail     connect as the app and print what it would see (-url, -token, -subscribe inst:%12)
-  token    print a fresh random token for the config
-  phones   list the phones paired with the relay (-data /data; reads phones.json)
-  pin      print the pin of the relay's key for [link] pin (-data /data; created when missing)
-  health   GET /healthz and exit 0 when the relay answers (-url)
-  version  print the version
+  serve      run the relay (-config relay.toml, -listen :8080, -data /data; env FLOK_RELAY_*)
+  tail       connect as the app and print what it would see (-url, -token, -subscribe inst:%12)
+  token      print a fresh random token for the config
+  tenants    list the tenants with their counts (-data /data; reads the relay's files)
+  instances  list the floks that joined by code (-data /data; reads instances.json)
+  phones     list the phones paired with the relay (-data /data; reads phones.json)
+  pin        print the pin of the relay's key for [link] pin (-data /data; created when missing)
+  health     GET /healthz and exit 0 when the relay answers (-url)
+  version    print the version
+
+Floks join and tenants are managed from flok itself (flok link join, flok tenant …); the files
+here are read as they are, so the listings work with the relay running or not.
 `
 
 type fileConfig struct {
 	Listen         string   `toml:"listen"`
 	DataDir        string   `toml:"data_dir"`
 	InstanceTokens []string `toml:"instance_tokens"`
+	AdminTokens    []string `toml:"admin_tokens"`
 	DeviceTokens   []string `toml:"device_tokens"`
 	TunnelOnly     bool     `toml:"tunnel_only"` // refuse links without [link] pin
 	APNS           struct {
@@ -76,6 +82,10 @@ func main() {
 		rc = runTail(os.Args[2:])
 	case "token":
 		fmt.Println(relay.NewToken())
+	case "tenants":
+		rc = runTenants(os.Args[2:])
+	case "instances":
+		rc = runInstances(os.Args[2:])
 	case "phones":
 		rc = runPhones(os.Args[2:])
 	case "pin":
@@ -114,7 +124,7 @@ func runServe(args []string) int {
 	fs := flag.NewFlagSet("flok-relay serve", flag.ContinueOnError)
 	cfgPath := fs.String("config", env("CONFIG", ""), "TOML config file (optional; the environment overrides it)")
 	listen := fs.String("listen", "", "address to listen on (default :8080)")
-	data := fs.String("data", "", "data dir for devices.json, phones.json and the link key (default from config, else none)")
+	data := fs.String("data", "", "data dir for devices.json, phones.json, instances.json, tenants.json and the link key (default from config, else none)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -137,15 +147,14 @@ func runServe(args []string) int {
 	if v := env("INSTANCE_TOKENS", ""); v != "" {
 		fc.InstanceTokens = splitList(v)
 	}
+	if v := env("ADMIN_TOKENS", ""); v != "" {
+		fc.AdminTokens = splitList(v)
+	}
 	if v := env("DEVICE_TOKENS", ""); v != "" {
 		fc.DeviceTokens = splitList(v)
 	}
 	if v := env("TUNNEL_ONLY", ""); v != "" {
 		fc.TunnelOnly = v == "1" || strings.EqualFold(v, "true")
-	}
-	if len(fc.InstanceTokens) == 0 {
-		fmt.Fprintln(os.Stderr, "flok-relay: instance_tokens are needed (flok-relay token prints one); phones pair with flok phone pair, device_tokens are optional")
-		return 1
 	}
 	logger := log.New(os.Stdout, "", log.LstdFlags)
 	pushCfg := apns.Config{KeyID: env("APNS_KEY_ID", fc.APNS.KeyID), TeamID: env("APNS_TEAM_ID", fc.APNS.TeamID), Topic: env("APNS_TOPIC", fc.APNS.Topic),
@@ -194,7 +203,7 @@ func runServe(args []string) int {
 		fmt.Fprintln(os.Stderr, "flok-relay: tunnel_only needs the relay's key, which needs a data dir")
 		return 1
 	}
-	srv, err := relay.New(relay.Config{InstanceTokens: fc.InstanceTokens, DeviceTokens: fc.DeviceTokens, DataDir: *data, Push: pusher,
+	srv, err := relay.New(relay.Config{InstanceTokens: fc.InstanceTokens, AdminTokens: fc.AdminTokens, DeviceTokens: fc.DeviceTokens, DataDir: *data, Push: pusher,
 		Logf: logger.Printf, Version: version, LinkKey: linkKey, TunnelOnly: fc.TunnelOnly})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "flok-relay:", err)
@@ -210,9 +219,10 @@ func runServe(args []string) int {
 		_ = hs.Shutdown(sctx)
 	}()
 	if *data == "" {
-		logger.Printf("phones: kept in memory (no data dir): pairings do not survive a restart")
+		logger.Printf("phones: kept in memory (no data dir): pairings and joins do not survive a restart")
 	}
-	logger.Printf("flok-relay %s listening on %s (%d instance tokens, %d device tokens, %d phones paired)", version, *listen, len(fc.InstanceTokens), len(fc.DeviceTokens), srv.PhoneCount())
+	logger.Printf("flok-relay %s listening on %s (%d instance tokens, %d admin tokens, %d device tokens; %d tenants, %d floks joined, %d phones paired)",
+		version, *listen, len(fc.InstanceTokens), len(fc.AdminTokens), len(fc.DeviceTokens), srv.TenantCount(), srv.InstanceCount(), srv.PhoneCount())
 	if err := hs.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		fmt.Fprintln(os.Stderr, "flok-relay:", err)
 		return 1
@@ -242,13 +252,67 @@ func runPhones(args []string) int {
 		return 0
 	}
 	tw := tabwriter.NewWriter(os.Stdout, 0, 8, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tNAME\tPAIRED\tLAST SEEN\tVIA")
+	fmt.Fprintln(tw, "ID\tNAME\tTENANT\tPAIRED\tLAST SEEN\tVIA")
 	for _, p := range list {
-		seen := "never"
-		if !p.LastSeen.IsZero() {
-			seen = p.LastSeen.Local().Format("2006-01-02 15:04")
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", p.ID, p.Name, p.Tenant, p.Paired.Local().Format("2006-01-02 15:04"), seenAt(p.LastSeen), p.Instance)
+	}
+	_ = tw.Flush()
+	return 0
+}
+
+func seenAt(t time.Time) string {
+	if t.IsZero() {
+		return "never"
+	}
+	return t.Local().Format("2006-01-02 15:04")
+}
+
+// runTenants lists the tenants from the relay's files: the default (the config's tokens) and
+// those made by flok tenant approve, with their counts.
+func runTenants(args []string) int {
+	fs := flag.NewFlagSet("flok-relay tenants", flag.ContinueOnError)
+	data := fs.String("data", env("DATA_DIR", "/data"), "the relay's data dir")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	list, err := relay.ListTenants(*data)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "flok-relay:", err)
+		return 1
+	}
+	tw := tabwriter.NewWriter(os.Stdout, 0, 8, 2, ' ', 0)
+	fmt.Fprintln(tw, "NAME\tFLOKS\tPHONES\tCREATED\tID")
+	for _, t := range list {
+		created := "the relay's own"
+		if !t.Created.IsZero() {
+			created = t.Created.Local().Format("2006-01-02 15:04")
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", p.ID, p.Name, p.Paired.Local().Format("2006-01-02 15:04"), seen, p.Instance)
+		fmt.Fprintf(tw, "%s\t%d\t%d\t%s\t%s\n", t.Name, t.Instances, t.Phones, created, t.ID)
+	}
+	_ = tw.Flush()
+	return 0
+}
+
+// runInstances lists the floks that joined by code, from instances.json.
+func runInstances(args []string) int {
+	fs := flag.NewFlagSet("flok-relay instances", flag.ContinueOnError)
+	data := fs.String("data", env("DATA_DIR", "/data"), "the relay's data dir")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	list, err := relay.ListInstances(*data)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "flok-relay:", err)
+		return 1
+	}
+	if len(list) == 0 {
+		fmt.Println("no flok joined by code (flok link join on a flok shows the code; floks with a token from the config are not listed here)")
+		return 0
+	}
+	tw := tabwriter.NewWriter(os.Stdout, 0, 8, 2, ' ', 0)
+	fmt.Fprintln(tw, "NAME\tTENANT\tHOST\tJOINED\tLAST SEEN\tAPPROVED BY\tID")
+	for _, r := range list {
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", r.Name, r.Tenant, r.Hostname, r.Joined.Local().Format("2006-01-02 15:04"), seenAt(r.LastSeen), r.ApprovedBy, r.ID)
 	}
 	_ = tw.Flush()
 	return 0

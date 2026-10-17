@@ -322,8 +322,28 @@ struct PairTests {
     @Test func pairBodiesMatchTheRelay() throws {
         let body = String(decoding: try Wire.encoder.encode(PairBody(code: "AB7QK2MN", name: "Jaro's iPhone")), as: UTF8.self)
         #expect(body.contains(#""code":"AB7QK2MN""#) && body.contains(#""name":"Jaro's iPhone""#))
-        let json = #"{"token":"0123456789abcdef0123456789abcdef0123456789abcdef","phone":{"id":"a1b2c3d4e5f6","name":"Jaro's iPhone"},"relay":{"version":"v0.9.0"}}"#
+        let json = #"{"token":"0123456789abcdef0123456789abcdef0123456789abcdef","phone":{"id":"a1b2c3d4e5f6","name":"Jaro's iPhone"},"tenant":{"id":"default","name":"default"},"relay":{"version":"v0.9.0"}}"#
         let r = try Wire.decoder.decode(PairResponse.self, from: Data(json.utf8))
-        #expect(r.token.count == 48 && r.phone == PairedPhone(id: "a1b2c3d4e5f6", name: "Jaro's iPhone") && r.relay?.version == "v0.9.0")
+        #expect(r.token.count == 48 && r.phone == PairedPhone(id: "a1b2c3d4e5f6", name: "Jaro's iPhone") && r.relay?.version == "v0.9.0" && r.tenant?.name == "default")
+        let old = #"{"token":"0123456789abcdef0123456789abcdef0123456789abcdef","phone":{"id":"a1b2c3d4e5f6","name":"x"}}"#
+        #expect(try Wire.decoder.decode(PairResponse.self, from: Data(old.utf8)).tenant == nil) // a relay before tenants
+    }
+
+    @Test func readsTheJoinLink() throws {
+        let l = FlokLink.linking(URL(string: "flok://link?code=AB7Q-K2MN&relay=https%3A%2F%2Fflok.example.net")!)
+        #expect(l?.relay == "https://flok.example.net" && l?.code == "AB7Q-K2MN")
+        #expect(FlokLink.linking(URL(string: "flok://pair?code=AB7Q-K2MN&relay=https%3A%2F%2Fflok.example.net")!) == nil)
+        #expect(FlokLink.pairing(URL(string: "flok://link?code=AB7Q-K2MN&relay=https%3A%2F%2Fflok.example.net")!) == nil)
+        #expect(FlokLink.linking(URL(string: "flok://link?code=AB7Q&relay=https%3A%2F%2Fflok.example.net")!) == nil)
+        let json = #"{"pending":{"name":"office","hostname":"macmini-office","version":"v0.9.0","from":"1.2.3.4","started":"2026-10-17T09:00:00Z","expires_at":"2026-10-17T09:05:00Z"},"tenant":{"id":"t1","name":"jaro"}}"#
+        let r = try Wire.decoder.decode(JoinLookup.self, from: Data(json.utf8))
+        #expect(r.pending.name == "office" && r.pending.describe == "office (macmini-office, flok v0.9.0)" && r.tenant?.name == "jaro" && r.pending.expiresAt != nil)
+        let bare = try Wire.decoder.decode(JoinLookup.self, from: Data(#"{"pending":{"name":"lab","started":"2026-10-17T09:00:00Z","expires_at":"2026-10-17T09:05:00Z"}}"#.utf8))
+        #expect(bare.pending.describe == "lab" && bare.tenant == nil)
+    }
+
+    @Test func aGoneInstanceDecodes() throws {
+        let f = try Wire.decoder.decode(Frame.self, from: Data(#"{"type":"instance","instance":"office","inst":{"name":"office","online":false,"since":"2026-10-17T09:00:00Z","gone":true}}"#.utf8))
+        #expect(f.inst?.gone == true && f.inst?.name == "office")
     }
 }

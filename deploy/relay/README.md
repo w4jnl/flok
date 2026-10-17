@@ -2,18 +2,23 @@
 
 The service between your flok instances and the phone. Instances dial out to it (nothing to
 open at home or at the office), the app connects to it, pushes go through APNs. One static
-binary, no database: the only state is `devices.json` (the phones registered for pushes).
+binary, no database: the state is four small JSON files in the data volume (the phones
+registered for pushes, the phones paired, the floks that joined by code, the tenants), keys
+kept as hashes.
 
 ## Run it behind Traefik with Portainer
 
 1. DNS: point `flok.example.net` at the host Traefik runs on.
-2. Tokens: `flok-relay token` (or `openssl rand -hex 24`) once per flok instance. Phones need
-   none: once an instance is linked, `flok phone pair` there shows a code and its QR, and the
-   relay keeps the phones it pairs in `phones.json` on the data volume (`flok-relay phones`
-   lists them, `flok phone list | forget` on an instance manages them). A static device token
-   is optional, for curl and scripts. Copy `stack.env.example` to `stack.env` and fill it in,
-   with `FLOK_HOST` and the names of your Traefik network, HTTPS entrypoint and certificate
-   resolver.
+2. Tokens: `flok-relay token` (or `openssl rand -hex 24`) once, as the **admin token** of the
+   flok you manage the relay from: it links with it like any flok and lets the others in. Every
+   other flok joins by a code (`flok link join` there, approved from the phone, from a linked
+   flok or from the admin flok, below), and phones pair (`flok phone pair` on a linked flok
+   shows a code and its QR); the relay keeps both in `instances.json` and `phones.json` on the
+   data volume (`flok-relay instances | phones | tenants` list them, `flok link list | forget`
+   and `flok phone list | forget` on a flok manage them). Static instance and device tokens
+   are optional (floks that do not join; curl and scripts). Copy `stack.env.example` to
+   `stack.env` and fill it in, with `FLOK_HOST` and the names of your Traefik network, HTTPS
+   entrypoint and certificate resolver.
 3. APNs (optional until the app exists): in the developer account, Keys → a key with the Apple
    Push Notifications service; download the `.p8`, note its key id and your team id. The key
    travels as one base64 line in `FLOK_RELAY_APNS_KEY_B64` (`base64 -i AuthKey_XXXX.p8 | tr -d
@@ -30,18 +35,40 @@ Without Portainer, `docker compose --env-file stack.env up -d` does the same; wi
 
 ## Connect an instance
 
-In that machine's `~/.config/flok/config.toml`:
+The first flok, with the admin token, in that machine's `~/.config/flok/config.toml`:
 
 ```toml
 [link]
 name = "home"                          # how the phone names this flok (default: the hostname)
 url = "https://flok.example.net"       # wss://…/link is implied
-token = "<its instance token>"
+token = "<the admin token>"            # or one of the optional instance tokens
 ```
 
 `flok reload` (or the next `flok up`) connects. `flok doctor` says `link: connected to …`; the
 footer says when the relay has been out of reach for half a minute. `HTTPS_PROXY` is honoured
 for a machine that must go through a proxy.
+
+Every other flok joins, with nothing in its config:
+
+```sh
+flok link join https://flok.example.net     # shows a code and its QR, waits
+```
+
+Approve it from the phone app (scan the QR: Settings › *Link a computer*, or the Camera app),
+from a flok that is linked (`flok link approve AB7Q-K2MN`) or from the admin flok (`flok
+tenant approve AB7Q-K2MN --tenant <name>`, which also makes a new tenant). The joining Mac
+shows who approved it and for which tenant; Enter accepts and the relay hands it a key of its
+own, kept in `~/.local/state/flok/link.json`, with the relay's pin, so the link is encrypted
+from the start. `flok link list` shows the floks of a tenant, `flok link forget <name>` revokes
+one, `flok link leave` undoes a join.
+
+### Tenants
+
+A tenant is the set of floks and phones that see each other: one relay can serve several
+households or teams, each blind to the others. The tokens in the relay's config belong to its
+own tenant, `default`; a relay from before tenants finds everything there after the upgrade.
+The admin flok manages them with `flok tenant list | show | approve | remove`, and sees only
+names, hostnames and times, never another tenant's agents.
 
 ### Through a proxy that inspects HTTPS
 
@@ -77,6 +104,8 @@ flok-relay tail -url … -token … -answer home:%12 -text y -keys Enter        
 curl -s -H "Authorization: Bearer <device token>" https://flok.example.net/api/instances | jq .
 curl -s -H "Authorization: Bearer <device token>" -d '{"instance":"home","pane":"%12","keys":["Escape"]}' https://flok.example.net/api/answer
 docker exec flok-relay /flok-relay phones                                          # the phones paired, from phones.json
+docker exec flok-relay /flok-relay instances                                       # the floks that joined by code
+docker exec flok-relay /flok-relay tenants                                         # the tenants with their counts
 ```
 
 The device token here is a paired phone's key (the app got it from `POST /api/pair`; nothing
@@ -94,8 +123,8 @@ offline simply reports so. Every answer and seen mark is logged on the instance 
 ## Configuration reference
 
 `relay.example.toml` lists the file keys; every one has an environment variable
-(`FLOK_RELAY_LISTEN`, `FLOK_RELAY_DATA_DIR`, `FLOK_RELAY_INSTANCE_TOKENS`,
-`FLOK_RELAY_DEVICE_TOKENS`, `FLOK_RELAY_APNS_KEY_FILE`, or `FLOK_RELAY_APNS_KEY_B64` with the
+(`FLOK_RELAY_LISTEN`, `FLOK_RELAY_DATA_DIR`, `FLOK_RELAY_ADMIN_TOKENS`,
+`FLOK_RELAY_INSTANCE_TOKENS`, `FLOK_RELAY_DEVICE_TOKENS`, `FLOK_RELAY_APNS_KEY_FILE`, or `FLOK_RELAY_APNS_KEY_B64` with the
 `.p8` base64-encoded, or `FLOK_RELAY_APNS_KEY` with the PEM itself, `FLOK_RELAY_APNS_KEY_ID`,
 `FLOK_RELAY_APNS_TEAM_ID`, `FLOK_RELAY_APNS_TOPIC`, `FLOK_RELAY_TUNNEL_ONLY`), which wins over
 the file. There is no sandbox switch: the app registers its token with `sandbox: true` when it

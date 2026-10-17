@@ -41,6 +41,16 @@ func (f *fakePush) Send(_ context.Context, d apns.Device, n apns.Notification) e
 	return f.fail
 }
 
+// place puts a hand-made instance into the relay's own tenant, as a link would.
+func place(s *Server, in *instance) *instance {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t := s.tenantLocked(DefaultTenant)
+	in.tenant = t
+	t.instances[in.name] = in
+	return in
+}
+
 // wsApp is a test app on /api/ws.
 type wsApp struct {
 	conn *websocket.Conn
@@ -515,10 +525,7 @@ func TestRelayPushesByPrefs(t *testing.T) {
 	if code, _ := api(t, srv, "dev-tok", "POST", "/api/devices", map[string]any{"token": "quietphone01", "name": "quiet"}); code != 200 {
 		t.Fatalf("re-register: %d", code)
 	}
-	in := &instance{name: "home", subs: map[string]int{}, gen: 1, online: true}
-	s.mu.Lock()
-	s.instances["home"] = in
-	s.mu.Unlock()
+	in := place(s, &instance{name: "home", subs: map[string]int{}, gen: 1, online: true})
 	s.event(in, 1, wire.Event{Pane: "%1", Agent: "api", Kind: "done"})
 	deadline := time.Now().Add(2 * time.Second)
 	for {
@@ -547,10 +554,7 @@ func TestRelaySyncsWhenAgentsStopWaiting(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = s.devices.add(device{Token: "phonetoken01", Name: "phone", Added: time.Now()})
-	in := &instance{name: "home", subs: map[string]int{}, gen: 1, online: true}
-	s.mu.Lock()
-	s.instances["home"] = in
-	s.mu.Unlock()
+	in := place(s, &instance{name: "home", subs: map[string]int{}, gen: 1, online: true})
 	snap := func(unseen int, states ...agent.State) *snapshot.Snapshot {
 		sn := &snapshot.Snapshot{Unseen: unseen}
 		for i, st := range states {
@@ -595,18 +599,18 @@ func TestOverviewCountsAndRanks(t *testing.T) {
 	s, _ := New(Config{InstanceTokens: []string{"i"}, DeviceTokens: []string{"d"}})
 	t0 := time.Date(2026, 10, 13, 9, 0, 0, 0, time.UTC)
 	at := func(m int) time.Time { return t0.Add(time.Duration(m) * time.Minute) }
-	s.instances["home"] = &instance{name: "home", online: true, snap: &snapshot.Snapshot{Agents: []snapshot.Agent{
+	place(s, &instance{name: "home", online: true, snap: &snapshot.Snapshot{Agents: []snapshot.Agent{
 		{PaneID: "%1", Name: "w-old", State: agent.Working, StateSince: at(0), Tool: "Edit"},
 		{PaneID: "%2", Name: "w-new", State: agent.Working, StateSince: at(5)},
 		{PaneID: "%3", Name: "asks", State: agent.Blocked, Reason: "permission:Bash", StateSince: at(7)},
 		{PaneID: "%4", Name: "done-seen", State: agent.Done, StateSince: at(1)},
 		{PaneID: "%5", Name: "done-unseen", State: agent.Done, Unseen: 1, StateSince: at(6)},
 		{PaneID: "%6", Name: "idle", State: agent.Idle},
-	}}}
-	s.instances["office"] = &instance{name: "office", online: false, snap: &snapshot.Snapshot{Agents: []snapshot.Agent{
+	}}})
+	place(s, &instance{name: "office", online: false, snap: &snapshot.Snapshot{Agents: []snapshot.Agent{
 		{PaneID: "%1", Name: "offline-working", State: agent.Working, StateSince: at(0)},
-	}}}
-	ov := s.overviewLocked()
+	}}})
+	ov := s.overviewLocked(s.tenants[DefaultTenant])
 	if ov.Working != 2 || ov.Waiting != 1 || ov.Done != 1 {
 		t.Fatalf("counts (an offline instance does not count): %+v", ov)
 	}
@@ -637,10 +641,7 @@ func TestLiveActivities(t *testing.T) {
 	srv := httptest.NewServer(s.Handler())
 	defer srv.Close()
 	_ = s.devices.add(device{Token: "phonetoken01", Name: "phone", Added: time.Now()})
-	in := &instance{name: "home", subs: map[string]int{}, gen: 1, online: true}
-	s.mu.Lock()
-	s.instances["home"] = in
-	s.mu.Unlock()
+	in := place(s, &instance{name: "home", subs: map[string]int{}, gen: 1, online: true})
 	snap := func(agents ...snapshot.Agent) *snapshot.Snapshot { return &snapshot.Snapshot{Agents: agents} }
 	work := snapshot.Agent{PaneID: "%1", Name: "api", State: agent.Working, StateSince: time.Now()}
 	ask := snapshot.Agent{PaneID: "%1", Name: "api", State: agent.Blocked, Reason: "question", StateSince: time.Now()}

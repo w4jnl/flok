@@ -185,13 +185,9 @@ func New(d Deps) Model {
 		m.pusher = c
 	}
 	m.linkSubs = map[string]bool{}
-	if d.Cfg.Link.URL != "" {
-		hostname, _ := os.Hostname()
-		m.linker = link.New(link.Config{URL: d.Cfg.Link.URL, Token: d.Cfg.Link.Token, Pin: d.Cfg.Link.Pin, Name: d.Cfg.InstanceName(),
-			Off: d.Store != nil && d.Store.LinkOff(), Version: d.Version, Hostname: hostname, Logf: m.debugf})
-		if m.linker != nil {
-			m.linkStatus = m.linker.Status()
-		}
+	m.linker = m.newLinker()
+	if m.linker != nil {
+		m.linkStatus = m.linker.Status()
 	}
 	m.p = poller.New(poller.Deps{Cfg: d.Cfg, Tmux: d.Inner, Store: d.Store, Registry: d.Registry, Rules: d.Rules,
 		Adapters: d.Adapters, BranchOf: d.BranchOf, ClientTTY: m.clientTTY,
@@ -613,6 +609,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmd := m.onRemote(msg.Msg)
 		return m, batch(cmd, m.waitRemote())
 	case linkMsg: // the relay: a state change, or a command from the phone
+		if msg.from != m.linker { // a link that was replaced (flok link join): its last words
+			return m, nil
+		}
 		return m, batch(m.onLink(msg.Msg), m.waitLink())
 	case linkAnswerMsg:
 		m.answerDone(msg)

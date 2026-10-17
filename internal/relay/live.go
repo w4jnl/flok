@@ -105,17 +105,17 @@ func needsYou(reason string) string {
 	return "needs you"
 }
 
-// overviewLocked counts every online instance's agents and picks the rows: what asks first
-// (oldest first), then what finished unseen (newest first), then what works (longest first).
-// The caller holds s.mu.
-func (s *Server) overviewLocked() LiveState {
+// overviewLocked counts the agents of a tenant's online instances and picks the rows: what asks
+// first (oldest first), then what finished unseen (newest first), then what works (longest
+// first). The caller holds s.mu.
+func (s *Server) overviewLocked(t *tenant) LiveState {
 	st := LiveState{Rows: []LiveRow{}}
 	type ranked struct {
 		r    LiveRow
 		rank int
 	}
 	var all []ranked
-	for _, in := range s.instances {
+	for _, in := range t.instances {
 		if !in.online || in.snap == nil {
 			continue
 		}
@@ -154,9 +154,9 @@ func (s *Server) overviewLocked() LiveState {
 
 // agentStateLocked is a followed agent's activity content: its one row, gone when the instance
 // no longer lists it. The caller holds s.mu.
-func (s *Server) agentStateLocked(instance, pane string) LiveState {
+func (s *Server) agentStateLocked(t *tenant, instance, pane string) LiveState {
 	st := LiveState{Rows: []LiveRow{{Instance: instance, Pane: pane, State: "gone", Label: "gone"}}}
-	in := s.instances[instance]
+	in := t.instances[instance]
 	if in == nil || in.snap == nil {
 		return st
 	}
@@ -179,13 +179,13 @@ func (s *Server) agentStateLocked(instance, pane string) LiveState {
 	return st
 }
 
-// liveSoonLocked schedules one round of activity pushes (a burst of snapshots is one round).
-// The caller holds s.mu.
-func (s *Server) liveSoonLocked() {
-	if s.cfg.Push == nil || s.liveDue != nil {
+// liveSoonLocked schedules one round of activity pushes to a tenant's phones (a burst of
+// snapshots is one round). The caller holds s.mu.
+func (s *Server) liveSoonLocked(t *tenant) {
+	if s.cfg.Push == nil || t.liveDue != nil {
 		return
 	}
-	s.liveDue = time.AfterFunc(s.cfg.LiveDelay, s.live)
+	t.liveDue = time.AfterFunc(s.cfg.LiveDelay, func() { s.live(t) })
 }
 
 type liveJob struct {
@@ -197,27 +197,27 @@ type liveJob struct {
 	alert  *pendingAlert // a finished agent's push this update carries
 }
 
-// live sends what changed to every phone's activities: starts, updates, ends.
-func (s *Server) live() {
+// live sends what changed to the activities of a tenant's phones: starts, updates, ends.
+func (s *Server) live(t *tenant) {
 	now := time.Now()
 	s.mu.Lock()
-	s.liveDue = nil
-	ov := s.overviewLocked()
-	edge := ov.active() && !s.liveWasActive
-	s.liveWasActive = ov.active()
+	t.liveDue = nil
+	ov := s.overviewLocked(t)
+	edge := ov.active() && !t.liveWasActive
+	t.liveWasActive = ov.active()
 	if !ov.quiet() {
-		s.liveQuietSince = time.Time{}
-	} else if s.liveQuietSince.IsZero() {
-		s.liveQuietSince = now
+		t.liveQuietSince = time.Time{}
+	} else if t.liveQuietSince.IsZero() {
+		t.liveQuietSince = now
 		time.AfterFunc(s.cfg.QuietEnd+50*time.Millisecond, func() { // look again when the quiet is long enough to end
 			s.mu.Lock()
-			s.liveSoonLocked()
+			s.liveSoonLocked(t)
 			s.mu.Unlock()
 		})
 	}
-	endOverview := ov.quiet() && now.Sub(s.liveQuietSince) >= s.cfg.QuietEnd
+	endOverview := ov.quiet() && now.Sub(t.liveQuietSince) >= s.cfg.QuietEnd
 	var jobs []liveJob
-	for _, d := range s.devices.list() {
+	for _, d := range s.devices.listTenant(t.id) {
 		off := d.Prefs != nil && d.Prefs.NoActivity
 		alert, alerting := s.liveAlert[d.Token]
 		delete(s.liveAlert, d.Token)
@@ -242,7 +242,7 @@ func (s *Server) live() {
 					jobs = append(jobs, j)
 				}
 			case liveAgent:
-				st := s.agentStateLocked(a.Instance, a.Pane)
+				st := s.agentStateLocked(t, a.Instance, a.Pane)
 				switch st.Rows[0].State {
 				case "gone":
 					jobs = append(jobs, liveJob{dev: d, act: &a, ending: true, n: apns.Notification{

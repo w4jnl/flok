@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -10,9 +11,11 @@ import (
 	"github.com/w4jnl/flok/internal/answer"
 	"github.com/w4jnl/flok/internal/hosts"
 	"github.com/w4jnl/flok/internal/link"
+	"github.com/w4jnl/flok/internal/link/wire"
 	"github.com/w4jnl/flok/internal/poller"
 	"github.com/w4jnl/flok/internal/remote"
 	"github.com/w4jnl/flok/internal/remote/proto"
+	"github.com/w4jnl/flok/internal/state"
 	"github.com/w4jnl/flok/internal/tmux"
 )
 
@@ -24,7 +27,10 @@ import (
 // serve). Every command is logged to events.log.
 
 type (
-	linkMsg           struct{ link.Msg }
+	linkMsg struct {
+		link.Msg
+		from *link.Client // which link said it: one replaced by relink is ignored
+	}
 	linkScreenTickMsg struct{}
 	linkScreensMsg    struct{ screens map[string]string } // pane ref → text
 	linkAnswerMsg     struct {
@@ -36,6 +42,45 @@ type (
 
 // linkWarnAfter is how long the relay may be out of reach before the footer mentions it.
 const linkWarnAfter = 30 * time.Second
+
+// newLinker builds the link from the settings: a join record in the state dir (flok link join)
+// wins over [link] url, token and pin in config.toml. Nil without either.
+func (m Model) newLinker() *link.Client {
+	l := m.d.Cfg.Link
+	settings := state.LinkSettings{URL: l.URL, Token: l.Token, Pin: l.Pin}
+	off := false
+	if m.d.Store != nil {
+		settings = m.d.Store.LinkSettings(l.URL, l.Token, l.Pin)
+		off = m.d.Store.LinkOff()
+	}
+	if settings.URL == "" {
+		return nil
+	}
+	hostname, _ := os.Hostname()
+	return link.New(link.Config{URL: settings.URL, Token: settings.Token, Pin: settings.Pin, Name: m.d.Cfg.InstanceName(),
+		Off: off, Version: m.d.Version, Hostname: hostname, Logf: m.debugf})
+}
+
+// relink replaces the link after the settings changed (flok link join wrote its record, flok
+// link leave removed it): the old link closes, the new one starts from scratch.
+func (m *Model) relink() tea.Cmd {
+	if m.linker != nil {
+		old := m.linker
+		go old.Close()
+	}
+	for ref := range m.linkSubs {
+		m.setCapture(ref, false)
+	}
+	m.linkSubs = map[string]bool{}
+	m.linker = m.newLinker()
+	m.linkStatus, m.linkWarned = link.Status{}, false
+	if m.linker != nil {
+		m.linkStatus = m.linker.Status()
+	}
+	m.refederate()
+	m.publish()
+	return m.startLink()
+}
 
 // startLink runs the link once the program is up.
 func (m Model) startLink() tea.Cmd {
@@ -51,8 +96,9 @@ func (m Model) waitLink() tea.Cmd {
 	if m.linker == nil {
 		return nil
 	}
-	ch := m.linker.Messages()
-	return func() tea.Msg { return linkMsg{<-ch} }
+	c := m.linker
+	ch := c.Messages()
+	return func() tea.Msg { return linkMsg{<-ch, c} }
 }
 
 // onLink applies one link message.
@@ -126,6 +172,9 @@ func (m *Model) linkCommand(c link.Command) tea.Cmd {
 	switch c.Kind {
 	case "phone": // the relay's answer to flok phone, or a phone that paired
 		return m.linkPhone(c)
+	case "enroll", "tenant": // the relay's answer to flok link approve | list | forget, flok tenant
+		m.writeReply(c.ID, wire.Frame{Type: c.Kind, ID: c.ID, Enroll: c.Enroll, Tenant: c.Tenant, Error: c.Error})
+		return nil
 	case "reset": // the connection ended: the relay subscribes again when it is back
 		for ref := range m.linkSubs {
 			m.setCapture(ref, false)

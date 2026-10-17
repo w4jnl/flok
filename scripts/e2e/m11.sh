@@ -26,7 +26,7 @@ APNS_PORT=$(cat "$FH/port")
 openssl ecparam -name prime256v1 -genkey -noout 2>/dev/null | openssl pkcs8 -topk8 -nocrypt -out "$APNS_KEY" 2>/dev/null || true
 INST_TOK=$("$RELAY" token); DEV_TOK=$("$RELAY" token)
 start_relay() {
-  FLOK_RELAY_INSTANCE_TOKENS=$INST_TOK FLOK_RELAY_DEVICE_TOKENS=$DEV_TOK FLOK_RELAY_APNS_KEY_FILE=$APNS_KEY \
+  FLOK_RELAY_ADMIN_TOKENS=$INST_TOK FLOK_RELAY_DEVICE_TOKENS=$DEV_TOK FLOK_RELAY_APNS_KEY_FILE=$APNS_KEY \
   FLOK_RELAY_APNS_KEY_ID=KEY1234567 FLOK_RELAY_APNS_TEAM_ID=TEAM123456 FLOK_RELAY_APNS_TOPIC=nl.w4j.flok.e2e \
   FLOK_RELAY_APNS_URL=http://127.0.0.1:$APNS_PORT \
     "$RELAY" serve -listen "127.0.0.1:$RELAY_PORT" -data "$RELAY_DATA" >> "$RELAY_LOG" 2>&1 &
@@ -85,6 +85,54 @@ expect_soon "a relay starts with instance tokens alone" '"ok":true' "$RELAY" hea
 expect "… and says its pairings live in memory without a data dir" 'phones: kept in memory' "$(cat "$T/relay2.log")"
 kill "$R2_PID" 2>/dev/null || true; wait "$R2_PID" 2>/dev/null || true
 
+
+# --- a flok joins by the code it shows ---------------------------------------------------------
+# flok link join talks to the relay itself (no key yet): a code, a poll; a member of the tenant
+# approves it (a linked flok: flok link approve; the app: POST /api/enroll/approve with its key;
+# an admin flok: flok tenant approve, naming the tenant); the flok accepts and keeps its key in
+# link.json, which wins over [link] in config.toml. A separate state dir stands in for the
+# other machine; --json implies --yes and prints the code, then the outcome.
+JOIN_STATE=$T/join-state; mkdir -p "$JOIN_STATE"
+jcode() { head -1 "$1" | python3 -c 'import json,sys; print(json.loads(sys.stdin.readline())["code"])'; }
+FLOK_STATE=$JOIN_STATE "$BIN" link join "http://127.0.0.1:$RELAY_PORT" --name e2e-office --json > "$T/join.out" 2>&1 &
+JOIN_PID=$!
+expect_soon "flok link join asks the relay for a code" '"code":"[A-Z2-9]{4}-[A-Z2-9]{4}".*"url":"flok://link\?code=[A-Z2-9-]{9}&relay=http%3A%2F%2F127.0.0.1%3A'"$RELAY_PORT"'"' cat "$T/join.out"
+JCODE=$(jcode "$T/join.out")
+expect "the relay logged the request" 'join: e2e-office (.*, flok .*) from 127.0.0.1 asks to join' "$(cat "$RELAY_LOG")"
+expect "a wrong code is nobody" 'no flok is waiting with that code' "$("$BIN" link approve BBBB-BBBB 2>&1 || true)"
+expect "the app looks the code up before approving" '"pending":\{"name":"e2e-office"' "$(GET "/api/enroll/code/$JCODE")"
+expect "flok link approve lets it into this tenant" 'approved e2e-office (.*, flok .*) into default: it links once it accepts there' "$("$BIN" link approve "$JCODE")"
+expect_soon "the joining flok hears it and keeps its key" '"approved_by":"flok e2e","instance":"[0-9a-f]{12}","name":"e2e-office".*"status":"joined","tenant":"default"' cat "$T/join.out"
+wait "$JOIN_PID" || true
+expect "link.json holds the key, for this user alone" '^-rw-------' "$(ls -l "$JOIN_STATE/link.json")"
+expect "flok link status there says it joined" 'joined default as e2e-office on .*, approved by flok e2e' "$(FLOK_STATE=$JOIN_STATE "$BIN" link status)"
+expect "doctor there names the join" 'link: joined default as e2e-office' "$(FLOK_STATE=$JOIN_STATE "$BIN" doctor 2>&1 || true)"
+expect "flok link list shows both floks" 'e2e .*online.*a token from the relay.s config.*e2e-office.*offline.*flok e2e' "$("$BIN" link list | tr '\n' ' ')"
+expect "flok-relay instances reads the relay's file" 'e2e-office.*default.*flok e2e' "$("$RELAY" instances -data "$RELAY_DATA")"
+FLOK_STATE=$JOIN_STATE "$BIN" link join "http://127.0.0.1:$RELAY_PORT" --name e2e-third --json > "$T/join3.out" 2>&1 &
+JOIN3_PID=$!
+expect_soon "another flok asks" '"code":"' cat "$T/join3.out"
+expect "the app's own key approves into its tenant too" '"pending":\{"name":"e2e-third"' "$(POST /api/enroll/approve '{"code":"'"$(jcode "$T/join3.out")"'"}')"
+expect_soon "… approved by a device token" '"approved_by":"a device token","instance":"[0-9a-f]{12}","name":"e2e-third".*"status":"joined","tenant":"default"' cat "$T/join3.out"
+wait "$JOIN3_PID" || true
+expect "flok link forget revokes a flok" 'e2e-third forgotten: its key no longer works' "$("$BIN" link forget e2e-third)"
+expect "… and the other" 'e2e-office forgotten' "$("$BIN" link forget e2e-office)"
+expect "the records are gone" 'no flok joined by code' "$("$RELAY" instances -data "$RELAY_DATA")"
+# tenants: this flok links with an admin token, so it manages them
+expect "flok tenant list shows the relay's own tenant" 'default.*the relay.s own' "$("$BIN" tenant list)"
+FLOK_STATE=$JOIN_STATE "$BIN" link join "http://127.0.0.1:$RELAY_PORT" --name e2e-lab --json > "$T/join2.out" 2>&1 &
+JOIN2_PID=$!
+expect_soon "a flok asks to join a tenant of its own" '"code":"[A-Z2-9]{4}-[A-Z2-9]{4}"' cat "$T/join2.out"
+expect "flok tenant approve makes the tenant and lets it in" 'approved e2e-lab (.*) into e2elab' "$("$BIN" tenant approve "$(jcode "$T/join2.out")" --tenant e2elab)"
+expect_soon "… and it joins there" '"approved_by":"admin e2e","instance":"[0-9a-f]{12}","name":"e2e-lab".*"status":"joined","tenant":"e2elab"' cat "$T/join2.out"
+wait "$JOIN2_PID" || true
+expect "flok tenant show lists its flok" 'tenant e2elab.*e2e-lab.*admin e2e' "$("$BIN" tenant show e2elab | tr '\n' ' ')"
+expect "flok-relay tenants reads the files" 'e2elab.*1.*0' "$("$RELAY" tenants -data "$RELAY_DATA")"
+expect "the relay's own tenant stays" 'own tenant stays' "$("$BIN" tenant remove default 2>&1 || true)"
+expect "flok tenant remove takes a tenant out with its floks" 'e2elab removed: 1 floks and 0 phones' "$("$BIN" tenant remove e2elab)"
+expect "… from the files too" '^0$' "$("$RELAY" tenants -data "$RELAY_DATA" | grep -c e2elab || true)"
+expect "a relay refuses to start when nothing could link in" 'nothing could link in' "$("$RELAY" serve -listen 127.0.0.1:1 -data "$T/empty-data" 2>&1 || true)"
+
 # --- a blocked agent: the app hears it, the phone gets a push ----------------------------------
 "$RELAY" tail -url "http://127.0.0.1:$RELAY_PORT" -token "$DEV_TOK" -subscribe "e2e:$AGENT" > "$T/tail.out" 2>&1 &
 TAIL_PID=$!
@@ -105,7 +153,7 @@ expect "the log holds no typed text" '^0$' "$(grep -c '"y"' "$T/state/events.log
 # a long reply with newlines is pasted through a tmux buffer; a file is saved under the state
 # dir and typed as its path (what an image for Claude Code looks like); the relay tells the app
 # what the instance takes, and refuses what it does not
-expect "the relay lists what the instance takes" '"features":\["answer","screen","long-text","files","phone"\]' "$(GET /api/instances)"
+expect "the relay lists what the instance takes" '"features":\["answer","screen","long-text","files","phone","enroll"\]' "$(GET /api/instances)"
 expect "a long reply with newlines is taken" '"ok":true' "$(POST /api/answer '{"instance":"e2e","pane":"'"$AGENT"'","text":"first long line\nsecond long line","keys":["Enter"]}')"
 expect_soon "the pane shows both lines" '^first long line *$' IN capture-pane -p -J -t "$AGENT"
 expect "… the second as well" '^second long line *$' "$(IN capture-pane -p -J -t "$AGENT")"
@@ -165,7 +213,7 @@ start_relay
 expect_soon -t 20 "the link is back after the relay restarts" '^connected$' json "$SNAP" "s['link']['state']"
 expect_soon -t 10 "the instance is online at the new relay, snapshot included" '"name":"e2e","online":true.*"pane_id":"'"$AGENT"'"' GET /api/instances
 expect "the relay logged the instance" 'instance e2e online' "$(cat "$RELAY_LOG")"
-expect "... with its frames deflated" 'instance e2e online \(flok [^)]*, compressed\)' "$(cat "$RELAY_LOG")"
+expect "... with its frames deflated, as the admin flok" 'instance e2e online \(flok [^)]*, compressed, admin\)' "$(cat "$RELAY_LOG")"
 expect "the relay logged the pushes" 'push: e2e · '"$PROJ"' → e2e phone e2edevic… production \(blocked\)' "$(cat "$RELAY_LOG")"
 
 # --- flok link: the relay link switched off and on again (prefix U) ------------------------------
@@ -202,7 +250,7 @@ sed -i.bak "s#127.0.0.1:$RELAY_PORT#127.0.0.1:$(cat "$FH/tapport")#" "$FLOK_CONF
 printf 'pin = "%s"\n' "$PIN" >> "$FLOK_CONFIG"   # [link] is the config's last table
 "$BIN" reload
 expect_soon -t 20 "the sidebar links in again, encrypted and deflated, through the tap" '^connected True True$' json "$SNAP" "s['link']['state'] + ' ' + str(s['link'].get('encrypted')) + ' ' + str(s['link'].get('compressed'))"
-expect_soon -t 10 "the relay logged the encrypted link" 'instance e2e online \(flok [^)]*, encrypted, compressed\)' cat "$RELAY_LOG"
+expect_soon -t 10 "the relay logged the encrypted link" 'instance e2e online \(flok [^)]*, encrypted, compressed, admin\)' cat "$RELAY_LOG"
 expect_soon -t 10 "the snapshot reaches the relay inside the tunnel" '"name":"e2e","online":true.*"pane_id":"'"$AGENT"'"' GET /api/instances
 expect "an answer goes through the tunnel" '"ok":true' "$(POST /api/answer '{"instance":"e2e","pane":"'"$AGENT"'","text":"tunnelreply"}')"
 expect_soon "the pane shows it" 'tunnelreply' IN capture-pane -p -t "$AGENT"

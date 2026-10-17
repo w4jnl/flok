@@ -15,8 +15,8 @@ import (
 // Proto is the protocol version an instance's hello carries.
 const Proto = 1
 
-// Frame types. Instance to relay: hello, snap, event, screen, ack, bye, phone. Relay to instance:
-// answer, seen, subscribe, phone. Relay to app: instances, instance, event, screen, ack. App to
+// Frame types. Instance to relay: hello, snap, event, screen, ack, bye, phone, enroll, tenant.
+// Relay to instance: answer, seen, subscribe, phone, enroll, tenant. Relay to app: instances, instance, event, screen, ack. App to
 // relay: answer, seen, subscribe. Ping/pong are WebSocket control frames, not these. Inside the
 // encrypted link (/link/tls) the instance's first frame is auth with its token, and the relay
 // answers auth (go on) or error (refused) before the hello.
@@ -32,6 +32,8 @@ const (
 	TypeSeen      = "seen"
 	TypeSubscribe = "subscribe"
 	TypePhone     = "phone"     // instance to relay: pair | list | forget (ID = the request); relay to instance: the reply under that ID, or paired, unsolicited, under the ID the code was asked with
+	TypeEnroll    = "enroll"    // instance to relay: lookup | approve | list | forget, about floks joining its tenant (ID = the request); relay to instance: the reply
+	TypeTenant    = "tenant"    // an instance linked with an admin token to relay: list | show | approve | remove (ID = the request); relay to instance: the reply
 	TypeInstances = "instances" // relay to app on connect: every instance the relay knows
 	TypeInstance  = "instance"  // relay to app: one instance changed (online, offline, a new snapshot)
 	TypeError     = "error"     // either way: a message for the log
@@ -53,11 +55,79 @@ type Frame struct {
 	Token    string             `json:"token,omitempty"`  // auth: the instance token, only ever inside the tunnel
 	Reason   string             `json:"reason,omitempty"` // bye: ByeOff
 	Phone    *Phone             `json:"phone,omitempty"`  // phone: a pairing request and its reply
+	Enroll   *Enroll            `json:"enroll,omitempty"` // enroll: a request about a joining flok and its reply
+	Tenant   *Tenant            `json:"tenant,omitempty"` // tenant: an admin's request and its reply
 	// Instances is the relay's view of every instance (TypeInstances), Inst one of them
 	// (TypeInstance).
 	Instances []Instance `json:"instances,omitempty"`
 	Inst      *Instance  `json:"inst,omitempty"`
 }
+
+// Enroll is what flok link asks the relay over the link about the floks of its tenant: the one
+// waiting with a code (lookup), that it may join (approve), which are joined (list), and one to
+// revoke (forget). A joining flok's key never crosses this link: the flok alone gets it, once,
+// from the relay when it accepts the approval.
+type Enroll struct {
+	Op        string         `json:"op"`                  // lookup | approve | list | forget
+	Code      string         `json:"code,omitempty"`      // lookup, approve: the code the joining flok shows
+	Name      string         `json:"name,omitempty"`      // forget: the flok's name or id, as typed
+	Pending   *Joining       `json:"pending,omitempty"`   // lookup, approve: the flok that asked
+	Instances []InstanceInfo `json:"instances,omitempty"` // list, forget: the tenant's floks (after the forget)
+	Instance  *InstanceInfo  `json:"instance,omitempty"`  // forget: the one it was
+	Tenant    string         `json:"tenant,omitempty"`    // replies: the tenant acted in
+}
+
+// Joining is a flok waiting for its join to be approved: what the approver sees before saying
+// yes, as the flok sent it with POST /api/enroll.
+type Joining struct {
+	Name      string    `json:"name"`
+	Hostname  string    `json:"hostname,omitempty"`
+	Version   string    `json:"version,omitempty"`
+	From      string    `json:"from,omitempty"` // the address it asked from
+	Started   time.Time `json:"started"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+// InstanceInfo is one flok of a tenant as the relay keeps it, without its key.
+type InstanceInfo struct {
+	ID         string    `json:"id,omitempty"` // "" for one linking with a token from the relay's config
+	Name       string    `json:"name"`
+	Hostname   string    `json:"hostname,omitempty"`
+	Version    string    `json:"version,omitempty"`
+	Joined     time.Time `json:"joined,omitzero"`
+	LastSeen   time.Time `json:"last_seen,omitzero"`
+	Online     bool      `json:"online"`
+	ApprovedBy string    `json:"approved_by,omitempty"`
+	Static     bool      `json:"static,omitempty"` // links with a token from the relay's config
+}
+
+// Tenant is what flok tenant asks the relay (over the link of an instance that holds an admin
+// token) and what it answers. A tenant is the set of floks and phones that see each other.
+type Tenant struct {
+	Op      string       `json:"op"`                // list | show | approve | remove
+	Name    string       `json:"name,omitempty"`    // show, remove, approve: the tenant's name
+	Code    string       `json:"code,omitempty"`    // approve: the joining flok's code
+	Tenants []TenantInfo `json:"tenants,omitempty"` // list
+	Tenant  *TenantInfo  `json:"tenant,omitempty"`  // show, approve, remove: the one it is about
+	Pending *Joining     `json:"pending,omitempty"` // approve: the flok approved
+}
+
+// TenantInfo is one tenant as the relay keeps it: its counts, and for show its members.
+type TenantInfo struct {
+	ID        string         `json:"id"`
+	Name      string         `json:"name"`
+	Created   time.Time      `json:"created,omitzero"`
+	Static    bool           `json:"static,omitempty"` // the relay's own: the tokens in its config link and sign in here
+	Instances int            `json:"instances"`
+	Online    int            `json:"online"`
+	Phones    int            `json:"phones"`
+	Floks     []InstanceInfo `json:"floks,omitempty"`      // show
+	PhoneList []PhoneInfo    `json:"phone_list,omitempty"` // show
+}
+
+// CloseInstanceForgotten is the reason the relay closes an instance's link with when it was
+// forgotten (flok link forget, or its tenant removed): its key is gone, it joins again or not.
+const CloseInstanceForgotten = "forgotten: this flok was removed from the relay (flok link join joins it again)"
 
 // Phone is what flok phone asks the relay over the link (pair, list, forget) and what the relay
 // answers: a pairing code for the QR, the phones paired, the one a request was about. The relay
@@ -78,6 +148,7 @@ type PhoneInfo struct {
 	Paired   time.Time `json:"paired"`
 	LastSeen time.Time `json:"last_seen,omitzero"`
 	Instance string    `json:"instance,omitempty"` // the instance that showed the code
+	Tenant   string    `json:"tenant,omitempty"`   // the tenant it belongs to (flok-relay phones, flok tenant show)
 }
 
 // CloseForgotten is the reason the relay closes an app's stream with when its phone was
@@ -124,6 +195,7 @@ type Instance struct {
 	Hostname string             `json:"hostname,omitempty"` // the machine
 	Features []string           `json:"features,omitempty"` // what its link can do (FeatureLongText, FeatureFiles): the app shows what the instance takes
 	Snap     *snapshot.Snapshot `json:"snap,omitempty"`
+	Gone     bool               `json:"gone,omitempty"` // forgotten on the relay: the app drops it
 }
 
 // Features an instance advertises in its hello.
@@ -133,10 +205,11 @@ const (
 	FeatureLongText = "long-text" // an answer's text may be long and multi-line (pasted); without it at most answer.MaxText on one line
 	FeatureFiles    = "files"     // an answer may carry a file, saved next to the agent and typed as its path
 	FeaturePhone    = "phone"     // sends phone frames (flok phone pair | list | forget) and takes the replies
+	FeatureEnroll   = "enroll"    // sends enroll and tenant frames (flok link approve | list | forget, flok tenant) and takes the replies
 )
 
 // InstanceFeatures is what this flok's link advertises.
-var InstanceFeatures = []string{FeatureAnswer, FeatureScreen, FeatureLongText, FeatureFiles, FeaturePhone}
+var InstanceFeatures = []string{FeatureAnswer, FeatureScreen, FeatureLongText, FeatureFiles, FeaturePhone, FeatureEnroll}
 
 // MaxFrame bounds one frame from an instance (a snapshot of a busy site is a few hundred KB).
 const MaxFrame = 8 << 20

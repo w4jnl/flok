@@ -21,6 +21,7 @@ import (
 type rawInstance struct {
 	conn *websocket.Conn
 	got  chan wire.Frame
+	errc chan error // why the reader stopped, once it did
 }
 
 func linkRaw(t *testing.T, srv *httptest.Server, token, name string) *rawInstance {
@@ -31,12 +32,13 @@ func linkRaw(t *testing.T, srv *httptest.Server, token, name string) *rawInstanc
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { conn.CloseNow() })
-	in := &rawInstance{conn: conn, got: make(chan wire.Frame, 64)}
+	in := &rawInstance{conn: conn, got: make(chan wire.Frame, 64), errc: make(chan error, 1)}
 	in.send(t, wire.Frame{Type: wire.TypeHello, Hello: &wire.Hello{Proto: wire.Proto, Name: name, Version: "test", Hostname: "box", Features: wire.InstanceFeatures}})
 	go func() {
 		for {
 			_, data, err := conn.Read(context.Background())
 			if err != nil {
+				in.errc <- err
 				return
 			}
 			var f wire.Frame

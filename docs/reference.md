@@ -11,8 +11,11 @@ flok up [--detach]          start or re-attach the outer session (your server ke
 flok down                   stop the outer session
 flok keep-awake [on|off|toggle|status] [--notify]   keep the Mac awake, display on, while flok runs (macOS)
 flok link [on|off|toggle|status] [--notify]   switch the relay link off and on again (stays off until on)
+flok link join <relay> [--name <n>] [--yes] [--open] [--json]   join the relay by a code and its QR shown here; a member approves it, Enter accepts, the key lands in link.json
+flok link approve <code> | list [--json] | forget <name|id> | leave   let a flok in, the floks of this tenant, revoke one, undo this flok's join
 flok phone pair [--open] [--json]   show a code and its QR for the phone app to scan (5 min, one phone; --open: a tmux popup)
 flok phone list [--json] | forget <name|id>   the phones paired with the relay; revoke one (its key, its pushes, its app)
+flok tenant list | show <name> | approve <code> --tenant <name> | remove <name>   the relay's tenants (with an admin token as [link] token)
 flok status [--json]        one-shot dump of sessions and agents
 flok jump | next | prev     navigation, used by the bindings           [--client <tty>]
 flok menu agents|sessions|servers   a tmux menu over the work pane (prefix A / S / @), 1-9 picks
@@ -40,7 +43,7 @@ flok serve --stdio | --hello      run headless on this host for a flok elsewhere
 
 flok-relay serve [-config relay.toml] [-listen :8080] [-data /data]   the relay for the phone (deploy/relay)
 flok-relay tail -url <relay> -token <device token> [-subscribe inst:%12] [-answer inst:%12 -text y -keys Enter]
-flok-relay token | phones [-data /data] | pin | health [-url …] | version   (phones: the pairings in phones.json)
+flok-relay token | tenants | instances | phones [-data /data] | pin | health [-url …] | version   (the listings read the relay's files)
 ```
 
 ## Configuration
@@ -161,10 +164,10 @@ token = ""                  # sent as Authorization: Bearer <token>
 format = "ntfy"             # ntfy: Title/Priority/Tags headers and a text line | json
 events = ["blocked", "done", "error"]
 
-[link]                      # flok on your phone: this flok's name, and the relay it dials out to
+[link]                      # flok on your phone: this flok's name, and the relay it dials out to (a join, flok link join, stands in for url, token and pin)
 name = ""                   # "" = the machine's short hostname
 url = ""                    # your flok-relay: wss://flok.example.net/link (https://flok.example.net works too); "" = off
-token = ""                  # one of the relay's instance_tokens (flok-relay token prints one)
+token = ""                  # one of the relay's instance_tokens, or its admin token (flok-relay token prints one); not needed after flok link join
 pin = ""                    # the relay's key (flok-relay pin): the link runs inside TLS to it, unreadable to a proxy that inspects HTTPS
 
 [theme]                     # Dracula by default; state tokens may name a colour or a hex value
@@ -199,8 +202,9 @@ brand = "#12999D"
 | `~/.local/state/flok/hosts.json` | the remote hosts (`flok host …`), with `enabled`, a probed `flok` path and `last_connected` |
 | `~/.local/state/flok/hosts/<name>/` | a plain-mode host's local store (records, seen marks) |
 | `~/.local/state/flok/ssh/` | flok's ssh control sockets (0700) |
-| `~/.local/state/flok/requests/` | one-shot commands for the running sidebar (`flok goto beta:%12`, `flok host front`, `flok phone …`) |
-| `~/.local/state/flok/phone/` | the sidebar's answers to `flok phone` (pair, list, forget), one file per request, swept |
+| `~/.local/state/flok/requests/` | one-shot commands for the running sidebar (`flok goto beta:%12`, `flok host front`, `flok phone …`, `flok link approve`, `flok tenant …`) |
+| `~/.local/state/flok/replies/` | the sidebar's answers to `flok phone`, `flok link approve\|list\|forget` and `flok tenant`, one file per request, swept |
+| `~/.local/state/flok/link.json` | this flok's own key to the relay and what it joined as (`flok link join`; 0600); wins over `[link]` in config.toml until `flok link leave` |
 | `~/.local/state/flok/serve.lock`, `served` | on a served host: the lock `flok serve` holds and who holds it |
 | `~/.claude/settings.json` | the hook entries `flok install --claude` adds (a backup is written) |
 | `~/.copilot/hooks/flok.json` | the Copilot CLI hook file |
