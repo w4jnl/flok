@@ -1,4 +1,5 @@
-// Every instance with its agents, the ones that need you first when the filter is on.
+// Every instance with its agents; the filter in the corner narrows them to the ones that need
+// you, or the ones doing something, in attention order.
 import Combine
 import SwiftUI
 
@@ -7,7 +8,17 @@ struct InstancesView: View {
     @Environment(Settings.self) private var settings
     @Binding var showSettings: Bool
     @Binding var showPair: Bool
-    @State private var needsYouOnly = false
+    @AppStorage("agentFilter") private var filterRaw = 0
+    private var filter: AgentFilter { AgentFilter(rawValue: filterRaw) }
+
+    /// One switch of the filter as a binding for the menu's checkmarks.
+    private func switched(_ flag: AgentFilter) -> Binding<Bool> {
+        Binding(get: { filter.contains(flag) }, set: { on in
+            var f = filter
+            if on { f.insert(flag) } else { f.remove(flag) }
+            filterRaw = f.rawValue
+        })
+    }
 
     var body: some View {
         List {
@@ -26,7 +37,7 @@ struct InstancesView: View {
                 Section {
                     let agents = rows(inst)
                     if agents.isEmpty {
-                        Text(needsYouOnly ? "nothing waiting" : "no agents").foregroundStyle(.secondary).font(.footnote)
+                        Text(filter.emptyText).foregroundStyle(.secondary).font(.footnote)
                     }
                     ForEach(agents) { a in
                         NavigationLink(value: Target(instance: inst.name, pane: a.paneRef)) {
@@ -57,8 +68,17 @@ struct InstancesView: View {
         .navigationTitle("flok")
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
-                Toggle(isOn: $needsYouOnly) { Label("Needs you", systemImage: "bell.badge") }
-                    .toggleStyle(.button)
+                Menu {
+                    Toggle(isOn: switched(.needsYou)) { Label("Needs you", systemImage: "bell.badge") }
+                    Toggle(isOn: switched(.active)) { Label("Active", systemImage: "bolt") }
+                    Divider()
+                    Button { filterRaw = 0 } label: { Label("All agents", systemImage: "line.3.horizontal.decrease") }
+                        .disabled(filter.isEmpty)
+                } label: {
+                    Label(filter.title, systemImage: filter.icon)
+                        .symbolVariant(filter.isEmpty ? .none : .fill)
+                }
+                .accessibilityLabel("Filter: \(filter.title)")
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showSettings = true } label: { Label("Settings", systemImage: "gearshape") }
@@ -67,14 +87,7 @@ struct InstancesView: View {
         .refreshable { await relay.refresh() }
     }
 
-    private func rows(_ inst: InstanceState) -> [Agent] {
-        var agents = inst.agents
-        if needsYouOnly {
-            agents = agents.filter { $0.state == .blocked || $0.unseen > 0 }
-            agents.sort { ($0.state.priority, $0.name) < ($1.state.priority, $1.name) }
-        }
-        return agents
-    }
+    private func rows(_ inst: InstanceState) -> [Agent] { filter.apply(inst.agents) }
 }
 
 struct InstanceHeader: View {

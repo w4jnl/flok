@@ -299,6 +299,24 @@ struct SettingsTests {
     }
 }
 
+struct FilterTests {
+    private func agent(_ name: String, _ state: AgentState, unseen: Int = 0) -> Agent {
+        let json = #"{"pane_id":"%1","session_id":"$0","session_name":"s","window_id":"@1","name":"\#(name)","kind":"claude","state":"\#(state.rawValue)","unseen":\#(unseen),"state_since":"2026-10-17T09:00:00Z","has_hooks":true}"#
+        return try! Wire.decoder.decode(Agent.self, from: Data(json.utf8))
+    }
+
+    @Test func filtersKeepTheRightAgentsInAttentionOrder() {
+        let agents = [agent("idle", .idle), agent("worker", .working), agent("asks", .blocked), agent("finished", .done, unseen: 1), agent("seen", .done), agent("bg", .paused)]
+        #expect(AgentFilter().apply(agents).map(\.name) == ["idle", "worker", "asks", "finished", "seen", "bg"])
+        #expect(AgentFilter.needsYou.apply(agents).map(\.name) == ["asks", "finished"])
+        #expect(AgentFilter.active.apply(agents).map(\.name) == ["asks", "worker", "bg"])
+        let both: AgentFilter = [.needsYou, .active]
+        #expect(both.apply(agents).map(\.name) == ["asks", "finished", "worker", "bg"])
+        #expect(both.title == "Needs you · Active" && both.emptyText == "nothing running or waiting" && AgentFilter.active.emptyText == "nothing running")
+        #expect(AgentFilter(rawValue: 3) == both && AgentFilter(rawValue: 0).isEmpty)
+    }
+}
+
 struct PairTests {
     @Test func readsThePairingLink() {
         let p = FlokLink.pairing(URL(string: "flok://pair?code=AB7Q-K2MN&relay=https%3A%2F%2Fflok.example.net")!)

@@ -25,6 +25,9 @@ updates this file first. Dates are the tag dates.
   instances` list the files at the container. Needs flok-relay updated: an older relay says
   "predates joining by code", and the relay's data files gain tenant fields (copy the volume
   before, an older relay drops them on its next write).
+- **App: a filter for the active agents.** The bell in the list's corner is a menu now with two
+  switches, *Needs you* (waiting or finished unseen) and *Active* (working, waiting or paused),
+  on their own or together, in attention order; the choice is kept.
 - **Pair the phone by scanning a code.** `flok phone pair` on a Mac that runs flok shows a code
   and its QR in the terminal (in a tmux popup with `--open`, or `p` in the sidebar's servers
   panel); scan it with the Camera app or in the app's new Pair sheet, or type the code there, and
