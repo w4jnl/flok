@@ -62,7 +62,7 @@ func TestLinkFile(t *testing.T) {
 		t.Fatalf("the key is private: %v %v", err, st.Mode())
 	}
 	got, ok := s.LoadLink()
-	if !ok || got != l {
+	if !ok || got.Relay != l.Relay || got.Instance != l.Instance || got.Name != l.Name || got.Tenant != l.Tenant || got.Token != l.Token || got.Pin != l.Pin || got.ApprovedBy != l.ApprovedBy || !got.Joined.Equal(l.Joined) {
 		t.Fatalf("round trip: %+v", got)
 	}
 	if err := s.RemoveLink(); err != nil {
