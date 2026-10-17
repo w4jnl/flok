@@ -69,7 +69,9 @@ plain mode: `send-keys` over ssh, the files streamed into `~/.local/state/flok/a
 ## What the phone shows
 
 - **The list**: every instance with its agents in the sidebar's order, remote ones tagged with
-  their host, the ones that need you counted; *Needs you* filters the rest away.
+  their host, the ones that need you counted; the filter in the corner narrows the list to
+  *Needs you* (waiting or finished unseen), *Active* (working, waiting or paused) or both at
+  once, in attention order, and remembers the choice.
 - **An agent**: its live screen (the pane's text, refreshed while you look; a pinch zooms it,
   long lines wrap: prose at words, a divider cut to the width rather than folded, a table kept
   whole in a strip that scrolls sideways, the right edge of a box wider than the phone left
