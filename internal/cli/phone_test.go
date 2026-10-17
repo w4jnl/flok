@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -47,7 +48,7 @@ func newPhoneCmd(dir, url string) (phoneCmd, *bytes.Buffer, *bytes.Buffer) {
 	out, errw := &bytes.Buffer{}, &bytes.Buffer{}
 	var cfg config.Config
 	cfg.Link.URL = url
-	return phoneCmd{dir: dir, cfg: cfg, now: time.Now, wait: 2 * time.Second, out: out, errw: errw}, out, errw
+	return phoneCmd{relayCmd{name: "phone", dir: dir, cfg: cfg, now: time.Now, wait: 2 * time.Second, out: out, errw: errw}}, out, errw
 }
 
 // Each thing that must be in place before a phone can pair is named when it is not.
@@ -98,11 +99,11 @@ func fakePhoneSidebar(dir string, pairedAfter time.Duration, reply func(state.Re
 				}
 				f := reply(r)
 				f.Type, f.ID = wire.TypePhone, r.ID
-				_ = st.WritePhoneReply(r.ID, f)
+				_ = st.WriteReply(r.ID, f)
 				if r.Op == "pair" && pairedAfter > 0 {
 					go func(id string) {
 						time.Sleep(pairedAfter)
-						_ = st.WritePhoneReply(id, wire.Frame{Type: wire.TypePhone, ID: id, Phone: &wire.Phone{Op: "paired", Phone: &wire.PhoneInfo{ID: "p1", Name: "Jaro's iPhone"}}})
+						_ = st.WriteReply(id, wire.Frame{Type: wire.TypePhone, ID: id, Phone: &wire.Phone{Op: "paired", Phone: &wire.PhoneInfo{ID: "p1", Name: "Jaro's iPhone"}}})
 					}(r.ID)
 				}
 			}
@@ -153,7 +154,7 @@ func TestPhoneThroughTheSidebar(t *testing.T) {
 	if !strings.Contains(out.String(), "&relay=") || strings.Count(out.String(), "\n") != 1 {
 		t.Fatalf("pair --json is one plain line: %q", out)
 	}
-	if files, _ := filepath.Glob(filepath.Join(dir, state.PhoneDir, "*.json")); len(files) != 0 {
+	if files, _ := filepath.Glob(filepath.Join(dir, state.RepliesDir, "*.json")); len(files) != 0 {
 		t.Fatalf("the reply file stays: %v", files)
 	}
 
@@ -167,15 +168,15 @@ func TestPhoneThroughTheSidebar(t *testing.T) {
 
 	out.Reset()
 	c.tty = true
-	old := runPairScreen
-	runPairScreen = func(s pairScreen) (pairScreen, error) {
-		if s.code != "AB7Q-K2MN" || s.relay != "flok.example.net" || s.qr == nil || s.path == "" || !s.expires.Equal(exp) {
+	old := runCodeScreen
+	runCodeScreen = func(s codeScreen) (codeScreen, error) {
+		if s.code != "AB7Q-K2MN" || s.relay != "flok.example.net" || s.qr == nil || s.watch == nil || s.accept != nil || !s.expires.Equal(exp) {
 			t.Errorf("screen: %+v", s)
 		}
-		s.paired, s.name = true, "Jaro's iPhone"
+		s.step, s.outcome = stepDone, "paired: Jaro's iPhone"
 		return s, nil
 	}
-	defer func() { runPairScreen = old }()
+	defer func() { runCodeScreen = old }()
 	if rc := c.run([]string{"pair"}); rc != 0 || out.String() != "paired: Jaro's iPhone\n" {
 		t.Fatalf("pair on a terminal: %d %q", rc, out)
 	}
@@ -219,14 +220,21 @@ func TestPhoneThroughTheSidebar(t *testing.T) {
 
 // The screen: the QR with its code and relay, text alone when the window is too small, the
 // outcome from the reply file or the clock, and the keys.
-func TestPairScreen(t *testing.T) {
+func TestCodeScreen(t *testing.T) {
 	m, err := qr.Encode(pairURL("https://flok.example.net", "AB7Q-K2MN"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	path := filepath.Join(t.TempDir(), "r.json")
-	s := pairScreen{qr: m, code: "AB7Q-K2MN", relay: "flok.example.net", expires: time.Now().Add(90 * time.Second), path: path}
-	if v := s.View(); !strings.Contains(v, "code    \x1b[1mA B 7 Q - K 2 M N\x1b[0m") || !strings.Contains(v, "relay   flok.example.net") || !strings.Contains(v, "\x1b[30;47m") || !strings.Contains(v, "the code lasts 1:") || !strings.Contains(v, "q closes") {
+	watch := func() (codeStep, string) {
+		if f, ok := readReply(path); ok && isPaired(f) {
+			return stepDone, "paired: " + f.Phone.Phone.Name
+		}
+		return stepWaiting, ""
+	}
+	s := codeScreen{qr: m, code: "AB7Q-K2MN", relay: "flok.example.net", expires: time.Now().Add(90 * time.Second), watch: watch,
+		hint: "scan it with the Camera app", expired: "the code expired: run flok phone pair again"}
+	if v := s.View(); !strings.Contains(v, "code    \x1b[1mA B 7 Q - K 2 M N\x1b[0m") || !strings.Contains(v, "relay   flok.example.net") || !strings.Contains(v, "\x1b[30;47m") || !strings.Contains(v, "the code lasts 1:") || !strings.Contains(v, "q closes") || !strings.Contains(v, "scan it with the Camera app") {
 		t.Fatalf("view:\n%s", v)
 	}
 	small := s
@@ -241,22 +249,22 @@ func TestPairScreen(t *testing.T) {
 		_, ok := cmd().(tea.QuitMsg)
 		return ok
 	}
-	mdl, cmd := s.Update(pairTickMsg(time.Now()))
-	if ps := mdl.(pairScreen); ps.outcome != "" || cmd == nil || quits(cmd) {
+	mdl, cmd := s.Update(codeTickMsg(time.Now()))
+	if ps := mdl.(codeScreen); ps.outcome != "" || cmd == nil || quits(cmd) {
 		t.Fatalf("a tick with nothing new keeps ticking: %+v", ps)
 	}
 	data, _ := json.Marshal(wire.Frame{Type: wire.TypePhone, Phone: &wire.Phone{Op: "paired", Phone: &wire.PhoneInfo{Name: "Jaro's iPhone"}}})
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	mdl, cmd = s.Update(pairTickMsg(time.Now()))
-	if ps := mdl.(pairScreen); !ps.paired || ps.name != "Jaro's iPhone" || !quits(cmd) {
+	mdl, cmd = s.Update(codeTickMsg(time.Now()))
+	if ps := mdl.(codeScreen); ps.step != stepDone || ps.outcome != "paired: Jaro's iPhone" || !quits(cmd) {
 		t.Fatalf("paired ends the screen: %+v", ps)
 	}
 	h := s
 	h.hold = true
-	mdl, cmd = h.Update(pairTickMsg(time.Now()))
-	ps := mdl.(pairScreen)
+	mdl, cmd = h.Update(codeTickMsg(time.Now()))
+	ps := mdl.(codeScreen)
 	if cmd != nil || !strings.Contains(ps.View(), "paired: Jaro's iPhone") || !strings.Contains(ps.View(), "Enter closes") {
 		t.Fatalf("hold shows the outcome and waits: %+v", ps)
 	}
@@ -269,8 +277,8 @@ func TestPairScreen(t *testing.T) {
 	_ = os.Remove(path)
 	e := s
 	e.expires = time.Now().Add(-time.Second)
-	mdl, cmd = e.Update(pairTickMsg(time.Now()))
-	if ps := mdl.(pairScreen); !strings.Contains(ps.outcome, "expired") || !quits(cmd) {
+	mdl, cmd = e.Update(codeTickMsg(time.Now()))
+	if ps := mdl.(codeScreen); ps.step != stepFailed || !strings.Contains(ps.outcome, "expired") || !quits(cmd) {
 		t.Fatalf("expiry: %+v", ps)
 	}
 	if _, cmd = s.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}); !quits(cmd) {
@@ -278,5 +286,38 @@ func TestPairScreen(t *testing.T) {
 	}
 	if spaced("AB7Q-K2MN") != "A B 7 Q - K 2 M N" {
 		t.Fatal("spaced")
+	}
+
+	// a join: approved asks for Enter (accept) or Esc (decline); --yes accepts at once
+	accepted, declined := 0, 0
+	j := s
+	j.watch = func() (codeStep, string) { return stepApproved, "approved by phone Jaro's iPhone for the tenant jaro" }
+	j.accept = func() (string, error) { accepted++; return "joined jaro as office", nil }
+	j.decline = func() { declined++ }
+	mdl, cmd = j.Update(codeTickMsg(time.Now()))
+	js := mdl.(codeScreen)
+	if cmd != nil || js.step != stepApproved || !strings.Contains(js.View(), "approved by phone Jaro's iPhone for the tenant jaro") || !strings.Contains(js.View(), "Enter links this flok, Esc declines") {
+		t.Fatalf("approved waits for the user: %+v\n%s", js, js.View())
+	}
+	mdl, cmd = js.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if out := mdl.(codeScreen); out.step != stepDone || out.outcome != "joined jaro as office" || accepted != 1 || !quits(cmd) {
+		t.Fatalf("Enter accepts: %+v", out)
+	}
+	mdl, cmd = js.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if out := mdl.(codeScreen); out.step != stepFailed || declined != 1 || !quits(cmd) {
+		t.Fatalf("Esc declines: %+v", out)
+	}
+	y := j
+	y.yes = true
+	mdl, cmd = y.Update(codeTickMsg(time.Now()))
+	if out := mdl.(codeScreen); out.step != stepDone || accepted != 2 || !quits(cmd) {
+		t.Fatalf("--yes accepts at once: %+v", out)
+	}
+	j.accept = func() (string, error) { return "", errors.New("the relay said no") }
+	mdl, _ = js.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	mdl, cmd = j.Update(codeTickMsg(time.Now()))
+	mdl, cmd = mdl.(codeScreen).Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if out := mdl.(codeScreen); out.step != stepFailed || out.outcome != "the relay said no" || !quits(cmd) {
+		t.Fatalf("a refused accept: %+v", out)
 	}
 }

@@ -173,7 +173,10 @@ final class Relay {
             updateBadge()
         case "instance":
             guard let inst = f.inst else { return }
-            if let i = instances.firstIndex(where: { $0.name == inst.name }) {
+            if inst.gone == true { // forgotten on the relay: its agents go with it
+                instances.removeAll { $0.name == inst.name }
+                events.removeAll { $0.instance == inst.name }
+            } else if let i = instances.firstIndex(where: { $0.name == inst.name }) {
                 instances[i] = inst
             } else {
                 instances.append(inst)
@@ -278,10 +281,25 @@ final class Relay {
         settings.deviceToken = r.token
         settings.pairedPhoneID = r.phone.id
         settings.pairedPhoneName = r.phone.name
+        settings.pairedTenant = r.tenant?.name
         settings.registered = nil
         connect()
         Task { await Notifications.shared.registerIfNeeded() }
         return r.phone
+    }
+
+    // MARK: a flok joining
+
+    /// The flok waiting with a join code (`flok link join` on a Mac), as the relay describes it.
+    func lookupJoin(code: String) async throws -> JoinLookup {
+        guard let api = RelayAPI(relayURL: settings.relayURL, token: settings.deviceToken) else { throw RelayError.notConfigured }
+        return try await api.lookupJoin(code: code)
+    }
+
+    /// Lets that flok into this phone's tenant; the Mac confirms and links by itself.
+    func approveJoin(code: String) async throws -> JoinLookup {
+        guard let api = RelayAPI(relayURL: settings.relayURL, token: settings.deviceToken) else { throw RelayError.notConfigured }
+        return try await api.approveJoin(code: code)
     }
 
     func registerDevice(apnsToken: String) async throws {

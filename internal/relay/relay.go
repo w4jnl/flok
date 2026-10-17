@@ -39,9 +39,10 @@ type Pusher interface {
 
 // Config of the relay.
 type Config struct {
-	InstanceTokens []string // what instances dial in with ([link] token)
+	InstanceTokens []string // static tokens instances dial in with ([link] token), into the relay's own tenant; optional once floks join by code
+	AdminTokens    []string // like instance tokens, and a flok linking with one manages the tenants (flok tenant …)
 	DeviceTokens   []string // static tokens the API takes besides the paired phones' own (curl, scripts); optional
-	DataDir        string   // devices.json and phones.json live here; "" = in memory
+	DataDir        string   // devices.json, phones.json, instances.json and tenants.json live here; "" = in memory
 	Push           Pusher   // nil = no pushes
 	Logf           func(string, ...any)
 	// AnswerWait bounds how long an answer waits for the instance's ack; 0 = 8 s.
@@ -67,28 +68,46 @@ type Config struct {
 type Server struct {
 	cfg       Config
 	mu        sync.Mutex
-	instances map[string]*instance
+	tenants   map[string]*tenant // by id: the live side of every tenant something belongs to
 	apps      map[*app]struct{}
 	devices   *deviceStore
 	phones    *phoneStore
-	codes     map[string]pairCode // instance → its live pairing code
-	pairLimit *ipLimiter
+	tstore    *tenantStore
+	istore    *instanceStore
+	pending   map[string]*joining // enrollment id → a flok waiting for its join to be approved
+	pairLimit *ipLimiter          // wrong pairing codes and join requests, per address
+	codeLimit *ipLimiter          // wrong join codes, per approver
 	started   time.Time
 	closed    bool
-	syncDue   *time.Timer // a sync push is on its way
 
-	// Live Activities (live.go)
-	liveDue        *time.Timer             // a round is on its way
-	liveWasActive  bool                    // something worked or waited in the last round
-	liveQuietSince time.Time               // since when nothing works, waits or is unseen
-	liveSent       map[string]string       // activity token → the content last sent
-	liveWaiting    map[string]int          // activity token → its waiting count last sent (a rise is urgent)
-	liveStarted    map[string]time.Time    // device token → a start push the phone has not answered yet
-	liveAlert      map[string]pendingAlert // device token → a finished agent's push for its overview's next update
+	// Live Activities (live.go), by token, so one map serves every tenant
+	liveSent    map[string]string       // activity token → the content last sent
+	liveWaiting map[string]int          // activity token → its waiting count last sent (a rise is urgent)
+	liveStarted map[string]time.Time    // device token → a start push the phone has not answered yet
+	liveAlert   map[string]pendingAlert // device token → a finished agent's push for its overview's next update
+}
+
+// tenant is the live side of one tenant: its instances, their pairing codes, and the timers of
+// what its phones get as a whole (the sync push, the overview activity).
+type tenant struct {
+	id, name  string
+	instances map[string]*instance // by name
+	codes     map[string]pairCode  // instance → its live pairing code
+	syncDue   *time.Timer          // a sync push is on its way
+
+	liveDue        *time.Timer // a round of activity pushes is on its way
+	liveWasActive  bool        // something worked or waited in the last round
+	liveQuietSince time.Time   // since when nothing works, waits or is unseen
+}
+
+func (t *tenant) info() wire.TenantInfo {
+	return wire.TenantInfo{ID: t.id, Name: t.name, Static: t.id == DefaultTenant}
 }
 
 type instance struct {
-	name    string
+	tenant  *tenant      // set once, read without the lock
+	rec     *instanceRec // its record when it joined by code; nil for a token from the relay's config
+	name    string       // set once, read without the lock
 	hello   wire.Hello
 	conn    frameConn // the current link, while online
 	gen     uint64
@@ -106,11 +125,24 @@ type instance struct {
 }
 
 type app struct {
-	out   chan wire.Frame
-	subs  map[[2]string]bool // {instance, pane}
-	conn  frameConn          // its stream, for a close with a reason; nil for one look (GET /api/screen)
-	phone string             // the paired phone it signed in as; "" = a static device token
+	tenant *tenant
+	out    chan wire.Frame
+	subs   map[[2]string]bool // {instance, pane}
+	conn   frameConn          // its stream, for a close with a reason; nil for one look (GET /api/screen)
+	phone  string             // the paired phone it signed in as; "" = a static device token
 }
+
+// label names an instance in the log: its name, with its tenant's when that is not the relay's
+// own.
+func (in *instance) label() string {
+	if in.tenant == nil || in.tenant.id == DefaultTenant {
+		return in.name
+	}
+	return in.tenant.name + "/" + in.name
+}
+
+// ErrNothingLinks is New's answer to a relay nothing could ever link in to.
+var ErrNothingLinks = errors.New("nothing could link in: set instance_tokens or admin_tokens (flok-relay token prints one); floks then join with flok link join, phones pair with flok phone pair")
 
 // New builds a relay.
 func New(cfg Config) (*Server, error) {
@@ -143,9 +175,39 @@ func New(cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Server{cfg: cfg, instances: map[string]*instance{}, apps: map[*app]struct{}{}, devices: ds, phones: ps, started: time.Now(),
-		codes: map[string]pairCode{}, pairLimit: newIPLimiter(5, 30*time.Second, 15*time.Minute),
-		liveSent: map[string]string{}, liveWaiting: map[string]int{}, liveStarted: map[string]time.Time{}, liveAlert: map[string]pendingAlert{}}, nil
+	ts, err := loadTenants(cfg.DataDir)
+	if err != nil {
+		return nil, err
+	}
+	is, err := loadInstances(cfg.DataDir)
+	if err != nil {
+		return nil, err
+	}
+	if len(cfg.InstanceTokens) == 0 && len(cfg.AdminTokens) == 0 && is.count() == 0 {
+		return nil, ErrNothingLinks
+	}
+	s := &Server{cfg: cfg, tenants: map[string]*tenant{}, apps: map[*app]struct{}{}, devices: ds, phones: ps, tstore: ts, istore: is, started: time.Now(),
+		pending: map[string]*joining{}, pairLimit: newIPLimiter(5, 30*time.Second, 15*time.Minute), codeLimit: newIPLimiter(5, 30*time.Second, 15*time.Minute),
+		liveSent: map[string]string{}, liveWaiting: map[string]int{}, liveStarted: map[string]time.Time{}, liveAlert: map[string]pendingAlert{}}
+	for _, t := range ts.list() { // every tenant is live from the start, so its lists and badge exist before a member links
+		s.tenantLocked(t.ID)
+	}
+	return s, nil
+}
+
+// tenantLocked is a tenant's live side, made on first use for an id the store knows (the
+// default always). The caller holds s.mu (or is New).
+func (s *Server) tenantLocked(id string) *tenant {
+	if t := s.tenants[id]; t != nil {
+		return t
+	}
+	rec, ok := s.tstore.get(id)
+	if !ok {
+		return nil
+	}
+	t := &tenant{id: rec.ID, name: rec.Name, instances: map[string]*instance{}, codes: map[string]pairCode{}}
+	s.tenants[id] = t
+	return t
 }
 
 // Handler is the HTTP surface.
@@ -155,6 +217,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /link", s.handleLink)
 	mux.HandleFunc("GET /link/tls", s.handleLinkTunnel)
 	mux.HandleFunc("POST /api/pair", s.handlePair) // the one API call without a token: it is how a phone gets one
+	// a flok joining: no key yet, so these take none (the poll secret stands in); its approver
+	// signs in as the app does
+	mux.HandleFunc("POST /api/enroll", s.handleEnrollStart)
+	mux.HandleFunc("GET /api/enroll/{id}", s.handleEnrollPoll)
+	mux.HandleFunc("POST /api/enroll/{id}/accept", s.handleEnrollAccept)
+	mux.HandleFunc("DELETE /api/enroll/{id}", s.handleEnrollDecline)
+	mux.HandleFunc("GET /api/enroll/code/{code}", s.withDevice(s.handleEnrollLookup))
+	mux.HandleFunc("POST /api/enroll/approve", s.withDevice(s.handleEnrollApprove))
 	mux.HandleFunc("GET /api/ws", s.withDevice(s.handleAppWS))
 	mux.HandleFunc("GET /api/instances", s.withDevice(s.handleInstances))
 	mux.HandleFunc("POST /api/answer", s.withDevice(s.handleAnswer))
@@ -196,30 +266,51 @@ func tokenIn(tok string, list []string) bool {
 	return ok
 }
 
-// withDevice lets a request through with a static device token or a paired phone's own key; a
-// phone's id rides in the context (phoneOf) so what it registers is known as its.
+// withDevice lets a request through with a static device token (the relay's own tenant) or a
+// paired phone's own key (its tenant); who it is rides in the context (callerOf) so what it
+// registers and sees is its tenant's.
 func (s *Server) withDevice(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		tok := bearer(r)
-		if tokenIn(tok, s.cfg.DeviceTokens) {
-			h(w, r)
+		var who apiCaller
+		switch p, ok := s.phones.byToken(tok); {
+		case tokenIn(tok, s.cfg.DeviceTokens):
+			who = apiCaller{tenant: DefaultTenant}
+		case ok:
+			who = apiCaller{tenant: p.Tenant, phone: p.ID, name: p.Name}
+		default:
+			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "a device token is needed (Authorization: Bearer …): pair this phone with flok phone pair"})
 			return
 		}
-		if p, ok := s.phones.byToken(tok); ok {
-			h(w, r.WithContext(context.WithValue(r.Context(), phoneKey{}, p.ID)))
+		s.mu.Lock()
+		who.t = s.tenantLocked(who.tenant)
+		s.mu.Unlock()
+		if who.t == nil { // a phone of a tenant that is gone: its key goes with it
+			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "this phone's tenant is gone from the relay: pair this phone with flok phone pair"})
 			return
 		}
-		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "a device token is needed (Authorization: Bearer …): pair this phone with flok phone pair"})
+		h(w, r.WithContext(context.WithValue(r.Context(), callerKey{}, who)))
 	}
 }
 
-type phoneKey struct{}
+// apiCaller is who an API request signed in as: a tenant always, a paired phone when it was one.
+type apiCaller struct {
+	tenant string
+	t      *tenant
+	phone  string // the paired phone's id; "" for a static device token
+	name   string // its name
+}
+
+type callerKey struct{}
+
+// callerOf is who a request signed in as (withDevice put it there).
+func callerOf(r *http.Request) apiCaller {
+	who, _ := r.Context().Value(callerKey{}).(apiCaller)
+	return who
+}
 
 // phoneOf is the paired phone a request signed in as; "" for a static device token.
-func phoneOf(r *http.Request) string {
-	id, _ := r.Context().Value(phoneKey{}).(string)
-	return id
-}
+func phoneOf(r *http.Request) string { return callerOf(r).phone }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
@@ -229,26 +320,56 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
-	n, online := len(s.instances), 0
-	for _, in := range s.instances {
-		if in.online {
-			online++
+	n, online := 0, 0
+	for _, t := range s.tenants {
+		n += len(t.instances)
+		for _, in := range t.instances {
+			if in.online {
+				online++
+			}
 		}
 	}
+	tenants := len(s.tenants)
 	s.mu.Unlock()
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "service": "flok-relay", "version": s.cfg.Version, "instances": n, "online": online,
-		"push": s.cfg.Push != nil, "uptime_s": int(time.Since(s.started).Seconds())})
+		"tenants": tenants, "push": s.cfg.Push != nil, "uptime_s": int(time.Since(s.started).Seconds())})
 }
 
 // --- instances -------------------------------------------------------------------------------
+
+// linkIdentity is what a link's token says: the tenant it links into, the flok's record when it
+// joined by code, and whether it may manage tenants.
+type linkIdentity struct {
+	tenant string
+	rec    *instanceRec
+	admin  bool
+}
+
+// linkAuth tells a link's token: a static instance token or an admin token from the config,
+// both of the relay's own tenant, or a flok's own key from a join.
+func (s *Server) linkAuth(tok string) (linkIdentity, bool) {
+	switch rec, ok := s.istore.byKey(tok); {
+	case tokenIn(tok, s.cfg.AdminTokens):
+		return linkIdentity{tenant: DefaultTenant, admin: true}, true
+	case tokenIn(tok, s.cfg.InstanceTokens):
+		return linkIdentity{tenant: DefaultTenant}, true
+	case ok:
+		return linkIdentity{tenant: rec.Tenant, rec: &rec}, true
+	}
+	return linkIdentity{}, false
+}
+
+// linkRefused is what an instance hears when its token opens nothing.
+const linkRefused = "an instance token is needed: one of the relay's, or this flok's own from flok link join"
 
 func (s *Server) handleLink(w http.ResponseWriter, r *http.Request) {
 	if s.cfg.TunnelOnly {
 		http.Error(w, "this relay takes encrypted links only: set [link] pin (flok-relay pin prints it)", http.StatusForbidden)
 		return
 	}
-	if !tokenIn(bearer(r), s.cfg.InstanceTokens) {
-		http.Error(w, "an instance token is needed", http.StatusUnauthorized)
+	who, ok := s.linkAuth(bearer(r))
+	if !ok {
+		http.Error(w, linkRefused, http.StatusUnauthorized)
 		return
 	}
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true, CompressionMode: websocket.CompressionContextTakeover})
@@ -260,7 +381,7 @@ func (s *Server) handleLink(w http.ResponseWriter, r *http.Request) {
 	if deflated(w.Header()) {
 		how = ", compressed"
 	}
-	s.serveLink(r.Context(), wsConn{conn}, r.RemoteAddr, how)
+	s.serveLink(r.Context(), wsConn{conn}, r.RemoteAddr, how, who)
 }
 
 // deflated reports that an accepted upgrade agreed to permessage-deflate, offered by the other
@@ -294,13 +415,18 @@ func (s *Server) handleLinkTunnel(w http.ResponseWriter, r *http.Request) {
 	data, err := t.Read(actx)
 	cancel()
 	var auth wire.Frame
-	if err != nil || json.Unmarshal(data, &auth) != nil || auth.Type != wire.TypeAuth || !tokenIn(auth.Token, s.cfg.InstanceTokens) {
-		tc.Close(websocket.StatusPolicyViolation, "an instance token is needed")
+	var who linkIdentity
+	ok := false
+	if err == nil && json.Unmarshal(data, &auth) == nil && auth.Type == wire.TypeAuth {
+		who, ok = s.linkAuth(auth.Token)
+	}
+	if !ok {
+		tc.Close(websocket.StatusPolicyViolation, linkRefused)
 		return
 	}
-	ok, _ := json.Marshal(wire.Frame{Type: wire.TypeAuth})
+	okFrame, _ := json.Marshal(wire.Frame{Type: wire.TypeAuth})
 	wctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	err = t.Write(wctx, ok)
+	err = t.Write(wctx, okFrame)
 	cancel()
 	if err != nil {
 		conn.CloseNow()
@@ -311,12 +437,12 @@ func (s *Server) handleLinkTunnel(w http.ResponseWriter, r *http.Request) {
 	if t.Compressed() {
 		how += ", compressed"
 	}
-	s.serveLink(ctx, tc, r.RemoteAddr, how)
+	s.serveLink(ctx, tc, r.RemoteAddr, how, who)
 }
 
 // serveLink runs an instance's link once it is authenticated: the hello, then its frames until
 // the connection ends.
-func (s *Server) serveLink(ctx context.Context, conn frameConn, remote, how string) {
+func (s *Server) serveLink(ctx context.Context, conn frameConn, remote, how string, who linkIdentity) {
 	hctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	var hello wire.Frame
 	data, err := conn.Read(hctx)
@@ -329,11 +455,15 @@ func (s *Server) serveLink(ctx context.Context, conn frameConn, remote, how stri
 		conn.Close(websocket.StatusPolicyViolation, fmt.Sprintf("protocol %d, this relay speaks %d", hello.Hello.Proto, wire.Proto))
 		return
 	}
-	in, gen, out, replaced := s.register(*hello.Hello, conn)
+	in, gen, out, replaced, why := s.register(who, *hello.Hello, conn, remote+how)
+	if why != "" {
+		s.cfg.Logf("instance %s from %s refused: %s", hello.Hello.Name, remote, why)
+		conn.Close(websocket.StatusPolicyViolation, why)
+		return
+	}
 	if replaced != nil { // the same name again: the earlier link is stale (a drop the relay had not noticed yet)
 		replaced.Close(websocket.StatusGoingAway, "replaced by a newer link from "+in.name)
 	}
-	s.cfg.Logf("instance %s online (flok %s on %s, %s%s)", in.name, hello.Hello.Version, hello.Hello.Hostname, remote, how)
 	wctx, stop := context.WithCancel(ctx)
 	defer stop()
 	go s.writer(wctx, conn, out, gen, in)
@@ -341,9 +471,9 @@ func (s *Server) serveLink(ctx context.Context, conn frameConn, remote, how stri
 		conn.CloseNow()
 		switch gone, off := s.offline(in, gen); {
 		case off:
-			s.cfg.Logf("instance %s switched off (flok link off there)", in.name)
+			s.cfg.Logf("instance %s switched off (flok link off there)", in.label())
 		case gone:
-			s.cfg.Logf("instance %s offline", in.name)
+			s.cfg.Logf("instance %s offline", in.label())
 		}
 	}()
 	for {
@@ -373,6 +503,14 @@ func (s *Server) serveLink(ctx context.Context, conn frameConn, remote, how stri
 		case wire.TypePhone:
 			if f.Phone != nil && hasFeature(hello.Hello.Features, wire.FeaturePhone) {
 				s.phoneOp(in, gen, f.ID, *f.Phone)
+			}
+		case wire.TypeEnroll:
+			if f.Enroll != nil && hasFeature(hello.Hello.Features, wire.FeatureEnroll) {
+				s.enrollOp(in, gen, f.ID, *f.Enroll)
+			}
+		case wire.TypeTenant:
+			if f.Tenant != nil && hasFeature(hello.Hello.Features, wire.FeatureEnroll) {
+				s.tenantOp(in, gen, f.ID, *f.Tenant, who.admin)
 			}
 		case wire.TypeBye:
 			if f.Reason == wire.ByeOff {
@@ -409,18 +547,59 @@ func (s *Server) writer(ctx context.Context, conn frameConn, out <-chan wire.Fra
 	}
 }
 
-// register makes an instance current under its name; a link already up under that name is
-// replaced (the same instance reconnecting after a drop the relay has not noticed yet) and
-// returned for closing. The link's frame channel is returned too: a later link swaps in.out.
-func (s *Server) register(h wire.Hello, conn frameConn) (*instance, uint64, chan wire.Frame, frameConn) {
+// register makes an instance current under its name in its tenant; a link already up under that
+// name is replaced (the same instance reconnecting after a drop the relay has not noticed yet)
+// and returned for closing. The link's frame channel is returned too: a later link swaps in.out.
+// Within a tenant the name is what phones address, so a flok that joined by code owns its name:
+// another key, or a token from the config, presenting it is refused with the reason. An
+// instance's name and tenant never change once made (label reads them without the lock): a
+// flok that comes back under a new name is a new instance, the old one goes.
+func (s *Server) register(who linkIdentity, h wire.Hello, conn frameConn, from string) (in *instance, gen uint64, out chan wire.Frame, replaced frameConn, why string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	in := s.instances[h.Name]
-	if in == nil {
-		in = &instance{name: h.Name, subs: map[string]int{}}
-		s.instances[h.Name] = in
+	t := s.tenantLocked(who.tenant)
+	if t == nil {
+		return nil, 0, nil, nil, "this flok's tenant is gone from the relay: flok link join joins another"
 	}
-	var replaced frameConn
+	in = t.instances[h.Name]
+	switch {
+	case in != nil && in.rec != nil && who.rec != nil && in.rec.ID != who.rec.ID:
+		return nil, 0, nil, nil, fmt.Sprintf("%s is another flok of yours (joined %s from %s): set [link] name, or flok link forget %s", h.Name, in.rec.Joined.Local().Format("2006-01-02"), in.rec.Hostname, h.Name)
+	case in != nil && in.rec != nil && who.rec == nil:
+		return nil, 0, nil, nil, fmt.Sprintf("%s is a flok that joined by code: set [link] name, or flok link forget %s", h.Name, h.Name)
+	}
+	if who.rec != nil { // the record may sit under an older name ([link] name changed): that instance goes
+		for name, other := range t.instances {
+			if other.rec != nil && other.rec.ID == who.rec.ID && name != h.Name {
+				if other.online { // one link per key
+					replaced = other.conn
+				}
+				for id, ch := range other.pending {
+					ch <- "the instance reconnected under another name"
+					delete(other.pending, id)
+				}
+				delete(t.instances, name)
+				s.fanout(t, wire.Frame{Type: wire.TypeInstance, Instance: name, Inst: &wire.Instance{Name: name, Since: time.Now(), Gone: true}})
+				break
+			}
+		}
+	}
+	if in == nil {
+		in = &instance{tenant: t, name: h.Name, subs: map[string]int{}}
+		t.instances[h.Name] = in
+	}
+	as := ""
+	if who.rec != nil {
+		rec := *who.rec
+		rec.Name, rec.Hostname, rec.Version = h.Name, h.Hostname, h.Version
+		in.rec = &rec
+		s.istore.linked(rec.ID, h.Name, h.Hostname, h.Version, time.Now())
+		as = ", joined by code"
+	}
+	if who.admin {
+		as = ", admin"
+	}
+	s.cfg.Logf("instance %s online (flok %s on %s, %s%s)", in.label(), h.Version, h.Hostname, from, as)
 	if in.online {
 		replaced = in.conn
 	}
@@ -439,9 +618,9 @@ func (s *Server) register(h wire.Hello, conn frameConn) (*instance, uint64, chan
 			in.out <- wire.Frame{Type: wire.TypeSubscribe, Pane: pane, On: true}
 		}
 	}
-	s.liveSoonLocked() // its agents join the overview
-	s.fanout(wire.Frame{Type: wire.TypeInstance, Instance: in.name, Inst: s.view(in)})
-	return in, in.gen, in.out, replaced
+	s.liveSoonLocked(t) // its agents join the overview
+	s.fanout(t, wire.Frame{Type: wire.TypeInstance, Instance: in.name, Inst: s.view(in)})
+	return in, in.gen, in.out, replaced, ""
 }
 
 // offline marks an instance gone when the connection that ends is still its current one; off
@@ -460,10 +639,10 @@ func (s *Server) offline(in *instance, gen uint64) (gone, off bool) {
 	}
 	if in.off && len(in.waiting) > 0 {
 		in.waiting = nil
-		s.syncSoonLocked()
+		s.syncSoonLocked(in.tenant)
 	}
-	s.liveSoonLocked() // its agents leave the overview
-	s.fanout(wire.Frame{Type: wire.TypeInstance, Instance: in.name, Inst: s.view(in)})
+	s.liveSoonLocked(in.tenant) // its agents leave the overview
+	s.fanout(in.tenant, wire.Frame{Type: wire.TypeInstance, Instance: in.name, Inst: s.view(in)})
 	return true, in.off
 }
 
@@ -472,12 +651,32 @@ func (s *Server) view(in *instance) *wire.Instance {
 		Features: in.hello.Features, Snap: in.snap}
 }
 
+// info is an instance as flok link list shows it; the caller holds s.mu.
+func (in *instance) info() wire.InstanceInfo {
+	var i wire.InstanceInfo
+	if in.rec != nil {
+		i = in.rec.info()
+	} else {
+		i = wire.InstanceInfo{Name: in.name, Static: true}
+	}
+	i.Name, i.Online = in.name, in.online
+	if in.hello.Hostname != "" {
+		i.Hostname, i.Version = in.hello.Hostname, in.hello.Version
+	}
+	if in.online {
+		i.LastSeen = time.Now()
+	} else if i.LastSeen.IsZero() {
+		i.LastSeen = in.since
+	}
+	return i
+}
+
 // tooOldFor says why an instance's flok cannot take an answer as it is (a long text, a file),
 // from the features its hello advertised; "" when it can, or for an instance the relay does
 // not know (request says so).
-func (s *Server) tooOldFor(instance string, a answer.Answer) string {
+func (s *Server) tooOldFor(t *tenant, instance string, a answer.Answer) string {
 	s.mu.Lock()
-	in := s.instances[instance]
+	in := t.instances[instance]
 	var version string
 	var features []string
 	if in != nil {
@@ -515,11 +714,11 @@ func gone(in *instance) string {
 	return in.name + " is offline"
 }
 
-// badgeLocked is the app's badge: what waits unseen over every instance not switched off. The
-// caller holds s.mu.
-func (s *Server) badgeLocked() int {
+// badgeLocked is a tenant's badge on the app: what waits unseen over every instance of it not
+// switched off. The caller holds s.mu.
+func (s *Server) badgeLocked(t *tenant) int {
 	n := 0
-	for _, in := range s.instances {
+	for _, in := range t.instances {
 		if in.snap != nil && !in.off {
 			n += in.snap.Unseen
 		}
@@ -537,13 +736,13 @@ func (s *Server) setSnap(in *instance, gen uint64, snap *snapshot.Snapshot) {
 	waiting := waitingIn(snap)
 	for pane := range in.waiting {
 		if !waiting[pane] { // seen or answered, here or on the phone: the phones clear its alert
-			s.syncSoonLocked()
+			s.syncSoonLocked(in.tenant)
 			break
 		}
 	}
 	in.waiting = waiting
-	s.liveSoonLocked()
-	s.fanout(wire.Frame{Type: wire.TypeInstance, Instance: in.name, Inst: s.view(in)})
+	s.liveSoonLocked(in.tenant)
+	s.fanout(in.tenant, wire.Frame{Type: wire.TypeInstance, Instance: in.name, Inst: s.view(in)})
 }
 
 // waitingIn is the set of agents in a snapshot that wait on the user: unseen, or blocked.
@@ -564,28 +763,28 @@ func waitingIn(snap *snapshot.Snapshot) map[string]bool {
 	return out
 }
 
-// syncSoonLocked schedules one silent sync push to every phone (a run of changes is one push;
-// iOS throttles background pushes anyway, and each sync carries the whole state). The caller
-// holds s.mu.
-func (s *Server) syncSoonLocked() {
-	if s.cfg.Push == nil || s.syncDue != nil {
+// syncSoonLocked schedules one silent sync push to every phone of a tenant (a run of changes is
+// one push; iOS throttles background pushes anyway, and each sync carries the whole state). The
+// caller holds s.mu.
+func (s *Server) syncSoonLocked(t *tenant) {
+	if s.cfg.Push == nil || t.syncDue != nil {
 		return
 	}
-	s.syncDue = time.AfterFunc(s.cfg.SyncDelay, s.sync)
+	t.syncDue = time.AfterFunc(s.cfg.SyncDelay, func() { s.sync(t) })
 }
 
-// sync tells every phone which agents still wait on the user and the badge: the app removes
-// the notifications of the others and sets the badge, without showing anything.
-func (s *Server) sync() {
+// sync tells a tenant's phones which agents still wait on the user and the badge: the app
+// removes the notifications of the others and sets the badge, without showing anything.
+func (s *Server) sync(t *tenant) {
 	s.mu.Lock()
-	s.syncDue = nil
-	badge, waiting := s.badgeLocked(), []string{}
-	for _, in := range s.instances {
+	t.syncDue = nil
+	badge, waiting := s.badgeLocked(t), []string{}
+	for _, in := range t.instances {
 		for pane := range in.waiting {
 			waiting = append(waiting, in.name+":"+pane)
 		}
 	}
-	devices := s.devices.list()
+	devices := s.devices.listTenant(t.id)
 	s.mu.Unlock()
 	sort.Strings(waiting)
 	if len(waiting) > 200 { // the payload stays far below APNs' 4 KB; the app keeps what it cannot match
@@ -623,7 +822,7 @@ func (s *Server) screen(in *instance, gen uint64, sc wire.Screen) {
 	}
 	key := [2]string{in.name, sc.Pane}
 	for a := range s.apps {
-		if a.subs[key] {
+		if a.tenant == in.tenant && a.subs[key] {
 			a.send(wire.Frame{Type: wire.TypeScreen, Instance: in.name, Screen: &sc})
 		}
 	}
@@ -639,10 +838,12 @@ func (s *Server) ack(in *instance, id, errText string) {
 	}
 }
 
-// fanout sends a frame to every app; the caller holds s.mu.
-func (s *Server) fanout(f wire.Frame) {
+// fanout sends a frame to every app of a tenant; the caller holds s.mu.
+func (s *Server) fanout(t *tenant, f wire.Frame) {
 	for a := range s.apps {
-		a.send(f)
+		if a.tenant == t {
+			a.send(f)
+		}
 	}
 }
 
@@ -660,9 +861,9 @@ func (s *Server) event(in *instance, gen uint64, ev wire.Event) {
 		s.mu.Unlock()
 		return
 	}
-	s.fanout(wire.Frame{Type: wire.TypeEvent, Instance: in.name, Event: &ev})
-	badge := s.badgeLocked()
-	devices := s.devices.list()
+	s.fanout(in.tenant, wire.Frame{Type: wire.TypeEvent, Instance: in.name, Event: &ev})
+	badge := s.badgeLocked(in.tenant)
+	devices := s.devices.listTenant(in.tenant.id)
 	s.mu.Unlock()
 	session := sessionOf(in.snap, ev.Pane)
 	if s.cfg.Push == nil || len(devices) == 0 {
@@ -683,7 +884,7 @@ func (s *Server) event(in *instance, gen uint64, ev wire.Event) {
 			// shows nothing, keeps the badge where the notification would have put it
 			s.mu.Lock()
 			s.liveAlert[d.Token] = pendingAlert{n: n, what: what, kind: ev.Kind}
-			s.liveSoonLocked()
+			s.liveSoonLocked(in.tenant)
 			s.mu.Unlock()
 			go s.sendAlert(d, apns.Notification{Badge: n.Badge}, what+": badge", "")
 			continue
@@ -785,11 +986,11 @@ func Alert(instance string, ev wire.Event, badge int, session string) apns.Notif
 
 // --- the app -----------------------------------------------------------------------------------
 
-func (s *Server) snapshotFrame() wire.Frame {
+func (s *Server) snapshotFrame(t *tenant) wire.Frame {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	f := wire.Frame{Type: wire.TypeInstances, Instances: []wire.Instance{}}
-	for _, in := range s.instances {
+	for _, in := range t.instances {
 		f.Instances = append(f.Instances, *s.view(in))
 	}
 	sortInstances(f.Instances)
@@ -805,13 +1006,13 @@ func sortInstances(list []wire.Instance) {
 }
 
 func (s *Server) handleInstances(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.snapshotFrame())
+	writeJSON(w, http.StatusOK, s.snapshotFrame(callerOf(r).t))
 }
 
 // request forwards an answer or a seen mark to an instance and waits for its outcome.
-func (s *Server) request(instance string, f wire.Frame) error {
+func (s *Server) request(t *tenant, instance string, f wire.Frame) error {
 	s.mu.Lock()
-	in := s.instances[instance]
+	in := t.instances[instance]
 	if in == nil || !in.online {
 		why := "no instance " + instance
 		if in != nil {
@@ -867,11 +1068,12 @@ func (s *Server) handleAnswer(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 		return
 	}
-	if why := s.tooOldFor(req.Instance, a); why != "" {
+	t := callerOf(r).t
+	if why := s.tooOldFor(t, req.Instance, a); why != "" {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": why})
 		return
 	}
-	if err := s.request(req.Instance, wire.Frame{Type: wire.TypeAnswer, Answer: &a}); err != nil {
+	if err := s.request(t, req.Instance, wire.Frame{Type: wire.TypeAnswer, Answer: &a}); err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]any{"error": err.Error()})
 		return
 	}
@@ -885,7 +1087,7 @@ func (s *Server) handleSeen(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "instance and pane are needed"})
 		return
 	}
-	if err := s.request(req.Instance, wire.Frame{Type: wire.TypeSeen, Pane: req.Pane}); err != nil {
+	if err := s.request(callerOf(r).t, req.Instance, wire.Frame{Type: wire.TypeSeen, Pane: req.Pane}); err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]any{"error": err.Error()})
 		return
 	}
@@ -898,7 +1100,8 @@ func (s *Server) handleAppWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	conn.SetReadLimit(wire.MaxAppFrame)
-	a := &app{out: make(chan wire.Frame, 256), subs: map[[2]string]bool{}, conn: wsConn{conn}, phone: phoneOf(r)}
+	who := callerOf(r)
+	a := &app{tenant: who.t, out: make(chan wire.Frame, 256), subs: map[[2]string]bool{}, conn: wsConn{conn}, phone: who.phone}
 	s.mu.Lock()
 	s.apps[a] = struct{}{}
 	s.mu.Unlock()
@@ -914,11 +1117,11 @@ func (s *Server) handleAppWS(w http.ResponseWriter, r *http.Request) {
 		s.mu.Lock()
 		delete(s.apps, a)
 		for key := range a.subs {
-			s.unsubscribeLocked(key[0], key[1])
+			s.unsubscribeLocked(a.tenant, key[0], key[1])
 		}
 		s.mu.Unlock()
 	}()
-	a.send(s.snapshotFrame())
+	a.send(s.snapshotFrame(a.tenant))
 	for {
 		_, data, err := conn.Read(ctx)
 		if err != nil {
@@ -938,13 +1141,13 @@ func (s *Server) handleAppWS(w http.ResponseWriter, r *http.Request) {
 			switch {
 			case f.On && !a.subs[key]:
 				a.subs[key] = true
-				s.subscribeLocked(f.Instance, f.Pane)
-				if sc, ok := s.instances[f.Instance].screens[f.Pane]; ok { // someone else looks already
+				s.subscribeLocked(a.tenant, f.Instance, f.Pane)
+				if sc, ok := a.tenant.instances[f.Instance].screens[f.Pane]; ok { // someone else looks already
 					a.send(wire.Frame{Type: wire.TypeScreen, Instance: f.Instance, Screen: &sc})
 				}
 			case !f.On && a.subs[key]:
 				delete(a.subs, key)
-				s.unsubscribeLocked(f.Instance, f.Pane)
+				s.unsubscribeLocked(a.tenant, f.Instance, f.Pane)
 			}
 			s.mu.Unlock()
 		case wire.TypeAnswer, wire.TypeSeen:
@@ -960,7 +1163,7 @@ func (s *Server) handleAppWS(w http.ResponseWriter, r *http.Request) {
 					a.send(wire.Frame{Type: wire.TypeAck, ID: id, Error: err.Error()})
 					continue
 				}
-				if why := s.tooOldFor(inst, n); why != "" {
+				if why := s.tooOldFor(a.tenant, inst, n); why != "" {
 					a.send(wire.Frame{Type: wire.TypeAck, ID: id, Instance: inst, Error: why})
 					continue
 				}
@@ -969,7 +1172,7 @@ func (s *Server) handleAppWS(w http.ResponseWriter, r *http.Request) {
 			}
 			go func() {
 				ack := wire.Frame{Type: wire.TypeAck, ID: id, Instance: inst}
-				if err := s.request(inst, fwd); err != nil {
+				if err := s.request(a.tenant, inst, fwd); err != nil {
 					ack.Error = err.Error()
 				}
 				a.send(ack)
@@ -980,11 +1183,11 @@ func (s *Server) handleAppWS(w http.ResponseWriter, r *http.Request) {
 
 // subscribeLocked counts one more app looking at a pane; the first one asks the instance for
 // the screen. The caller holds s.mu.
-func (s *Server) subscribeLocked(name, pane string) {
-	in := s.instances[name]
+func (s *Server) subscribeLocked(t *tenant, name, pane string) {
+	in := t.instances[name]
 	if in == nil {
-		in = &instance{name: name, subs: map[string]int{}, pending: map[string]chan string{}} // not seen yet: remembered for when it comes
-		s.instances[name] = in
+		in = &instance{tenant: t, name: name, subs: map[string]int{}, pending: map[string]chan string{}} // not seen yet: remembered for when it comes
+		t.instances[name] = in
 	}
 	in.subs[pane]++
 	if in.subs[pane] == 1 && in.online {
@@ -995,8 +1198,8 @@ func (s *Server) subscribeLocked(name, pane string) {
 	}
 }
 
-func (s *Server) unsubscribeLocked(name, pane string) {
-	in := s.instances[name]
+func (s *Server) unsubscribeLocked(t *tenant, name, pane string) {
+	in := t.instances[name]
 	if in == nil || in.subs[pane] == 0 {
 		return
 	}
@@ -1023,12 +1226,23 @@ type deviceReq struct {
 }
 
 func (s *Server) handleDevicesList(w http.ResponseWriter, r *http.Request) {
-	list := s.devices.list()
+	list := s.devices.listTenant(callerOf(r).tenant)
 	out := make([]map[string]any, 0, len(list))
 	for _, d := range list {
 		out = append(out, map[string]any{"token": short(d.Token), "name": d.Name, "sandbox": d.Sandbox, "added": d.Added, "prefs": d.Prefs, "phone": d.Phone})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"devices": out, "push": s.cfg.Push != nil})
+}
+
+// ownDevice is the caller's tenant's device under a path token; false (and a 404 written) when
+// there is none, so a tenant never touches another's phones.
+func (s *Server) ownDevice(w http.ResponseWriter, r *http.Request) (device, bool) {
+	d, ok := s.devices.get(r.PathValue("token"))
+	if !ok || d.Tenant != callerOf(r).tenant {
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": "no such device"})
+		return device{}, false
+	}
+	return d, true
 }
 
 func (s *Server) handleDeviceAdd(w http.ResponseWriter, r *http.Request) {
@@ -1042,8 +1256,23 @@ func (s *Server) handleDeviceAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Prefs.prune(time.Now())
+	who := callerOf(r)
 	prev, had := s.devices.get(req.Token)
-	d := device{Token: req.Token, Name: req.Name, Sandbox: req.Sandbox, Added: time.Now(), Prefs: req.Prefs, Phone: phoneOf(r)}
+	if had && prev.Tenant != who.tenant && who.phone == "" { // a static token never takes a phone from another tenant
+		writeJSON(w, http.StatusConflict, map[string]any{"error": "this device is registered with another tenant"})
+		return
+	}
+	d := device{Token: req.Token, Name: req.Name, Sandbox: req.Sandbox, Added: time.Now(), Prefs: req.Prefs, Phone: who.phone, Tenant: who.tenant}
+	if had && prev.Tenant != who.tenant { // the same phone paired into another tenant: it moves, with nothing of the old
+		d.Prefs, d.ActivityStart, d.Activities = req.Prefs, "", nil
+		s.devices.remove(req.Token)
+		had = false
+		if prev.Phone != "" && !s.devices.anyFor(prev.Phone) {
+			if old, ok := s.forgetPhone(prev.Phone); ok {
+				s.cfg.Logf("phone %s (%s) paired again in another tenant: the old pairing is forgotten", old.Name, old.ID)
+			}
+		}
+	}
 	if err := s.devices.add(d); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 		return
@@ -1090,7 +1319,7 @@ func (s *Server) handlePair(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "a pairing code is eight letters and digits, as flok phone pair shows it"})
 		return
 	}
-	instance, reqID, ok := s.redeemCode(code, now)
+	t, instance, reqID, ok := s.redeemCode(code, now)
 	if !ok {
 		s.pairLimit.failed(ip, now)
 		s.cfg.Logf("pair: a code from %s was not valid", ip)
@@ -1099,22 +1328,25 @@ func (s *Server) handlePair(w http.ResponseWriter, r *http.Request) {
 	}
 	s.pairLimit.succeeded(ip)
 	tok := NewToken()
-	p := phone{ID: newPhoneID(), Name: phoneName(req.Name), TokenSHA256: hashToken(tok), Paired: now, LastSeen: now, Instance: instance}
+	p := phone{ID: newPhoneID(), Tenant: t.id, Name: phoneName(req.Name), TokenSHA256: hashToken(tok), Paired: now, LastSeen: now, Instance: instance}
 	if err := s.phones.add(p); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 		return
 	}
-	s.cfg.Logf("phone %s (%s) paired through %s", p.Name, p.ID, instance)
 	info := p.info()
 	s.mu.Lock()
-	if in := s.instances[instance]; in != nil && in.online { // the terminal that shows the code hears it was taken
+	if in := t.instances[instance]; in != nil && in.online { // the terminal that shows the code hears it was taken
+		s.cfg.Logf("phone %s (%s) paired through %s", p.Name, p.ID, in.label())
 		select {
 		case in.out <- wire.Frame{Type: wire.TypePhone, ID: reqID, Phone: &wire.Phone{Op: "paired", Phone: &info}}:
 		default:
 		}
+	} else {
+		s.cfg.Logf("phone %s (%s) paired through %s", p.Name, p.ID, instance)
 	}
 	s.mu.Unlock()
-	writeJSON(w, http.StatusCreated, map[string]any{"token": tok, "phone": map[string]any{"id": p.ID, "name": p.Name}, "relay": map[string]any{"version": s.cfg.Version}})
+	writeJSON(w, http.StatusCreated, map[string]any{"token": tok, "phone": map[string]any{"id": p.ID, "name": p.Name},
+		"tenant": map[string]any{"id": t.id, "name": t.name}, "relay": map[string]any{"version": s.cfg.Version}})
 }
 
 // phoneOp answers an instance's phone frame: pair mints its code, list says what is paired,
@@ -1125,14 +1357,14 @@ func (s *Server) phoneOp(in *instance, gen uint64, id string, p wire.Phone) {
 	switch p.Op {
 	case "pair":
 		s.mu.Lock()
-		code, expires := s.mintCodeLocked(in.name, id, now)
+		code, expires := s.mintCodeLocked(in, id, now)
 		s.mu.Unlock()
 		reply.Phone.Code, reply.Phone.ExpiresAt = FormatCode(code), expires
-		s.cfg.Logf("pair: %s shows a code, good for %s", in.name, s.cfg.PairTTL)
+		s.cfg.Logf("pair: %s shows a code, good for %s", in.label(), s.cfg.PairTTL)
 	case "list":
-		reply.Phone.Phones = s.phoneInfos()
+		reply.Phone.Phones = s.phoneInfos(in.tenant.id)
 	case "forget":
-		ph, ok := s.phones.find(p.Name)
+		ph, ok := s.phones.find(in.tenant.id, p.Name)
 		switch {
 		case strings.TrimSpace(p.Name) == "":
 			reply.Error = "a phone's name or id is needed (flok phone list)"
@@ -1142,12 +1374,17 @@ func (s *Server) phoneOp(in *instance, gen uint64, id string, p wire.Phone) {
 			old, _ := s.forgetPhone(ph.ID)
 			info := old.info()
 			reply.Phone.Phone = &info
-			reply.Phone.Phones = s.phoneInfos()
-			s.cfg.Logf("phone %s (%s) forgotten by %s", old.Name, old.ID, in.name)
+			reply.Phone.Phones = s.phoneInfos(in.tenant.id)
+			s.cfg.Logf("phone %s (%s) forgotten by %s", old.Name, old.ID, in.label())
 		}
 	default:
 		reply.Error = "unknown phone request " + p.Op
 	}
+	s.replyTo(in, gen, reply)
+}
+
+// replyTo sends a reply frame to an instance on the link the request came in on.
+func (s *Server) replyTo(in *instance, gen uint64, reply wire.Frame) {
 	s.mu.Lock()
 	if in.gen == gen && in.online {
 		select {
@@ -1191,6 +1428,9 @@ func (s *Server) handleDevicePrefs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p.prune(time.Now())
+	if _, ok := s.ownDevice(w, r); !ok {
+		return
+	}
 	tok := r.PathValue("token")
 	found, err := s.devices.setPrefs(tok, &p)
 	switch {
@@ -1224,6 +1464,9 @@ func (s *Server) handleDeviceActivity(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if _, ok := s.ownDevice(w, r); !ok {
+		return
+	}
 	tok := r.PathValue("token")
 	found, err := s.devices.setActivities(tok, req.Start, req.Activities)
 	switch {
@@ -1235,8 +1478,8 @@ func (s *Server) handleDeviceActivity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.mu.Lock()
-	delete(s.liveStarted, tok) // the phone answered: what it runs is known now
-	s.liveSoonLocked()         // a new activity gets the current state at once
+	delete(s.liveStarted, tok)      // the phone answered: what it runs is known now
+	s.liveSoonLocked(callerOf(r).t) // a new activity gets the current state at once
 	s.mu.Unlock()
 	s.cfg.Logf("device %s: %d live activities, start token %v", short(tok), len(req.Activities), req.Start != "")
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
@@ -1255,9 +1498,10 @@ func (s *Server) handleScreen(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	key := [2]string{inst, pane}
-	a := &app{out: make(chan wire.Frame, 16), subs: map[[2]string]bool{key: true}}
+	t := callerOf(r).t
+	a := &app{tenant: t, out: make(chan wire.Frame, 16), subs: map[[2]string]bool{key: true}}
 	s.mu.Lock()
-	in := s.instances[inst]
+	in := t.instances[inst]
 	if in == nil || !in.online {
 		why := inst + " is offline"
 		if in != nil {
@@ -1268,13 +1512,13 @@ func (s *Server) handleScreen(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.apps[a] = struct{}{}
-	s.subscribeLocked(inst, pane)
+	s.subscribeLocked(t, inst, pane)
 	cached, ok := in.screens[pane]
 	s.mu.Unlock()
 	defer func() {
 		s.mu.Lock()
 		delete(s.apps, a)
-		s.unsubscribeLocked(inst, pane)
+		s.unsubscribeLocked(t, inst, pane)
 		s.mu.Unlock()
 	}()
 	if ok {
@@ -1300,6 +1544,9 @@ func (s *Server) handleScreen(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeviceRemove(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.ownDevice(w, r); !ok {
+		return
+	}
 	tok := r.PathValue("token")
 	if !s.devices.remove(tok) {
 		writeJSON(w, http.StatusNotFound, map[string]any{"error": "no such device"})

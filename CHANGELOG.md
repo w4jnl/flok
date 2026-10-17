@@ -6,6 +6,24 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+- **One relay, many tenants, and floks that join by a code.** A tenant is the set of floks and
+  phones that see each other; one `flok-relay` now serves any number of them, each blind to the
+  others, so a relay you run can take a friend's floks and phone too. A new flok no longer needs
+  a token in the relay's config: `flok link join https://flok.example.net` shows a code and its
+  QR in the terminal (like `flok phone pair`, with the roles the other way round), a member of
+  the tenant approves it (the phone app scans it: Settings › *Link a computer*; a linked flok:
+  `flok link approve <code>`; the admin flok: `flok tenant approve <code> --tenant <name>`,
+  which also makes a new tenant), the Mac shows who approved it and for which tenant, and Enter
+  accepts: the relay hands it a key of its own, kept in `~/.local/state/flok/link.json` with the
+  relay's pin, which stands in for `[link]` in config.toml. `flok link list | forget | leave`
+  manage the floks of a tenant; `flok tenant list | show | approve | remove` the tenants, from
+  the flok that links with one of the relay's new `admin_tokens` (it sees names and times,
+  never another tenant's agents). The relay's own tenant, `default`, is where its config tokens
+  link and where a relay from before tenants finds its phones and devices, so nothing changes
+  for an existing setup; `instance_tokens` is optional once floks join. `flok-relay tenants |
+  instances` list the files at the container. Needs flok-relay updated: an older relay says
+  "predates joining by code", and the relay's data files gain tenant fields (copy the volume
+  before, an older relay drops them on its next write).
 - **Pair the phone by scanning a code.** `flok phone pair` on a Mac that runs flok shows a code
   and its QR in the terminal (in a tmux popup with `--open`, or `p` in the sidebar's servers
   panel); scan it with the Camera app or in the app's new Pair sheet, or type the code there, and

@@ -1,7 +1,9 @@
 # flok-relay behind an existing Traefik, as a Portainer stack. Secrets come from the stack's
 # environment (stack.env, or Portainer's environment variables), never from this file.
 #
-#   FLOK_RELAY_INSTANCE_TOKENS   comma-separated; one per flok instance ([link] token)
+#   FLOK_RELAY_ADMIN_TOKENS      comma-separated: the flok(s) you manage the relay from link with one ([link] token)
+#                                and let other floks in (flok tenant …); other floks join by code (flok link join)
+#   FLOK_RELAY_INSTANCE_TOKENS   comma-separated, optional: static tokens for floks that do not join ([link] token)
 #   FLOK_RELAY_DEVICE_TOKENS     comma-separated, optional: static keys for curl and scripts (phones pair with flok phone pair)
 #   FLOK_RELAY_APNS_KEY_B64      the .p8 as one base64 line (base64 -i AuthKey_XXXX.p8 | tr -d '\n'), else empty
 #   FLOK_RELAY_APNS_KEY_ID       10-character key id of the .p8
@@ -13,7 +15,8 @@
 #   TRAEFIK_ENTRYPOINT           Traefik's HTTPS entrypoint (default websecure)
 #   TRAEFIK_RESOLVER             Traefik's certificate resolver (default letsencrypt)
 #
-# `flok-relay token` prints a fresh token. Leave FLOK_RELAY_APNS_KEY_B64 empty for a relay
+# `flok-relay token` prints a fresh token; at least one admin or instance token is needed until a
+# flok has joined (the relay refuses to start when nothing could link in). Leave FLOK_RELAY_APNS_KEY_B64 empty for a relay
 # without pushes (the app still works while open); nothing is mounted from the stack directory.
 # One key serves Xcode and TestFlight builds alike: each phone tells the relay which APNs service
 # its token belongs to. The relay's own key for encrypted links lives in the volume
@@ -24,7 +27,8 @@ services:
     container_name: flok-relay
     restart: unless-stopped
     environment:
-      FLOK_RELAY_INSTANCE_TOKENS: ${FLOK_RELAY_INSTANCE_TOKENS:?set the instance tokens}
+      FLOK_RELAY_ADMIN_TOKENS: ${FLOK_RELAY_ADMIN_TOKENS:-}
+      FLOK_RELAY_INSTANCE_TOKENS: ${FLOK_RELAY_INSTANCE_TOKENS:-}
       FLOK_RELAY_DEVICE_TOKENS: ${FLOK_RELAY_DEVICE_TOKENS:-}
       FLOK_RELAY_APNS_KEY_B64: ${FLOK_RELAY_APNS_KEY_B64:-}
       FLOK_RELAY_APNS_KEY_ID: ${FLOK_RELAY_APNS_KEY_ID:-}

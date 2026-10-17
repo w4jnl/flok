@@ -23,10 +23,14 @@ usage: flok <command>
   down        stop the outer session (your tmux server keeps running)
   keep-awake  [on|off|toggle|status] [--notify]: keep the Mac awake with the display on while flok runs
               (off by default, no argument toggles; macOS only)
-  link        [on|off|toggle|status] [--notify]: switch the relay link ([link] url) off and on
-              again (no argument toggles; it stays off across restarts until on)
+  link        [on|off|toggle|status] [--notify]: switch the relay link off and on again (no
+              argument toggles; it stays off across restarts until on); join <relay>: join
+              the relay by a code and its QR shown here, approved from the phone app or
+              another flok (no token in config.toml); approve <code> | list | forget | leave
   phone       pair [--open|--json] | list | forget <name|id>: pair the phone app with the relay
               by a code and its QR shown here (through the relay link), list or revoke phones
+  tenant      list | show <name> | approve <code> --tenant <name> | remove <name>: the tenants
+              on the relay (each the floks and phones that see each other), with an admin token
   sidebar     run the sidebar UI in the current pane (used by up)
   status      print sessions and agents once (--json for machine output)
   jump        switch the inner client to the newest agent needing input (else newest done)
@@ -87,6 +91,8 @@ func Main(args []string) int {
 		return runLink(cfg, args[1:])
 	case "phone":
 		return runPhone(cfg, args[1:])
+	case "tenant":
+		return runTenant(cfg, args[1:])
 	case "sidebar":
 		return runSidebar(cfg)
 	case "status":

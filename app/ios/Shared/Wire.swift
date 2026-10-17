@@ -63,6 +63,8 @@ struct InstanceState: Decodable, Sendable, Identifiable {
     /// What the instance's link can do (`long-text`, `files`); an older flok sends none.
     var features: [String]?
     var snap: Snapshot?
+    /// Forgotten on the relay (flok link forget): the app drops it from the list.
+    var gone: Bool?
 
     var id: String { name }
     var switchedOff: Bool { !online && off == true }

@@ -30,18 +30,27 @@ plain mode: `send-keys` over ssh, the files streamed into `~/.local/state/flok/a
 
 1. Run the relay: [`deploy/relay`](../deploy/relay) has the image (`ghcr.io/w4jnl/flok-relay`,
    amd64 and arm64), a compose stack for Portainer with Traefik labels and the example configs.
-   `flok-relay token` makes the instance tokens, one per flok; a phone needs none, it pairs
-   (step 4). Pushes need an APNs key from your Apple developer account (`FLOK_RELAY_APNS_*`);
-   without one the relay runs and the app works, only nothing is pushed.
-2. Link every flok you want on the phone:
+   `flok-relay token` makes one **admin token** for the flok you manage the relay from (it
+   links with it like any flok and can let others in, below); every other flok joins by a code,
+   a phone pairs (step 4), so neither needs a token in the relay's config. Pushes need an APNs
+   key from your Apple developer account (`FLOK_RELAY_APNS_*`); without one the relay runs and
+   the app works, only nothing is pushed.
+2. Link your first flok with the admin token:
    ```toml
    [link]
    name = "home"                          # how the phone names this flok
    url = "https://flok.example.net"
-   token = "…"                            # one of the relay's instance tokens
+   token = "…"                            # the relay's admin token (or one of its instance tokens)
    # pin = "sha256:…"                     # behind a proxy that reads HTTPS: flok-relay pin
    ```
-   then `flok reload`; `flok doctor` and `flok link status` say whether it connected.
+   then `flok reload`; `flok doctor` and `flok link status` say whether it connected. Every
+   further flok **joins** instead: `flok link join https://flok.example.net` there shows a code
+   and its QR, you approve it from the phone app (scan it: Settings › *Link a computer*), from
+   a linked flok (`flok link approve <code>`) or from the admin flok (`flok tenant approve
+   <code> --tenant <name>`), the Mac shows who approved it and for which tenant, and Enter
+   accepts: the relay hands it a key of its own, kept in the state dir (`link.json`), and no
+   `[link]` section is needed there. `flok link list` shows the floks of your tenant, `flok link
+   forget <name>` revokes one, `flok link leave` undoes a join.
 3. The app: build [`app/ios`](../app/ios) with your Apple team (Xcode, `make ios-project`; the
    simulator needs no signing) and install it from Xcode or TestFlight (`make ios-testflight`).
 4. Pair the phone: `flok phone pair` on a Mac that runs flok shows a code and its QR (in a tmux
@@ -106,7 +115,10 @@ has all of it:
 ```
 GET  /healthz                                       is it up (no token)
 POST /api/pair     {"code","name"}                  a phone redeems the code from flok phone pair for its key (no token; once; 5 min)
-GET  /api/instances                                 every instance with its last snapshot
+POST /api/enroll   {"name","hostname","version"}    a flok asks to join (no key yet): a code to show, a secret to poll with
+GET  /api/enroll/<id>, POST …/accept, DELETE …      the joining flok: where it stands (held up to 20 s), takes its key, withdraws
+GET  /api/enroll/code/<code>, POST /api/enroll/approve   the phone: what waits with that code; let it into this phone's tenant
+GET  /api/instances                                 every instance of this phone's tenant with its last snapshot
 POST /api/answer   {"instance","pane","text","keys"}   type into an agent pane; waits for the instance's ack
 POST /api/seen     {"instance","pane"}
 GET  /api/screen?instance=…&pane=…                  one look at a pane's screen
@@ -116,11 +128,39 @@ GET  /api/ws                                        the live stream: instances, 
 ```
 
 `flok-relay tail -url https://flok.example.net -token … [-subscribe home:%12]` prints that
-stream as JSON lines, which is the quickest way to see what the phone would. Instance tokens
-come from `flok-relay token` and go into `[link] token`; a phone's key comes from pairing
-(`flok phone pair`, over the link: the relay mints the code, the phone redeems it at
-`/api/pair`), the relay keeps it hashed in `phones.json`, and `flok phone list` / `forget` and
-`flok-relay phones` manage the pairings. A static `device_tokens` entry still works for a shell.
+stream as JSON lines, which is the quickest way to see what the phone would. A flok's key comes
+from joining (`flok link join`: the relay keeps it hashed in `instances.json`) or is one of the
+tokens in the relay's config (`[link] token`); a phone's key comes from pairing (`flok phone
+pair`, over the link: the relay mints the code, the phone redeems it at `/api/pair`), the relay
+keeps it hashed in `phones.json`, and `flok phone list` / `forget` and `flok-relay phones`
+manage the pairings. A static `device_tokens` entry still works for a shell.
+
+### Tenants
+
+A **tenant** is the set of floks and phones that see each other on one relay: a phone sees the
+floks of its tenant and nothing else, pushes, the badge and the Dynamic Island count only them.
+One relay serves many tenants, so a relay you run can serve a friend's floks and phone too
+without either of you seeing the other's agents. Membership is held by the keys the relay
+issues: a flok joins a tenant when a member approves its code (a paired phone of that tenant,
+a flok linked into it, or the admin naming it), and a phone pairs into the tenant of the flok
+that showed it the pairing code. The tokens in the relay's config (`instance_tokens`,
+`admin_tokens`, `device_tokens`) link and sign in to the relay's own tenant, **default**, which
+is where a relay from before tenants finds all its phones and devices after an upgrade: nothing
+changes for them.
+
+The flok that links with an **admin token** (`admin_tokens` in the relay's config, as its
+`[link] token`) manages the tenants from its terminal:
+
+```sh
+flok tenant list                          # the tenants with their counts
+flok tenant show jaro                     # one tenant's floks and phones
+flok tenant approve AB7Q-K2MN --tenant x  # a waiting flok into a tenant, made when the name is new
+flok tenant remove x                      # everything of it: keys, links, pushes
+```
+
+It sees the directory only: tenant, flok and phone names, hostnames, when they were last seen;
+never another tenant's agents, screens or events. `flok-relay tenants` and `flok-relay
+instances` at the container list the same from the relay's files.
 `flok doctor` reports the link as the sidebar sees it (or probes the relay's `/healthz` when
 the sidebar is not running), the footer says when the relay has been out of reach for half a
 minute, and `snapshot.json` carries the link's state.

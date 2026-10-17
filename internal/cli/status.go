@@ -11,6 +11,7 @@ import (
 	"github.com/w4jnl/flok/internal/claudereg"
 	"github.com/w4jnl/flok/internal/config"
 	"github.com/w4jnl/flok/internal/merge"
+	"github.com/w4jnl/flok/internal/state"
 	"github.com/w4jnl/flok/internal/tmux"
 )
 
@@ -42,7 +43,7 @@ func runStatus(cfg config.Config, args []string) int {
 		return report(enc.Encode(statusJSON{Snapshot: s, KeepAwake: keep.on, KeepAwakePresence: string(keep.presence)}))
 	}
 	printStatus(os.Stdout, s, keep)
-	if l := readLink(config.StateDir()); cfg.Link.URL != "" && l.off { // like keep-awake, said only when it is not the default
+	if l := readLink(config.StateDir()); state.New(config.StateDir()).LinkSettings(cfg.Link.URL, "", "").URL != "" && l.off { // like keep-awake, said only when it is not the default
 		fmt.Println(l)
 	}
 	return 0

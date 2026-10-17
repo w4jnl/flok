@@ -7,6 +7,8 @@ struct RootView: View {
     @State private var showSettings = false
     @State private var showPair = false
     @State private var pairRequest: (relay: String, code: String)?
+    @State private var showApprove = false
+    @State private var approveRequest: (relay: String, code: String)?
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -19,6 +21,9 @@ struct RootView: View {
         .sheet(isPresented: $showPair, onDismiss: { pairRequest = nil }) {
             NavigationStack { PairView(prefill: pairRequest) }
         }
+        .sheet(isPresented: $showApprove, onDismiss: { approveRequest = nil }) {
+            NavigationStack { ApproveView(prefill: approveRequest) }
+        }
         .onAppear {
             if !settings.isConfigured { showPair = true }
             relay.connect()
@@ -28,11 +33,16 @@ struct RootView: View {
                 path = [Target(instance: String(o[..<i]), pane: String(o[o.index(after: i)...]))]
             }
         }
-        .onOpenURL { url in // the Live Activity: flok://agent?instance=…&pane=…; the pairing QR: flok://pair?…
+        .onOpenURL { url in // the Live Activity: flok://agent?instance=…&pane=…; the pairing QR: flok://pair?…; a Mac's join QR: flok://link?…
             if let p = FlokLink.pairing(url) {
                 pairRequest = p
                 showSettings = false
                 showPair = true
+            } else if let l = FlokLink.linking(url) {
+                approveRequest = l
+                showSettings = false
+                showPair = false
+                showApprove = true
             } else if let t = FlokLink.target(url) {
                 relay.pendingOpen = Target(instance: t.instance, pane: t.pane)
             } else {

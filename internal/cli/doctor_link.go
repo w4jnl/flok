@@ -9,14 +9,16 @@ import (
 	"github.com/w4jnl/flok/internal/link"
 	"github.com/w4jnl/flok/internal/link/tunnel"
 	"github.com/w4jnl/flok/internal/snapshot"
+	"github.com/w4jnl/flok/internal/state"
 )
 
 // doctorLink reports the relay link: the running sidebar's own state when it publishes one,
 // else a GET of the relay's /healthz (through HTTPS_PROXY like the link itself).
 func doctorLink(cfg config.Config, add func(level, format string, args ...any)) {
-	u := cfg.Link.URL
+	settings := state.New(config.StateDir()).LinkSettings(cfg.Link.URL, cfg.Link.Token, cfg.Link.Pin)
+	u := settings.URL
 	if u == "" {
-		add("ok", "link: off ([link] url connects this flok to your relay, for the phone app)")
+		add("ok", "link: off ([link] url in config.toml, or flok link join <relay>, connects this flok to your relay, for the phone app)")
 		return
 	}
 	ws := link.NormalizeURL(u)
@@ -25,11 +27,19 @@ func doctorLink(cfg config.Config, add func(level, format string, args ...any)) 
 		return
 	}
 	name := cfg.InstanceName()
-	if cfg.Link.Token == "" {
+	if j := settings.Joined; j != nil {
+		add("ok", "link: joined %s as %s on %s, approved by %s; its key is in %s", j.Tenant, j.Name, j.Joined.Local().Format("2006-01-02"), j.ApprovedBy, state.LinkJoinedFile)
+		if cfg.Link.URL != "" && link.OriginURL(cfg.Link.URL) != j.Relay {
+			add("warn", "link: [link] url %q in config.toml is not used: the join record names %s (flok link leave goes back to the config)", cfg.Link.URL, j.Relay)
+		} else if cfg.Link.Token != "" {
+			add("ok", "link: [link] token in config.toml is not used while this flok is joined by code")
+		}
+	}
+	if settings.Token == "" {
 		add("warn", "link: [link] token is empty; the relay will refuse %s", name)
 	}
 	how := ""
-	if p := cfg.Link.Pin; p != "" {
+	if p := settings.Pin; p != "" {
 		if !tunnel.ValidPin(p) {
 			add("fail", "link: [link] pin %q is not a pin (sha256:… as `flok-relay pin` prints it)", p)
 			return

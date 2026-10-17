@@ -7,8 +7,15 @@ an Android app would use the same calls. JSON everywhere, snake_case keys, RFC 3
 
 Every call carries `Authorization: Bearer <device token>`: the key this phone got from pairing
 (`POST /api/pair`, below), or one of the relay's optional static `device_tokens`. (Instances use
-`instance_tokens` on `/link`; an app never needs those.) `GET /healthz` and `POST /api/pair` are
-the calls without a token.
+their own key from a join, or `instance_tokens` / `admin_tokens`, on `/link`; an app never needs
+those.) `GET /healthz`, `POST /api/pair` and the joining flok's `/api/enroll` calls are the
+calls without a token.
+
+A **tenant** is the set of floks and phones that see each other. A phone belongs to the tenant
+of the flok that showed it the pairing code, and everything it reads or hears (`/api/instances`,
+the stream, pushes, the badge, Live Activities) is that tenant's alone; devices registered under
+another tenant's key are not visible to it (404). Static `device_tokens` sign in to the relay's
+own tenant, `default`. The pairing answer names the tenant.
 
 Pairing: `flok phone pair` on an instance asks the relay, over its link, for a code of eight
 letters and digits (`AB7Q-K2MN`, alphabet `ABCDEFGHJKLMNPQRSTUVWXYZ23456789`, five minutes, one
@@ -28,7 +35,10 @@ left to it (the same phone paired again).
 | call | body | answer |
 |---|---|---|
 | `GET /healthz` | | `{"ok":true,"service":"flok-relay","version","instances","online","push","uptime_s"}` |
-| `POST /api/pair` | `{"code","name"?}` | 201 `{"token","phone":{"id","name"},"relay":{"version"}}`; 400 `{"error"}` for a code unknown, used or expired; 429 + `Retry-After` after too many wrong codes from one address |
+| `POST /api/pair` | `{"code","name"?}` | 201 `{"token","phone":{"id","name"},"tenant":{"id","name"},"relay":{"version"}}`; 400 `{"error"}` for a code unknown, used or expired; 429 + `Retry-After` after too many wrong codes from one address |
+| `GET /api/enroll/code/{code}` | | `{"pending":{"name","hostname"?,"version"?,"from"?,"started","expires_at"},"tenant":{"id","name"}}`: the flok waiting with that code (`flok link join` on a Mac); 404 `{"error"}` for none, and after a few wrong codes from this key |
+| `POST /api/enroll/approve` | `{"code"}` | the same object: that flok may join this phone's tenant (the Mac confirms and takes its key by itself); 409 `{"error"}` for a code nobody waits with, one approved already, or a flok of that name online in the tenant |
+| `POST /api/enroll` | `{"name","hostname"?,"version"?}` | the joining flok's own calls, no token: 201 `{"id","secret","code","expires_at","poll_s"}`; then `GET /api/enroll/{id}` (bearer: the secret; held up to 20 s) → `{"status":"pending"\|"approved","tenant"?,"approved_by"?}`, 410 declined or expired; `POST /api/enroll/{id}/accept` → 201 `{"token","pin","tenant","instance":{"id","name"},"approved_by"}`; `DELETE /api/enroll/{id}` withdraws |
 | `GET /api/instances` | | an `instances` frame (below) |
 | `POST /api/answer` | `{"instance","pane","text"?,"keys"?,"files"?}` | `{"ok":true}`, or `{"error"}` with 400 (refused by the relay) / 502 (refused or unreachable instance) |
 | `POST /api/seen` | `{"instance","pane"}` | `{"ok":true}` or `{"error"}` |
@@ -90,8 +100,11 @@ sides; additions keep the protocol compatible.
 `Instance`:
 
 ```
-{"name","online":bool,"off"?:true,"since":time,"version"?,"hostname"?,"features"?:[string],"snap":Snapshot?}
+{"name","online":bool,"off"?:true,"since":time,"version"?,"hostname"?,"features"?:[string],"snap":Snapshot?,"gone"?:true}
 ```
+
+`gone` (in an `instance` frame) means the flok was forgotten on the relay (`flok link forget`,
+or its tenant removed): drop it from the list, its events with it.
 
 `features` is what the instance's link can do: `answer`, `screen`, `long-text` (an answer's
 text may be long and multi-line), `files` (an answer may carry files); absent for an older

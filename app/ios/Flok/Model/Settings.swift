@@ -25,6 +25,8 @@ final class Settings {
     /// The pairing this phone's key came from (flok phone pair); nil when a device token was typed.
     var pairedPhoneID: String? { didSet { defaults.set(pairedPhoneID, forKey: "pairedPhoneID") } }
     var pairedPhoneName: String? { didSet { defaults.set(pairedPhoneName, forKey: "pairedPhoneName") } }
+    /// The tenant the pairing put this phone in (the floks it sees); nil before the relay said.
+    var pairedTenant: String? { didSet { defaults.set(pairedTenant, forKey: "pairedTenant") } }
     /// What this phone wants pushed; Relay.updatePrefs changes it and tells the relay.
     var notificationPrefs: NotificationPrefs {
         didSet { defaults.set(try? JSONEncoder().encode(notificationPrefs), forKey: "notificationPrefs") }
@@ -45,6 +47,7 @@ final class Settings {
         registered = defaults.string(forKey: "registered")
         pairedPhoneID = defaults.string(forKey: "pairedPhoneID")
         pairedPhoneName = defaults.string(forKey: "pairedPhoneName")
+        pairedTenant = defaults.string(forKey: "pairedTenant")
         notificationPrefs = defaults.data(forKey: "notificationPrefs").flatMap { try? JSONDecoder().decode(NotificationPrefs.self, from: $0) } ?? NotificationPrefs()
         // Saved again at every start: an item from a build before the shared keychain group moves
         // into it, and the extension finds the relay even when only the token was in the keychain.

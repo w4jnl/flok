@@ -17,14 +17,16 @@ const RequestsDir = "requests"
 
 // Request is one command for the sidebar.
 type Request struct {
-	Cmd     string    `json:"cmd"`            // goto | front | reconnect | phone | a flok key command
+	Cmd     string    `json:"cmd"`            // goto | front | reconnect | relink | phone | link | tenant | a flok key command
 	Host    string    `json:"host,omitempty"` // "" = local
 	Pane    string    `json:"pane,omitempty"` // goto: the pane on that host
 	Session string    `json:"session,omitempty"`
-	Kind    string    `json:"kind,omitempty"` // last: session | window | pane | server // goto without a pane: the session on that host
-	ID      string    `json:"id,omitempty"`   // phone: the reply file's name (PhoneReplyPath)
-	Op      string    `json:"op,omitempty"`   // phone: pair | list | forget
-	Name    string    `json:"name,omitempty"` // phone forget: the phone's name or id
+	Kind    string    `json:"kind,omitempty"`   // last: session | window | pane | server // goto without a pane: the session on that host
+	ID      string    `json:"id,omitempty"`     // phone, link, tenant: the reply file's name (ReplyPath)
+	Op      string    `json:"op,omitempty"`     // phone: pair | list | forget; link: lookup | approve | list | forget; tenant: list | show | approve | remove
+	Name    string    `json:"name,omitempty"`   // forget: the phone's or flok's name or id; tenant show | remove: the tenant's
+	Code    string    `json:"code,omitempty"`   // link approve, tenant approve: the joining flok's code
+	Tenant  string    `json:"tenant,omitempty"` // tenant approve: the tenant to let it into
 	At      time.Time `json:"at"`
 }
 

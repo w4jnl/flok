@@ -21,10 +21,7 @@ func TestFinishedLightsUpTheIsland(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	in := &instance{name: "home", subs: map[string]int{}, gen: 1, online: true}
-	s.mu.Lock()
-	s.instances["home"] = in
-	s.mu.Unlock()
+	in := place(s, &instance{name: "home", subs: map[string]int{}, gen: 1, online: true})
 	_ = s.devices.add(device{Token: "phone1", Name: "phone", Added: time.Now()})
 	if _, err := s.devices.setActivities("phone1", "", []Activity{{ID: "A", Token: "ovtok", Kind: liveOverview}}); err != nil {
 		t.Fatal(err)

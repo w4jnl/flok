@@ -53,7 +53,7 @@ observes the BEL), m8 `flok resurrect save`, m9 keep-awake (`pmset -g assertions
 sidebar pid on macOS, the macOS-only message elsewhere), m10 remote hosts: `fake_ssh_setup` /
 `fake_host` in lib.sh put a fake `ssh` on PATH that runs the remote command locally against
 isolated servers `e2e-<host>` with per-host state and config (`$T/down-<host>` / `$T/auth-<host>`
-simulate failures) and `rhook` replays a hook on a host, m11 flok on the phone (pairing too: `flok phone pair --json` through the sidebar, `/api/pair`, list, forget): it builds and runs
+simulate failures) and `rhook` replays a hook on a host, m11 flok on the phone (pairing too: `flok phone pair --json` through the sidebar, `/api/pair`, list, forget; joining and tenants: `flok link join --json` from a second state dir approved by `flok link approve`, `/api/enroll/approve` and `flok tenant approve`, `flok link list|forget`, `flok tenant list|show|remove`; the sidebar links with the relay's admin token): it builds and runs
 the real `flok-relay` on 127.0.0.1 with a stand-in APNs (`scripts/e2e/fakehttp`, the Go HTTP
 stand-in m2 also uses for ntfy: it listens before it reports its port, because on macOS a connect to
 a bound-but-unlistened port is dropped, not refused) and a generated P-256 key (openssl), links the sidebar to it through `E2E_EXTRA_CONFIG`, drives the relay's API with curl
@@ -295,8 +295,10 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
   update named) and `proto.FeatureLongText`/`FeatureFiles` in a serve's hello
   (`ui.hostFeatureNotice`). The relay's `/api/answer` body may be `answer.MaxBody` (36 MB),
   frames from the relay to an instance `wire.MaxRelayFrame` (36 MB); the app's socket stays small.
-  `internal/relay` is `flok-relay` (`cmd/flok-relay`: serve, tail, token, phones, pin, health): `/link` for
-  instances (bearer instance token; the newest connection under a name replaces the older), and
+  `internal/relay` is `flok-relay` (`cmd/flok-relay`: serve, tail, token, tenants, instances, phones, pin, health): `/link` for
+  instances (bearer: a flok's own key from a join, a static instance token or an admin token,
+  `linkAuth`; the newest connection under a name replaces the older; within a tenant a flok
+  that joined by code owns its name, another key or a config token under it is refused), and
   `/link/tls`, the same frames inside TLS 1.3 to the relay's own key (`internal/link/tunnel`:
   `websocket.NetConn` + `crypto/tls`, lines of JSON inside, deflated after the auth exchange
   when both ends offer the ALPN `flok-link/2` (`Conn.Compress`; never before the token, so it
@@ -329,12 +331,39 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
   release workflow publishes `ghcr.io/w4jnl/flok-relay` for amd64 and arm64 with plain docker
   (no third-party actions). Pairing a phone: `flok phone pair|list|forget` (`internal/cli/phone.go`;
   `--open` a popup, `p` in the servers panel) files a `phone` request in the mailbox, the
-  sidebar (`ui/phone.go`) sends the `phone` link frame, and the relay's reply (and the later
-  `paired`) is written to `$FLOK_STATE/phone/<id>.json` for the command to poll; the QR
+  sidebar (`ui/relayops.go`) sends the `phone` link frame, and the relay's reply (and the later
+  `paired`) is written to `$FLOK_STATE/replies/<id>.json` for the command to poll; the QR
   (`internal/qr`, the journal's encoder with a half-block terminal renderer) holds
   `flok://pair?code=…&relay=<link.OriginURL>`, which the app's `FlokLink.pairing` reads from a
   scan (`QRScanner`, VisionKit) or the Camera app and `PairView` redeems at `/api/pair`;
-  `Relay.State.forgotten` follows a 401 on a paired key or the `forgotten` close reason. The iOS app lives in `app/ios` (SwiftUI, iOS 17+, Swift 6 strict
+  `Relay.State.forgotten` follows a 401 on a paired key or the `forgotten` close reason.
+  Tenants (`relay/tenants.go`, `relay/join.go`): a tenant is the set of floks and phones that see
+  each other; `Server.tenants` holds one `tenant` per id (its instances by name, their pairing
+  codes, its sync and live timers), apps carry theirs, and every fan-out, badge, sync push,
+  overview, list, subscription and `request` is per tenant; `tenants.json` and `instances.json`
+  (key sha256, names, hostnames, last seen, approved by) join `phones.json` and `devices.json`,
+  which gain a `tenant` field (empty = `DefaultTenant`, the relay's own, where the config's
+  `instance_tokens`/`admin_tokens`/`device_tokens` link and sign in). A flok joins like a phone
+  pairs with the roles flipped (the device flow): `flok link join <relay>` (`cli/join.go`,
+  `link.Joiner`, HTTPS, no key yet) asks `POST /api/enroll` for a code and a poll secret (the
+  code is on a screen, so it cannot fetch the key), shows the code screen (`cli/codescreen.go`,
+  shared with `flok phone pair`) and long-polls `GET /api/enroll/{id}`; an approver looks it up
+  and approves it into its own tenant: a paired phone (`GET /api/enroll/code/{code}`,
+  `POST /api/enroll/approve`; the app's `ApproveView`, `FlokLink.linking`), a linked flok
+  (`enroll` link frame, `flok link approve`), or the admin flok (`tenant` link frame, `flok
+  tenant approve --tenant`, made when new; `tenantOp` refuses a link without an admin token);
+  a flok of that name online in the tenant refuses the approval, an offline one is replaced on
+  accept. The Mac shows who approved it and for which tenant, Enter (or `--yes`, `--json`)
+  accepts (`POST …/accept`: only now a record and the key exist, the relay's pin comes along),
+  and `state.LinkFile` (`link.json`, 0600) is written; `Store.LinkSettings` makes it win over
+  `[link] url/token/pin`, the sidebar's `newLinker` reads it and a `relink` request (filed by
+  join and leave when a sidebar runs) rebuilds the client (`linkMsg.from` drops a replaced
+  link's last words). `flok link approve|list|forget|leave` and `flok tenant list|show|approve|
+  remove` go through the mailbox like `flok phone` (`relayCmd` in `cli/relaycmd.go`,
+  `ui/relayops.go`, replies in `$FLOK_STATE/replies/<id>.json`); `forgetInstance` closes the
+  link with `wire.CloseInstanceForgotten` and sends the phones an `instance` frame with `Gone`
+  (the app drops it); `removeTenant` forgets its floks and phones. `New` refuses a relay
+  nothing could link in to (`ErrNothingLinks`). The iOS app lives in `app/ios` (SwiftUI, iOS 17+, Swift 6 strict
   concurrency; XcodeGen `project.yml` → `Flok.xcodeproj`, not committed; `make ios-project`,
   `ios-build`, `ios-test` against the iPhone 15 simulator, no signing; `ios-device` (`IOS_DEVICE=<udid>` picks one; a new device is registered in the developer account on the way) installs on
   the phone on the cable, `ios-testflight` archives and uploads with `ExportOptions.plist`;

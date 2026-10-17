@@ -60,11 +60,13 @@ type Status struct {
 // paired with the code that frame asked for; Error is what the relay said instead.
 type Command struct {
 	ID     string
-	Kind   string // answer | seen | subscribe | phone | reset
+	Kind   string // answer | seen | subscribe | phone | enroll | tenant | reset
 	Answer answer.Answer
 	Pane   string
 	On     bool
 	Phone  *wire.Phone
+	Enroll *wire.Enroll // the relay's reply to flok link approve | list | forget
+	Tenant *wire.Tenant // the relay's reply to flok tenant
 	Error  string
 }
 
@@ -363,7 +365,24 @@ func (c *Client) Forget(pane string) {
 // a Command of kind phone under the same id, and for pair, later, the word that a phone took
 // the code. Dropped while the link is off or down: the caller's wait says so.
 func (c *Client) Phone(id string, p wire.Phone) {
-	if id == "" {
+	c.request(wire.Frame{Type: wire.TypePhone, ID: id, Phone: &p})
+}
+
+// Enroll asks the relay about the floks of this tenant (flok link approve | list | forget); the
+// reply comes back as a Command of kind enroll under the same id.
+func (c *Client) Enroll(id string, e wire.Enroll) {
+	c.request(wire.Frame{Type: wire.TypeEnroll, ID: id, Enroll: &e})
+}
+
+// Tenant asks the relay about its tenants (flok tenant, with an admin token in [link] token);
+// the reply comes back as a Command of kind tenant under the same id.
+func (c *Client) Tenant(id string, t wire.Tenant) {
+	c.request(wire.Frame{Type: wire.TypeTenant, ID: id, Tenant: &t})
+}
+
+// request queues a frame the relay answers under its id; dropped while the link is off.
+func (c *Client) request(f wire.Frame) {
+	if f.ID == "" {
 		return
 	}
 	c.mu.Lock()
@@ -371,7 +390,7 @@ func (c *Client) Phone(id string, p wire.Phone) {
 		c.mu.Unlock()
 		return
 	}
-	c.queue = append(c.queue, wire.Frame{Type: wire.TypePhone, ID: id, Phone: &p})
+	c.queue = append(c.queue, f)
 	c.trim()
 	c.mu.Unlock()
 	c.kick()
@@ -595,6 +614,14 @@ func (c *Client) session(ctx context.Context) (State, string) {
 			case wire.TypePhone:
 				if f.ID != "" && (f.Phone != nil || f.Error != "") {
 					c.deliver(Msg{Command: &Command{ID: f.ID, Kind: "phone", Phone: f.Phone, Error: f.Error}})
+				}
+			case wire.TypeEnroll:
+				if f.ID != "" && (f.Enroll != nil || f.Error != "") {
+					c.deliver(Msg{Command: &Command{ID: f.ID, Kind: "enroll", Enroll: f.Enroll, Error: f.Error}})
+				}
+			case wire.TypeTenant:
+				if f.ID != "" && (f.Tenant != nil || f.Error != "") {
+					c.deliver(Msg{Command: &Command{ID: f.ID, Kind: "tenant", Tenant: f.Tenant, Error: f.Error}})
 				}
 			case wire.TypeError:
 				c.cfg.Logf("link: relay says: %s", f.Error)

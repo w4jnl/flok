@@ -27,6 +27,9 @@ the code in the app's Pair sheet:
 xcrun simctl openurl booted 'flok://pair?code=AB7Q-K2MN&relay=https%3A%2F%2Fflok.example.net'
 ```
 
+A Mac joining the relay (`flok link join`) shows a code of the same shape; the app approves it
+from Settings › Link a computer, or from its QR: `flok://link?code=…&relay=…` opened the same way.
+
 A static device token (one of the relay's optional `device_tokens`) still works, typed under
 *Enter a device token instead* or given at a scripted start:
 

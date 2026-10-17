@@ -16,8 +16,9 @@ type device struct {
 	Name    string    `json:"name,omitempty"`
 	Sandbox bool      `json:"sandbox,omitempty"`
 	Added   time.Time `json:"added"`
-	Prefs   *Prefs    `json:"prefs,omitempty"` // what the phone wants pushed; nil = everything
-	Phone   string    `json:"phone,omitempty"` // the paired phone that registered it (phones.json id); "" = a static device token did
+	Prefs   *Prefs    `json:"prefs,omitempty"`  // what the phone wants pushed; nil = everything
+	Phone   string    `json:"phone,omitempty"`  // the paired phone that registered it (phones.json id); "" = a static device token did
+	Tenant  string    `json:"tenant,omitempty"` // whose instances it hears about; "" in old files = the default
 	// Live Activities (Dynamic Island, Lock Screen): the token that starts one by push, and
 	// the ones running with their own update tokens; the app reports both (PUT …/activity).
 	ActivityStart string     `json:"activity_start,omitempty"`
@@ -71,17 +72,26 @@ func loadDevices(dir string) (*deviceStore, error) {
 		return nil, errors.New(ds.path + ": " + err.Error())
 	}
 	for _, d := range list {
+		if d.Tenant == "" {
+			d.Tenant = DefaultTenant
+		}
 		ds.byTk[d.Token] = d
 	}
 	return ds, nil
 }
 
-func (ds *deviceStore) list() []device {
+// list is every device in the order it registered.
+func (ds *deviceStore) list() []device { return ds.listTenant("") }
+
+// listTenant is a tenant's devices ("" = every tenant's) in the order they registered.
+func (ds *deviceStore) listTenant(tenant string) []device {
 	ds.mu.Lock()
 	defer ds.mu.Unlock()
 	out := make([]device, 0, len(ds.byTk))
 	for _, d := range ds.byTk {
-		out = append(out, d)
+		if tenant == "" || d.Tenant == tenant {
+			out = append(out, d)
+		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Added.Before(out[j].Added) })
 	return out
@@ -99,7 +109,13 @@ func (ds *deviceStore) add(d device) error {
 		if d.Phone == "" { // a registration with a static token keeps the pairing it had
 			d.Phone = old.Phone
 		}
+		if d.Tenant == "" {
+			d.Tenant = old.Tenant
+		}
 		d.ActivityStart, d.Activities = old.ActivityStart, old.Activities
+	}
+	if d.Tenant == "" {
+		d.Tenant = DefaultTenant
 	}
 	ds.byTk[d.Token] = d
 	if err := ds.saveLocked(); err != nil { // a device the file does not hold is not registered

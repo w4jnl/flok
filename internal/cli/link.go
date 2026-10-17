@@ -4,7 +4,10 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"os"
 	"time"
+
+	"golang.org/x/term"
 
 	"github.com/w4jnl/flok/internal/config"
 	"github.com/w4jnl/flok/internal/link"
@@ -13,23 +16,36 @@ import (
 )
 
 const linkUsage = `usage: flok link [on|off|toggle|status] [--notify]
+       flok link join <relay> | approve <code> | list | forget <name> | leave   (flok link join --help)
 
-Switches the relay link ([link] url) off and on again (no argument toggles). Off, nothing leaves
-this machine for the relay: the phone shows this flok as off, gets no notifications from it and
-cannot answer its agents. It stays off across flok down and up until flok link on. --notify
-shows the result on tmux's status line instead of printing it, for key bindings (prefix U).`
+Switches the relay link ([link] url, or the relay this flok joined) off and on again (no
+argument toggles). Off, nothing leaves this machine for the relay: the phone shows this flok as
+off, gets no notifications from it and cannot answer its agents. It stays off across flok down
+and up until flok link on. --notify shows the result on tmux's status line instead of printing
+it, for key bindings (prefix U).`
 
 // linkCmd is `flok link` with its environment injected for tests.
 type linkCmd struct {
 	dir       string
-	url       string        // [link] url; "" = no link to switch
-	wait      time.Duration // how long to wait for the sidebar to confirm a change
+	url       string          // the relay: [link] url, or the join record's; "" = no link to switch
+	joined    *state.LinkFile // the join record, when the link comes from one
+	wait      time.Duration   // how long to wait for the sidebar to confirm a change
 	out, errw io.Writer
 }
 
 func runLink(cfg config.Config, args []string) int {
+	if len(args) > 0 && isLinkOp(args[0]) {
+		if len(args) > 1 && (args[1] == "-h" || args[1] == "--help") {
+			fmt.Fprintln(os.Stdout, linkOpsUsage)
+			return 0
+		}
+		return linkOps{relayCmd: relayCmd{name: "link", dir: config.StateDir(), cfg: cfg, now: time.Now, wait: 5 * time.Second,
+			tty: term.IsTerminal(int(os.Stdout.Fd())), out: os.Stdout, errw: os.Stderr}, version: Version,
+			joiner: func(origin string) link.Joiner { return link.Joiner{Origin: origin} }}.run(args)
+	}
+	settings := state.New(config.StateDir()).LinkSettings(cfg.Link.URL, cfg.Link.Token, cfg.Link.Pin)
 	return withNotify(args, func(args []string, out, errw io.Writer) int {
-		return linkCmd{dir: config.StateDir(), url: cfg.Link.URL, wait: 2 * time.Second, out: out, errw: errw}.run(args)
+		return linkCmd{dir: config.StateDir(), url: settings.URL, joined: settings.Joined, wait: 2 * time.Second, out: out, errw: errw}.run(args)
 	})
 }
 
@@ -107,16 +123,19 @@ func (c linkCmd) run(args []string) int {
 		fmt.Fprintf(c.errw, "flok link: unknown argument %q\n%s\n", action, linkUsage)
 		return 2
 	case c.url == "" && action == "status":
-		fmt.Fprintln(c.out, "relay link: none ([link] url in config.toml connects flok to your relay)")
+		fmt.Fprintln(c.out, "relay link: none ([link] url in config.toml, or flok link join <relay>, connects flok to your relay)")
 		return 0
 	case c.url == "":
-		fmt.Fprintln(c.errw, "flok link: no relay link to switch; [link] url in config.toml connects flok to your relay")
+		fmt.Fprintln(c.errw, "flok link: no relay link to switch; [link] url in config.toml, or flok link join <relay>, connects flok to your relay")
 		return 1
 	}
 	cur := readLink(c.dir)
 	switch action {
 	case "status":
 		fmt.Fprintln(c.out, cur)
+		if j := c.joined; j != nil {
+			fmt.Fprintf(c.out, "joined %s as %s on %s, approved by %s (flok link leave undoes it)\n", j.Tenant, j.Name, j.Joined.Local().Format("2006-01-02"), j.ApprovedBy)
+		}
 		return 0
 	case "toggle":
 		action = "off"

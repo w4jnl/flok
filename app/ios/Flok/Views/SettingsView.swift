@@ -5,6 +5,7 @@ struct SettingsView: View {
     @Environment(Settings.self) private var settings
     @Environment(\.dismiss) private var dismiss
     @State private var showPair = false
+    @State private var showApprove = false
     @State private var notifications = Notifications.shared
     @State private var voiceLocales: [Locale] = []
 
@@ -24,12 +25,18 @@ struct SettingsView: View {
             Section {
                 LabeledContent("Relay", value: settings.relayURL.isEmpty ? "none yet" : (settings.baseURL?.host() ?? settings.relayURL))
                 LabeledContent("Paired as", value: settings.pairedPhoneName ?? (settings.deviceToken.isEmpty ? "not yet" : "a device token"))
+                if let tenant = settings.pairedTenant {
+                    LabeledContent("Tenant", value: tenant)
+                }
                 Button(settings.isConfigured ? "Pair this phone again…" : "Pair this phone…") { showPair = true }
+                if settings.isConfigured {
+                    Button("Link a computer…") { showApprove = true }
+                }
                 LabeledContent("Status", value: relay.state.label)
             } header: {
                 Text("Relay")
             } footer: {
-                Text("Pairing gives this phone a key of its own on the relay: `flok phone pair` on a Mac shows the code, `flok phone forget` revokes it. A device token from the relay's config still works, under Pair.")
+                Text("Pairing gives this phone a key of its own on the relay: `flok phone pair` on a Mac shows the code, `flok phone forget` revokes it. A device token from the relay's config still works, under Pair. Link a computer approves a Mac that shows `flok link join`'s code into this phone's tenant, the floks it sees.")
             }
             Section {
                 LabeledContent("Permission", value: permissionLabel)
@@ -87,6 +94,9 @@ struct SettingsView: View {
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+        .sheet(isPresented: $showApprove) {
+            NavigationStack { ApproveView() }
+        }
         .sheet(isPresented: $showPair) {
             NavigationStack { PairView() }
         }
