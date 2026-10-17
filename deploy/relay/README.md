@@ -42,6 +42,7 @@ The first flok, with the admin token, in that machine's `~/.config/flok/config.t
 name = "home"                          # how the phone names this flok (default: the hostname)
 url = "https://flok.example.net"       # wss://…/link is implied
 token = "<the admin token>"            # or one of the optional instance tokens
+admin = "<the admin token>"            # this flok manages the tenants (flok tenant), however it links
 ```
 
 `flok reload` (or the next `flok up`) connects. `flok doctor` says `link: connected to …`; the
@@ -67,8 +68,8 @@ one, `flok link leave` undoes a join.
 A tenant is the set of floks and phones that see each other: one relay can serve several
 households or teams, each blind to the others. The tokens in the relay's config belong to its
 own tenant, `default`; a relay from before tenants finds everything there after the upgrade.
-The admin flok manages them with `flok tenant list | show | approve | remove`, and sees only
-names, hostnames and times, never another tenant's agents.
+The flok with `[link] admin` manages them with `flok tenant list | show | approve | rename |
+remove`, and sees only names, hostnames and times, never another tenant's agents.
 
 ### Through a proxy that inspects HTTPS
 

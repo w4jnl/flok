@@ -39,7 +39,7 @@ func (m *Model) relayRequest(r state.Request) tea.Cmd {
 	case "link":
 		m.linker.Enroll(r.ID, wire.Enroll{Op: r.Op, Code: r.Code, Name: r.Name})
 	case "tenant":
-		m.linker.Tenant(r.ID, wire.Tenant{Op: r.Op, Code: r.Code, Name: r.Name})
+		m.linker.Tenant(r.ID, wire.Tenant{Op: r.Op, Code: r.Code, Name: r.Name, NewName: r.Tenant})
 	}
 	return nil
 }

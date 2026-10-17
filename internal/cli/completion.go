@@ -152,7 +152,7 @@ func zshCompletion() string {
 	b.WriteString("        keep-awake) _values 'keep-awake' on off toggle status ;;\n")
 	b.WriteString("        link) (( CURRENT == 3 )) && _values 'link' on off toggle status 'join[join a relay by a code and its QR]' 'approve[let a flok that shows a code in]' 'list[the floks of this tenant]' 'forget[revoke a flok]' 'leave[forget this flok on the relay]' ;;\n")
 	b.WriteString("        phone) (( CURRENT == 3 )) && _values 'phone' 'pair[show a code and its QR for the app]' 'list[the phones paired]' 'forget[revoke a phone]' ;;\n")
-	b.WriteString("        tenant) (( CURRENT == 3 )) && _values 'tenant' 'list[the tenants]' 'show[a tenant'\\''s floks and phones]' 'approve[let a flok into a tenant]' 'remove[remove a tenant]' ;;\n")
+	b.WriteString("        tenant) (( CURRENT == 3 )) && _values 'tenant' 'list[the tenants]' 'show[a tenant'\\''s floks and phones]' 'approve[let a flok into a tenant]' 'rename[call a tenant something else]' 'remove[remove a tenant]' ;;\n")
 	b.WriteString("        explain)\n            local -a panes\n            panes=(${(f)\"$(tmux list-panes -a -F '#{pane_id}' 2>/dev/null)\"})\n            _describe -t panes 'pane' panes ;;\n")
 	b.WriteString("        jump|next|prev)\n            _arguments '--client[inner client tty to drive]:tty:($(tmux list-clients -F \"#{client_tty}\" 2>/dev/null))' ;;\n")
 	b.WriteString("        keys)\n            _arguments '--print[dump the help as text]' '--filter[keep bindings matching a substring]:filter' ;;\n")

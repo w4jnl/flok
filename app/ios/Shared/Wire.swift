@@ -46,12 +46,20 @@ struct Frame: Decodable, Sendable {
     var instance: String?
     var instances: [InstanceState]?
     var inst: InstanceState?
+    /// On the instances frame: the tenant they belong to (this phone's).
+    var tenantInfo: TenantInfo?
     var event: AgentEvent?
     var screen: Screen?
     var error: String?
 }
 
 /// What the relay knows of one flok: name, whether its link is up, its last snapshot.
+/// The tenant this phone belongs to: the set of floks and phones that see each other on the relay.
+struct TenantInfo: Decodable, Sendable, Equatable {
+    var id: String
+    var name: String
+}
+
 struct InstanceState: Decodable, Sendable, Identifiable {
     var name: String
     var online: Bool

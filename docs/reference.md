@@ -15,7 +15,7 @@ flok link join <relay> [--name <n>] [--yes] [--open] [--json]   join the relay b
 flok link approve <code> | list [--json] | forget <name|id> | leave   let a flok in, the floks of this tenant, revoke one, undo this flok's join
 flok phone pair [--open] [--json]   show a code and its QR for the phone app to scan (5 min, one phone; --open: a tmux popup)
 flok phone list [--json] | forget <name|id>   the phones paired with the relay; revoke one (its key, its pushes, its app)
-flok tenant list | show <name> | approve <code> --tenant <name> | remove <name>   the relay's tenants (with an admin token as [link] token)
+flok tenant list | show <name> | approve <code> --tenant <name> | rename <name> <new> | remove <name>   the relay's tenants ([link] admin holds an admin token)
 flok status [--json]        one-shot dump of sessions and agents
 flok jump | next | prev     navigation, used by the bindings           [--client <tty>]
 flok menu agents|sessions|servers   a tmux menu over the work pane (prefix A / S / @), 1-9 picks
@@ -167,7 +167,8 @@ events = ["blocked", "done", "error"]
 [link]                      # flok on your phone: this flok's name, and the relay it dials out to (a join, flok link join, stands in for url, token and pin)
 name = ""                   # "" = the machine's short hostname
 url = ""                    # your flok-relay: wss://flok.example.net/link (https://flok.example.net works too); "" = off
-token = ""                  # one of the relay's instance_tokens, or its admin token (flok-relay token prints one); not needed after flok link join
+token = ""                  # one of the relay's instance_tokens (flok-relay token prints one); not needed after flok link join
+admin = ""                  # one of the relay's admin_tokens: this flok may manage the relay's tenants (flok tenant), whichever way it links; alone, it links too
 pin = ""                    # the relay's key (flok-relay pin): the link runs inside TLS to it, unreadable to a proxy that inspects HTTPS
 
 [theme]                     # Dracula by default; state tokens may name a colour or a hex value

@@ -16,9 +16,10 @@ updates this file first. Dates are the tag dates.
   which also makes a new tenant), the Mac shows who approved it and for which tenant, and Enter
   accepts: the relay hands it a key of its own, kept in `~/.local/state/flok/link.json` with the
   relay's pin, which stands in for `[link]` in config.toml. `flok link list | forget | leave`
-  manage the floks of a tenant; `flok tenant list | show | approve | remove` the tenants, from
-  the flok that links with one of the relay's new `admin_tokens` (it sees names and times,
-  never another tenant's agents). The relay's own tenant, `default`, is where its config tokens
+  manage the floks of a tenant; `flok tenant list | show | approve | rename | remove` the
+  tenants, from a flok whose `[link] admin` holds one of the relay's new `admin_tokens`, whichever
+  tenant it lives in (it sees names and times, never another tenant's agents; alone, the admin
+  key links the first flok of a fresh relay too; the relay's own tenant can be renamed). The relay's own tenant, `default`, is where its config tokens
   link and where a relay from before tenants finds its phones and devices, so nothing changes
   for an existing setup; `instance_tokens` is optional once floks join. `flok-relay tenants |
   instances` list the files at the container. Needs flok-relay updated: an older relay says

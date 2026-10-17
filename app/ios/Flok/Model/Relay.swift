@@ -170,6 +170,7 @@ final class Relay {
         switch f.type {
         case "instances":
             instances = (f.instances ?? []).sorted { $0.name < $1.name }
+            if let t = f.tenantInfo { settings.pairedTenant = t.name } // renamed on the relay since the pairing
             updateBadge()
         case "instance":
             guard let inst = f.inst else { return }

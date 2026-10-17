@@ -130,7 +130,7 @@ func TestJoiningAndTenants(t *testing.T) {
 	// --- a new tenant, made by the admin flok approving a join into it ------------------------
 	id3, secret3, code3 := startJoin(t, srv, "lab", "lab-box")
 	office.send(t, wire.Frame{Type: wire.TypeTenant, ID: "t0", Tenant: &wire.Tenant{Op: "list"}})
-	if f = office.next(t, enrollReply("t0")); !strings.Contains(f.Error, "not an admin token") {
+	if f = office.next(t, enrollReply("t0")); !strings.Contains(f.Error, "holds no admin token") {
 		t.Fatalf("a plain flok asking about tenants: %q", f.Error)
 	}
 	home.send(t, wire.Frame{Type: wire.TypeTenant, ID: "t1", Tenant: &wire.Tenant{Op: "approve", Code: code3, Name: "acme"}})
@@ -206,9 +206,11 @@ func TestJoiningAndTenants(t *testing.T) {
 	if f = home.next(t, enrollReply("t6")); f.Error != "" {
 		t.Fatalf("approving the name once it is offline: %q", f.Error)
 	}
-	if st, _ := api(t, srv, secret4, "POST", "/api/enroll/"+id4+"/accept", nil); st != http.StatusCreated {
+	st, out = api(t, srv, secret4, "POST", "/api/enroll/"+id4+"/accept", nil)
+	if st != http.StatusCreated {
 		t.Fatalf("lab joins again: %d", st)
 	}
+	labKey2, _ := out["token"].(string)
 	if why := refusedLink(t, srv, labKey, "lab"); why != "401" {
 		t.Fatalf("the old lab key after the rejoin: %q", why)
 	}
@@ -216,7 +218,50 @@ func TestJoiningAndTenants(t *testing.T) {
 		t.Fatalf("%d records, want the new lab alone", n)
 	}
 
-	// --- a restart keeps the tenant and the records ---------------------------------------------
+	// --- a joined flok with [link] admin manages tenants too; renames reach the files and the phones
+	if st, out := api(t, srv, labPhoneTok, "GET", "/api/instances", nil); st != 200 || out["tenant_info"].(map[string]any)["name"] != "acme" {
+		t.Fatalf("the instances frame names the tenant: %d %v", st, out)
+	}
+	lab2 := linkRawAdmin(t, srv, labKey2, "admin-tok", "lab") // acme's flok, with the admin token besides its key
+	lab2.send(t, wire.Frame{Type: wire.TypeTenant, ID: "r1", Tenant: &wire.Tenant{Op: "rename", Name: "acme", NewName: "ACME-Labs"}})
+	f = lab2.next(t, enrollReply("r1"))
+	if f.Error != "" || f.Tenant.Tenant.Name != "ACME-Labs" {
+		t.Fatalf("rename by a joined admin flok: %q %+v", f.Error, f.Tenant)
+	}
+	lab2.send(t, wire.Frame{Type: wire.TypeTenant, ID: "r2", Tenant: &wire.Tenant{Op: "rename", Name: "ACME-Labs", NewName: "default"}})
+	if f = lab2.next(t, enrollReply("r2")); !strings.Contains(f.Error, "relay's own tenant's name") {
+		t.Fatalf("taking the default's name: %q", f.Error)
+	}
+	lab2.send(t, wire.Frame{Type: wire.TypeTenant, ID: "r3", Tenant: &wire.Tenant{Op: "rename", Name: "default", NewName: "jaro"}})
+	if f = lab2.next(t, enrollReply("r3")); f.Error != "" || f.Tenant.Tenant.Name != "jaro" || !f.Tenant.Tenant.Static {
+		t.Fatalf("renaming the default: %q %+v", f.Error, f.Tenant)
+	}
+	lab2.send(t, wire.Frame{Type: wire.TypeTenant, ID: "r4", Tenant: &wire.Tenant{Op: "rename", Name: "ACME-Labs", NewName: "Jaro"}})
+	if f = lab2.next(t, enrollReply("r4")); !strings.Contains(f.Error, "called jaro already") {
+		t.Fatalf("a name in use: %q", f.Error)
+	}
+	f = app.next(t, func(f wire.Frame) bool {
+		return f.Type == wire.TypeInstances && f.TenantInfo != nil && f.TenantInfo.Name == "jaro"
+	})
+	if rec, ok := s.tstore.find("jaro"); !ok || rec.ID != DefaultTenant {
+		t.Fatal("the default answers to its new name")
+	}
+	lab2.conn.CloseNow()
+	time.Sleep(50 * time.Millisecond)
+
+	// --- [link] admin alone links, into the relay's own tenant, with the powers ----------------
+	ops := linkRawAdmin(t, srv, "", "admin-tok", "ops")
+	ops.send(t, wire.Frame{Type: wire.TypeTenant, ID: "o1", Tenant: &wire.Tenant{Op: "list"}})
+	if f = ops.next(t, enrollReply("o1")); f.Error != "" || len(f.Tenant.Tenants) != 2 {
+		t.Fatalf("an admin-only link manages tenants: %q %+v", f.Error, f.Tenant)
+	}
+	if why := refusedLink(t, srv, "", "nobody"); why != "401" {
+		t.Fatalf("a link with nothing at all: %q", why)
+	}
+	ops.conn.CloseNow()
+	time.Sleep(50 * time.Millisecond)
+
+	// --- a restart keeps the tenant, the names and the records ----------------------------------
 	s2, err := New(Config{InstanceTokens: []string{"inst-tok"}, DataDir: dir, Logf: t.Logf})
 	if err != nil {
 		t.Fatal(err)
@@ -224,18 +269,24 @@ func TestJoiningAndTenants(t *testing.T) {
 	if s2.tstore.count() != 2 || s2.istore.count() != 1 {
 		t.Fatalf("after a restart: %d tenants, %d floks", s2.tstore.count(), s2.istore.count())
 	}
+	if def, _ := s2.tstore.get(DefaultTenant); def.Name != "jaro" {
+		t.Fatalf("the default's name after a restart: %q", def.Name)
+	}
+	if acme, ok := s2.tstore.find("acme-labs"); !ok || acme.Name != "ACME-Labs" {
+		t.Fatalf("the renamed tenant after a restart: %+v %v", acme, ok)
+	}
 	if _, ok := s2.phones.byToken(labPhoneTok); !ok {
 		t.Fatal("the acme phone's key after a restart")
 	}
 	tenants, err := ListTenants(dir)
-	if err != nil || len(tenants) != 2 || tenants[1].Name != "acme" || tenants[1].Instances != 1 || tenants[1].Phones != 1 {
+	if err != nil || len(tenants) != 2 || tenants[0].Name != "jaro" || tenants[1].Name != "ACME-Labs" || tenants[1].Instances != 1 || tenants[1].Phones != 1 {
 		t.Fatalf("ListTenants: %v %+v", err, tenants)
 	}
 
 	// --- remove the tenant: its flok's key, its phone's key, its device go -------------------
-	home.send(t, wire.Frame{Type: wire.TypeTenant, ID: "t7", Tenant: &wire.Tenant{Op: "remove", Name: "acme"}})
+	home.send(t, wire.Frame{Type: wire.TypeTenant, ID: "t7", Tenant: &wire.Tenant{Op: "remove", Name: "acme-labs"}})
 	f = home.next(t, enrollReply("t7"))
-	if f.Error != "" || f.Tenant.Tenant.Name != "acme" {
+	if f.Error != "" || f.Tenant.Tenant.Name != "ACME-Labs" {
 		t.Fatalf("remove: %q", f.Error)
 	}
 	if st, _ := api(t, srv, labPhoneTok, "GET", "/api/instances", nil); st != http.StatusUnauthorized {
@@ -251,7 +302,11 @@ func TestJoiningAndTenants(t *testing.T) {
 func refusedLink(t *testing.T, srv *httptest.Server, token, name string) string {
 	t.Helper()
 	u := "ws" + strings.TrimPrefix(srv.URL, "http") + "/link"
-	conn, resp, err := websocket.Dial(context.Background(), u, &websocket.DialOptions{HTTPHeader: http.Header{"Authorization": {"Bearer " + token}}})
+	hdr := http.Header{}
+	if token != "" {
+		hdr.Set("Authorization", "Bearer "+token)
+	}
+	conn, resp, err := websocket.Dial(context.Background(), u, &websocket.DialOptions{HTTPHeader: hdr})
 	if err != nil {
 		if resp != nil {
 			return strings.Fields(resp.Status)[0]

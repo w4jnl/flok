@@ -79,7 +79,7 @@ func TestLinkPhoneFrames(t *testing.T) {
 // their kind; the hello advertises them.
 func TestLinkEnrollAndTenantFrames(t *testing.T) {
 	r := newRelay(t, false)
-	c := New(Config{URL: r.srv.URL, Token: "t0k", Name: "home", Version: "test", Hostname: "mac", BackoffMax: 300 * time.Millisecond})
+	c := New(Config{URL: r.srv.URL, Token: "t0k", Admin: "adm1n", Name: "home", Version: "test", Hostname: "mac", BackoffMax: 300 * time.Millisecond})
 	c.Start()
 	defer c.Close()
 	hello := r.next(t, wire.TypeHello)
@@ -89,6 +89,12 @@ func TestLinkEnrollAndTenantFrames(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("the hello does not advertise enroll frames: %v", hello.Hello.Features)
+	}
+	r.mu.Lock()
+	admins := append([]string(nil), r.admins...)
+	r.mu.Unlock()
+	if len(admins) != 1 || admins[0] != "adm1n" {
+		t.Fatalf("the admin token rides in its header: %v", admins)
 	}
 	c.Enroll("abc123abc123", wire.Enroll{Op: "approve", Code: "AB7Q-K2MN"})
 	f := r.next(t, wire.TypeEnroll)

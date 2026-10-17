@@ -149,7 +149,10 @@ const Template = `# flok configuration - https://github.com/w4jnl/flok
 # url = ""                    # your flok-relay: wss://flok.example.net/link (or https://flok.example.net);
                               # "" = off. Outbound only, HTTPS_PROXY is honoured. prefix U (flok link)
                               # switches it off and on again while flok runs.
-# token = ""                  # one of the relay's instance_tokens
+# token = ""                  # one of the relay's instance_tokens; not needed once this flok joined by code
+                              # (flok link join), which lands its own key in the state dir
+# admin = ""                  # one of the relay's admin_tokens: this flok may manage the relay's tenants
+                              # (flok tenant list | show | approve | rename | remove); alone, it links too
 # pin = ""                    # the relay's key, as flok-relay pin prints it (sha256:…): the link then
                               # runs inside TLS to that key, so a proxy that inspects HTTPS (an office
                               # proxy with its own root certificate) reads nothing, the token included

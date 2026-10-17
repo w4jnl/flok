@@ -13,6 +13,7 @@ import (
 
 	"github.com/coder/websocket"
 
+	"github.com/w4jnl/flok/internal/link"
 	"github.com/w4jnl/flok/internal/link/wire"
 )
 
@@ -25,9 +26,21 @@ type rawInstance struct {
 }
 
 func linkRaw(t *testing.T, srv *httptest.Server, token, name string) *rawInstance {
+	return linkRawAdmin(t, srv, token, "", name)
+}
+
+// linkRawAdmin is linkRaw with an admin token presented besides the instance's own ([link] admin).
+func linkRawAdmin(t *testing.T, srv *httptest.Server, token, admin, name string) *rawInstance {
 	t.Helper()
 	u := "ws" + strings.TrimPrefix(srv.URL, "http") + "/link"
-	conn, _, err := websocket.Dial(context.Background(), u, &websocket.DialOptions{HTTPHeader: http.Header{"Authorization": {"Bearer " + token}}})
+	hdr := http.Header{}
+	if token != "" {
+		hdr.Set("Authorization", "Bearer "+token)
+	}
+	if admin != "" {
+		hdr.Set(link.AdminHeader, admin)
+	}
+	conn, _, err := websocket.Dial(context.Background(), u, &websocket.DialOptions{HTTPHeader: hdr})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -53,14 +53,16 @@ type Frame struct {
 	On       bool               `json:"on,omitempty"`   // subscribe: start (true) or stop streaming the pane's screen
 	Error    string             `json:"error,omitempty"`
 	Token    string             `json:"token,omitempty"`  // auth: the instance token, only ever inside the tunnel
+	Admin    string             `json:"admin,omitempty"`  // auth: an admin token presented besides the instance's own ([link] admin), only ever inside the tunnel
 	Reason   string             `json:"reason,omitempty"` // bye: ByeOff
 	Phone    *Phone             `json:"phone,omitempty"`  // phone: a pairing request and its reply
 	Enroll   *Enroll            `json:"enroll,omitempty"` // enroll: a request about a joining flok and its reply
 	Tenant   *Tenant            `json:"tenant,omitempty"` // tenant: an admin's request and its reply
 	// Instances is the relay's view of every instance (TypeInstances), Inst one of them
-	// (TypeInstance).
-	Instances []Instance `json:"instances,omitempty"`
-	Inst      *Instance  `json:"inst,omitempty"`
+	// (TypeInstance); TenantInfo names the tenant they belong to (TypeInstances).
+	Instances  []Instance  `json:"instances,omitempty"`
+	Inst       *Instance   `json:"inst,omitempty"`
+	TenantInfo *TenantInfo `json:"tenant_info,omitempty"`
 }
 
 // Enroll is what flok link asks the relay over the link about the floks of its tenant: the one
@@ -104,12 +106,13 @@ type InstanceInfo struct {
 // Tenant is what flok tenant asks the relay (over the link of an instance that holds an admin
 // token) and what it answers. A tenant is the set of floks and phones that see each other.
 type Tenant struct {
-	Op      string       `json:"op"`                // list | show | approve | remove
-	Name    string       `json:"name,omitempty"`    // show, remove, approve: the tenant's name
-	Code    string       `json:"code,omitempty"`    // approve: the joining flok's code
-	Tenants []TenantInfo `json:"tenants,omitempty"` // list
-	Tenant  *TenantInfo  `json:"tenant,omitempty"`  // show, approve, remove: the one it is about
-	Pending *Joining     `json:"pending,omitempty"` // approve: the flok approved
+	Op      string       `json:"op"`                 // list | show | approve | rename | remove
+	Name    string       `json:"name,omitempty"`     // show, remove, approve, rename: the tenant's name
+	NewName string       `json:"new_name,omitempty"` // rename: what it is called from now on
+	Code    string       `json:"code,omitempty"`     // approve: the joining flok's code
+	Tenants []TenantInfo `json:"tenants,omitempty"`  // list
+	Tenant  *TenantInfo  `json:"tenant,omitempty"`   // show, approve, rename, remove: the one it is about
+	Pending *Joining     `json:"pending,omitempty"`  // approve: the flok approved
 }
 
 // TenantInfo is one tenant as the relay keeps it: its counts, and for show its members.

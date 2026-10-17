@@ -80,6 +80,7 @@ type Msg struct {
 type Config struct {
 	URL      string // wss://flok.example.net/link; https:// and http:// are taken as wss:// and ws://, an empty path as /link
 	Token    string
+	Admin    string // an admin token presented besides Token ([link] admin): this flok may manage the relay's tenants
 	Pin      string // the relay's key (flok-relay pin): the link goes encrypted to /link/tls; "" = plain /link
 	Off      bool   // start switched off (flok link off); SetOff switches
 	Name     string // this instance's name on the phone
@@ -116,6 +117,10 @@ type Client struct {
 	flip    chan struct{}      // SetOff changed off
 	abort   context.CancelFunc // ends a dial in progress (SetOff), nil between dials
 }
+
+// AdminHeader carries an admin token on the plain link, next to the instance's own in
+// Authorization; inside the tunnel it rides in the auth frame instead.
+const AdminHeader = "X-Flok-Admin"
 
 // holdFor is how long an event waits for the snapshot that carries its state: the sidebar
 // announces a transition, then publishes; the relay counts the badge from the snapshot, so the
@@ -677,6 +682,9 @@ func (c *Client) dial(ctx context.Context) (*websocket.Conn, frames, State, stri
 	if c.cfg.Token != "" {
 		hdr.Set("Authorization", "Bearer "+c.cfg.Token)
 	}
+	if c.cfg.Admin != "" {
+		hdr.Set(AdminHeader, c.cfg.Admin)
+	}
 	hdr.Set("User-Agent", "flok/"+c.cfg.Version)
 	conn, resp, err := websocket.Dial(dctx, c.url, &websocket.DialOptions{HTTPClient: c.cfg.HTTP, HTTPHeader: hdr,
 		CompressionMode: websocket.CompressionContextTakeover})
@@ -729,7 +737,7 @@ func (c *Client) dialTunnel(ctx context.Context) (*websocket.Conn, frames, State
 		}
 		return nil, frames{}, Unreachable, "encrypted handshake: " + shortErr(err)
 	}
-	auth, _ := json.Marshal(wire.Frame{Type: wire.TypeAuth, Token: c.cfg.Token})
+	auth, _ := json.Marshal(wire.Frame{Type: wire.TypeAuth, Token: c.cfg.Token, Admin: c.cfg.Admin})
 	if err := t.Write(dctx, auth); err != nil {
 		conn.CloseNow()
 		return nil, frames{}, Unreachable, shortErr(err)
