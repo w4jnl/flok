@@ -7,14 +7,18 @@ import UIKit
 struct FlokApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @Environment(\.scenePhase) private var phase
+    @State private var lock = LockGate()
 
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environment(Relay.shared)
                 .environment(Settings.shared)
+                .environment(lock)
+                .onAppear { lock.scene(.active, settings: Settings.shared) } // a cold start locks before the first frame
         }
         .onChange(of: phase) { _, now in
+            lock.scene(now, settings: Settings.shared) // the relay keeps connecting behind the cover
             switch now {
             case .active:
                 Relay.shared.connect()

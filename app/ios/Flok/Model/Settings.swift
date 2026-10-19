@@ -31,6 +31,14 @@ final class Settings {
     var notificationPrefs: NotificationPrefs {
         didSet { defaults.set(try? JSONEncoder().encode(notificationPrefs), forKey: "notificationPrefs") }
     }
+    /// The app lock (Settings › Privacy): Face ID before the app shows anything after it was away
+    /// longer than the grace, and on a cold start when lockOnLaunch. LockGate applies them.
+    var lockEnabled: Bool { didSet { defaults.set(lockEnabled, forKey: "lockEnabled") } }
+    var lockGraceSeconds: Double { didSet { defaults.set(lockGraceSeconds, forKey: "lockGraceSeconds") } }
+    var lockOnLaunch: Bool { didSet { defaults.set(lockOnLaunch, forKey: "lockOnLaunch") } }
+    /// Agent names and screens redacted on the Lock Screen until the phone is unlocked; in the
+    /// keychain group, where the Live Activity and the notification card read it.
+    var hideDetailsLocked: Bool { didSet { Privacy.setHideDetails(hideDetailsLocked) } }
 
     private let defaults = UserDefaults.standard
 
@@ -49,6 +57,10 @@ final class Settings {
         pairedPhoneName = defaults.string(forKey: "pairedPhoneName")
         pairedTenant = defaults.string(forKey: "pairedTenant")
         notificationPrefs = defaults.data(forKey: "notificationPrefs").flatMap { try? JSONDecoder().decode(NotificationPrefs.self, from: $0) } ?? NotificationPrefs()
+        lockEnabled = defaults.object(forKey: "lockEnabled") as? Bool ?? false
+        lockGraceSeconds = defaults.object(forKey: "lockGraceSeconds") as? Double ?? LockPolicy.defaultGrace
+        lockOnLaunch = defaults.object(forKey: "lockOnLaunch") as? Bool ?? true
+        hideDetailsLocked = Privacy.hideDetails()
         // Saved again at every start: an item from a build before the shared keychain group moves
         // into it, and the extension finds the relay even when only the token was in the keychain.
         Keychain.set(deviceToken, for: "deviceToken")
@@ -57,4 +69,5 @@ final class Settings {
 
     var isConfigured: Bool { baseURL != nil && !deviceToken.isEmpty }
     var baseURL: URL? { RelayURL.base(relayURL) }
+    var lockGrace: Duration { .seconds(lockGraceSeconds) }
 }

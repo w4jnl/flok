@@ -67,8 +67,9 @@ struct LiveRowView: View {
                     Text(row.agent.isEmpty ? row.pane : row.agent).font(Brand.mono(compact ? 12 : 14, bold: true)).foregroundStyle(Brand.ink)
                     Text(row.place).font(Brand.mono(compact ? 9 : 10)).foregroundStyle(Brand.idle)
                 }
+                .hiddenWhenLocked()
                 if !compact {
-                    Text(row.label).font(Brand.mono(11)).foregroundStyle(LiveStyle.color(row.state))
+                    Text(row.label).font(Brand.mono(11)).foregroundStyle(LiveStyle.color(row.state)).hiddenWhenLocked()
                 }
             }
             .lineLimit(1)
@@ -156,7 +157,7 @@ struct LiveExpandedBottom: View {
                     VStack(alignment: .leading, spacing: 1) {
                         LiveRowView(row: r, compact: true)
                         if r.state == "blocked" {
-                            Text(r.label).font(Brand.mono(10)).foregroundStyle(Brand.blocked).padding(.leading, 20).lineLimit(1)
+                            Text(r.label).font(Brand.mono(10)).foregroundStyle(Brand.blocked).padding(.leading, 20).lineLimit(1).hiddenWhenLocked()
                         }
                     }
                 }
