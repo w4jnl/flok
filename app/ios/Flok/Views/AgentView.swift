@@ -7,6 +7,7 @@ struct AgentView: View {
     let target: Target
     @Environment(Relay.self) private var relay
     @Environment(Settings.self) private var settings
+    @Environment(LockGate.self) private var lock
     @Environment(\.verticalSizeClass) private var vClass
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var phase
@@ -129,9 +130,11 @@ struct AgentView: View {
             voice.cancel()
         }
         // Looking at the agent here is looking at it: as focusing its pane in tmux, it is marked
-        // seen when it opens, when it finishes while open, and when the app comes back to it.
+        // seen when it opens, when it finishes while open, and when the app comes back to it;
+        // not while the app lock's cover is up, nobody saw it then.
         .onChange(of: found?.1.unseen ?? 0) { _, n in if n > 0 { Task { await seenIfUnseen() } } }
         .onChange(of: phase) { _, p in if p == .active { Task { await seenIfUnseen() } } }
+        .onChange(of: lock.locked) { _, l in if !l { Task { await seenIfUnseen() } } }
         .onChange(of: compact) { _, _ in inputChoice = nil } // a turn of the phone goes back to that orientation's default
         .onChange(of: voice.live) { _, live in if voice.listening { input = voiceBase + live } } // the words as they come
     }
@@ -370,7 +373,7 @@ struct AgentView: View {
     }
 
     private func seenIfUnseen() async {
-        guard phase == .active, let (_, a) = found, a.unseen > 0 else { return }
+        guard phase == .active, !lock.locked, let (_, a) = found, a.unseen > 0 else { return }
         try? await relay.markSeen(target)
     }
 

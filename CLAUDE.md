@@ -394,6 +394,23 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
   (`apns.Device`), so Xcode and TestFlight builds share one relay. Notification delegate
   methods use the completion-handler forms and call the handler on the main thread: the async
   forms call it from the concurrency pool and UIKit aborts the app on a tapped notification.
+  The app lock (`Model/LockGate.swift`, the decisions pure in `LockPolicy.swift`, Settings ›
+  Privacy; the pattern is §3.10 of `../ios-design-and-solution-guide.md`, shared with the
+  journal): `.deviceOwnerAuthentication` after the app was in the background longer than the
+  grace (`LockGrace`: `.after(Duration)` on a `ContinuousClock`, never `Date`, or
+  `.untilTomorrow` = the calendar day changed; stored as seconds, -1 the sentinel), on launch
+  when `lockOnLaunch` (off, the last background's date in `UserDefaults` is the start of the
+  measure), never from the inactive bounce of the prompt itself; the phone's own recent biometric unlock counts
+  (`touchIDAuthenticationAllowableReuseDuration` = `min(grace, 5 min)`); the cover is a second
+  `UIWindow` above `.alert`, so sheets hide too; the relay keeps streaming behind it; `RootView`
+  holds a `flok://pair` or `flok://link` in `pendingURL` until unlocked and `AgentView` marks
+  nothing seen while locked. `Shared/Privacy.swift` is the *Hide details until unlocked* flag,
+  an item in the keychain group the extensions already read (`FlokWidgets` gained that
+  entitlement for it; an App Group would be a capability the developer account has to grant
+  first, which automatic signing could not do), read by `.hiddenWhenLocked()`
+  (`.privacySensitive`) on the Live Activity's names, places and labels and the card's screen
+  lines; `LiveActivities.repaint` re-sends the running activities their content when it
+  changes.
 - `internal/ui/model.go` drives three independent poll cadences from config (`poll_ms` for the
   tmux snapshot, `registry_poll_ms`, `screen_poll_ms`) plus an fsnotify watch on the store so
   hook writes re-render immediately. CPU rules that are easy to undo by accident: an unchanged

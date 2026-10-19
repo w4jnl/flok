@@ -3,6 +3,7 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(Relay.self) private var relay
     @Environment(Settings.self) private var settings
+    @Environment(LockGate.self) private var lock
     @Environment(\.dismiss) private var dismiss
     @State private var showPair = false
     @State private var showApprove = false
@@ -38,6 +39,25 @@ struct SettingsView: View {
             } footer: {
                 Text("Pairing gives this phone a key of its own on the relay: `flok phone pair` on a Mac shows the code, `flok phone forget` revokes it. A device token from the relay's config still works, under Pair. Link a computer approves a Mac that shows `flok link join`'s code into this phone's tenant, the floks it sees.")
             }
+            Section {
+                Toggle("Require \(biometry)", isOn: Binding(get: { settings.lockEnabled }, set: { on in Task { await setLock(on) } }))
+                    .disabled(!lock.canAuthenticate)
+                if settings.lockEnabled {
+                    Picker("Lock after", selection: $settings.lockGraceSeconds) {
+                        ForEach(LockPolicy.graces, id: \.seconds) { Text($0.label).tag($0.seconds) }
+                    }
+                    Toggle("Lock on launch", isOn: $settings.lockOnLaunch)
+                }
+                Toggle("Hide details until unlocked", isOn: $settings.hideDetailsLocked)
+            } header: {
+                Text("Privacy")
+            } footer: {
+                Text((lock.canAuthenticate
+                      ? "flok asks for \(biometry) when it comes back after the time you pick (Until tomorrow: once a day, when the date has changed), and at a cold start unless Lock on launch is off; the passcode is the fallback, and unlocking the iPhone itself with \(biometry) within that time counts, up to five minutes. "
+                      : "Set a passcode on this iPhone to lock flok. ")
+                     + "Hiding details redacts agent names and screens in the Live Activity and the notification card until the phone is unlocked; the activity follows at its next update. The Lock Screen's Approve and Reply already need the phone unlocked.")
+            }
+            .onChange(of: settings.hideDetailsLocked) { _, _ in LiveActivities.shared.repaint() }
             Section {
                 LabeledContent("Permission", value: permissionLabel)
                 LabeledContent("Registered with the relay", value: notifications.isRegistered ? "yes" : (notifications.apnsToken == nil ? "no APNs token yet" : "no"))
@@ -99,6 +119,16 @@ struct SettingsView: View {
         }
         .sheet(isPresented: $showPair) {
             NavigationStack { PairView() }
+        }
+    }
+
+    private var biometry: String { LockPolicy.label(lock.biometry) }
+
+    /// On and off each take one successful authentication, so a borrowed phone cannot quietly switch it off.
+    private func setLock(_ on: Bool) async {
+        guard on != settings.lockEnabled else { return }
+        if await lock.authenticate(reason: on ? "Lock flok behind \(biometry)." : "Turn the lock off.") {
+            settings.lockEnabled = on
         }
     }
 

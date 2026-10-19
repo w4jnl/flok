@@ -83,6 +83,7 @@ struct NotificationCard: View {
         }
         .font(Brand.mono(10))
         .lineLimit(tailLines)
+        .hiddenWhenLocked()
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
         .background(Brand.raised, in: RoundedRectangle(cornerRadius: 8))

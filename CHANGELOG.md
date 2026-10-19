@@ -6,6 +6,18 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+- **App: lock it with Face ID.** Settings › Privacy has an app lock, off by default: *Require
+  Face ID* (Touch ID or the passcode, whatever the phone has, the passcode always the fallback),
+  *Lock after* Immediately, 30 seconds, 1 minute (the default), 5, 15 minutes, 1 hour or
+  24 hours away from the app, or *Until tomorrow* (once a day, when the date has changed), and
+  *Lock on launch*. Within the grace nothing is asked, and unlocking the phone
+  itself with Face ID counts for up to five minutes, so a tap on a push right after unlocking
+  the phone opens flok without a second glance. While it is on, the app covers itself with the
+  flok mark in the app switcher, holds a pairing or join QR until unlocked, and never asks for
+  individual actions. *Hide details until unlocked* redacts agent names and screens in the Live
+  Activity and the notification card while the phone is locked, a thing of its own with no
+  prompt. The Lock Screen's Approve, Deny and Reply… already needed the phone unlocked; the
+  notification card's keys and the share sheet stay behind the phone's own lock.
 - **One relay, many tenants, and floks that join by a code.** A tenant is the set of floks and
   phones that see each other; one `flok-relay` now serves any number of them, each blind to the
   others, so a relay you run can take a friend's floks and phone too. A new flok no longer needs

@@ -30,6 +30,11 @@ app asks to pair again instead of retrying; a 401 on a paired key means the same
 registered under a new pairing moves to it and the old pairing is dropped when no device is
 left to it (the same phone paired again).
 
+The phone's own security is the device's: its key sits in the keychain, the Lock Screen's
+answer actions need the device unlocked, and the iOS app adds an optional app lock (Face ID with
+a grace period) in front of its own screens. None of that changes what the relay sees: a locked
+phone's key is as valid as an unlocked one's, and revoking stays `flok phone forget`.
+
 ## Endpoints
 
 | call | body | answer |

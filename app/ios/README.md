@@ -106,8 +106,22 @@ the agent and types its path after the words, which Claude Code and Copilot read
 a permission push sends Enter (the highlighted choice), Deny sends Escape, Reply… opens the
 system's text field (dictation included, on the Watch too) and types it, then Enter.
 Everything is logged on the instance in `events.log`, by size and file name, never the text.
-The app keeps no data beyond the relay address (preferences), the device token (keychain),
-the font size and the voice settings.
+The app keeps the relay address and the phone's key (the keychain group the extensions read),
+what the pairing said (the phone's id and name, the tenant), its notification settings and
+mutes, the list's filter, the font size, the voice settings and the lock settings; nothing of
+the agents between starts.
+
+Settings › Privacy has an optional app lock (`Model/LockGate.swift`, `LockPolicy.swift`): Face
+ID or Touch ID with the passcode as fallback, after the app was away longer than the grace the
+user picked (Immediately … 24 hours, or Until tomorrow: once a day; 1 minute by default), on a
+cold start when "Lock on launch" is on (off, the last background the app remembered is the
+start of the measure); a recent Face ID unlock of the phone itself counts for up to five minutes. The cover is a
+second window above the alert level, so sheets hide under it too, and the relay keeps streaming
+behind it. "Hide details until unlocked" redacts agent names and screens in the Live Activity
+and the notification card while the phone is locked (`.privacySensitive`, a flag in the
+keychain group the extensions already read, `Shared/Privacy.swift`). The lock is a UI gate: the phone's key
+keeps working, and the notification card's keys and the share sheet stay behind the phone's own
+lock, since iOS gives extensions no Face ID. See [docs/phone.md](../../docs/phone.md#locking-the-app).
 
 Voice: hold the microphone next to the reply field and talk. On iOS 26 the recogniser is
 `SpeechTranscriber` (on the Neural Engine; nothing leaves the phone; the first use downloads
@@ -125,6 +139,9 @@ the voice path is tried on a phone (`make ios-device`).
 - `Model/Relay.swift`: the client: the live WebSocket (reconnect with backoff, subscriptions
   resent), the HTTP calls, the badge.
 - `Notifications.swift`: categories and actions, the APNs token to the relay, what a tap does.
+- `Model/LockGate.swift`, `Model/LockPolicy.swift`: the app lock (the gate and its cover
+  window; the decisions, pure); `Shared/Privacy.swift`: the hide-details flag the Live
+  Activity and the card read.
 - `Views/`: the instance list, the agent screen with its key bar, the attachment and
   microphone buttons, settings.
 - `Voice/`: the recogniser (`Voice.swift`, both engines and the microphone), the vocabulary

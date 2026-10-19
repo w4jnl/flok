@@ -1,8 +1,9 @@
 # flok for iPhone: the Xcode project is generated from this file (brew install xcodegen;
 # make ios-project). Local.xcconfig (gitignored) holds what is yours: FLOK_TEAM_ID = your team
 # id, and FLOK_ENTITLEMENTS = Flok/Flok.entitlements (pushes, time-sensitive alerts and the
-# keychain group shared with the content extension; a free Apple ID's personal team cannot sign
-# that: leave it empty there). Shared/ is compiled into the app and its notification extensions:
+# keychain group shared with the content extension and the widget, which also carries the
+# privacy flag; a free Apple ID's personal team cannot sign that: leave it empty there).
+# Shared/ is compiled into the app and its notification extensions:
 # FlokNotificationService puts the state tile on a push, FlokNotificationContent is the expanded
 # view with the live screen and the answer keys, FlokWidgets is the Live Activity (Dynamic
 # Island, Lock Screen).
@@ -62,6 +63,8 @@ targets:
         NSMicrophoneUsageDescription: Hold the microphone to dictate a reply to an agent; the words are recognised on this phone.
         NSSpeechRecognitionUsageDescription: On an iPhone before iOS 26 the dictation uses Apple's speech recognition service.
         NSCameraUsageDescription: Take a photo for an agent, or scan the code that pairs this phone with your relay.
+        # the app lock (Settings › Privacy)
+        NSFaceIDUsageDescription: Unlock flok on this phone.
         CFBundleURLTypes:
           - CFBundleURLName: nl.w4j.flok
             CFBundleURLSchemes: [flok]
@@ -154,12 +157,15 @@ targets:
       - path: Shared/FlokActivity.swift
       - path: Shared/LiveViews.swift
       - path: Shared/Brand.swift
+      - path: Shared/Privacy.swift
+      - path: Shared/Keychain.swift
       - path: Shared/Fonts
       - path: Shared/Images
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: nl.w4j.flok.Widgets
         TARGETED_DEVICE_FAMILY: "1,2"
+        CODE_SIGN_ENTITLEMENTS: FlokWidgets/FlokWidgets.entitlements
     info:
       path: FlokWidgets/Info.plist
       properties:

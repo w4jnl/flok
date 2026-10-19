@@ -224,6 +224,36 @@ state tile, the card) and the Live Activity, built from `project.yml` with Xcode
 (`make ios-project`, `ios-build`, `ios-test`). [`app/API.md`](../app/API.md) is the contract it
 speaks, written for an Android app to follow.
 
+### Locking the app
+
+The phone's own lock covers the Lock Screen: Approve, Deny and Reply… on a push need the phone
+unlocked, and previews follow the phone's Show Previews setting. What it does not cover is the
+unlocked phone in someone else's hand, and the glance at the app switcher: flok shows agents'
+screens and types into them. Settings › Privacy has an app lock for that, off by default:
+
+- **Require Face ID** (Touch ID or the passcode, whatever the phone has; the passcode is always
+  the fallback, so a missed scan never locks you out). Turning it on and off each ask once.
+- **Lock after**: Immediately, 30 seconds, 1 minute (the default), 5, 15 minutes, 1 hour or
+  24 hours away from the app, or **Until tomorrow**: once a day, again only when the date has
+  changed. Within that time nothing is asked. Unlocking the phone itself with Face ID within
+  that time counts too, up to five minutes, so a tap on a push right after unlocking the phone
+  opens flok without a second glance.
+- **Lock on launch**, on by default: a cold start always asks; off, a cold start measures the
+  time from the last moment the app went to the background, so it is a return like any other.
+- **Hide details until unlocked**: agent names, places and labels in the Live Activity, and the
+  screen lines in the notification card, are redacted while the phone is locked. Independent of
+  the lock, and no prompt of its own: the phone's Face ID on the Lock Screen resolves it.
+
+While the lock is on, the app covers itself with the flok mark whenever it leaves the front (the
+app switcher, Control Center, a call) and asks when it comes back after the grace; a link that
+would act, a pairing QR or a Mac's join code, waits until the app is unlocked, while a tap on a
+push navigates underneath. The relay keeps streaming behind the cover, so unlocking shows the
+present. Nothing is asked for individual actions: the app is open to its owner or locked. What
+it does not do: defend against someone who has the passcode, or change how the phone speaks to
+the relay (its key keeps working; `flok phone forget` on a Mac revokes it). The notification
+card's keys and the share sheet are governed by the phone's own lock only, as iOS does not let
+an extension ask for Face ID.
+
 ## Messages without the app
 
 ```

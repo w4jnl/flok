@@ -167,6 +167,18 @@ final class LiveActivities {
         }
     }
 
+    /// Repaints every running activity with what it already shows: a privacy setting changed,
+    /// and the views read it as they render.
+    func repaint() {
+        Task { await Self.repaintAll() }
+    }
+
+    nonisolated private static func repaintAll() async {
+        for a in Activity<FlokActivityAttributes>.activities where a.activityState == .active || a.activityState == .stale {
+            await a.update(a.content)
+        }
+    }
+
     /// Ends an activity by id; looked up off the main actor, because an Activity is not Sendable.
     nonisolated private static func end(_ id: String) async {
         for a in Activity<FlokActivityAttributes>.activities where a.id == id {
