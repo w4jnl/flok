@@ -4,7 +4,7 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
-## Unreleased
+## 0.9.0 (2026-10-19)
 
 - **App: lock it with Face ID.** Settings › Privacy has an app lock, off by default: *Require
   Face ID* (Touch ID or the passcode, whatever the phone has, the passcode always the fallback),
