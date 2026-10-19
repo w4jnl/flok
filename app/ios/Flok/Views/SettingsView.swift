@@ -53,7 +53,7 @@ struct SettingsView: View {
                 Text("Privacy")
             } footer: {
                 Text((lock.canAuthenticate
-                      ? "flok asks for \(biometry) when it comes back after the time you pick; the passcode is the fallback, and unlocking the iPhone itself with \(biometry) within that time counts, up to five minutes. "
+                      ? "flok asks for \(biometry) when it comes back after the time you pick (Until tomorrow: once a day, when the date has changed), and at a cold start unless Lock on launch is off; the passcode is the fallback, and unlocking the iPhone itself with \(biometry) within that time counts, up to five minutes. "
                       : "Set a passcode on this iPhone to lock flok. ")
                      + "Hiding details redacts agent names and screens in the Live Activity and the notification card until the phone is unlocked; the activity follows at its next update. The Lock Screen's Approve and Reply already need the phone unlocked.")
             }

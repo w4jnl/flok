@@ -397,8 +397,10 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
   The app lock (`Model/LockGate.swift`, the decisions pure in `LockPolicy.swift`, Settings ›
   Privacy; the pattern is §3.10 of `../ios-design-and-solution-guide.md`, shared with the
   journal): `.deviceOwnerAuthentication` after the app was in the background longer than the
-  grace (`ContinuousClock`, never `Date`), on launch when `lockOnLaunch`, never from the
-  inactive bounce of the prompt itself; the phone's own recent biometric unlock counts
+  grace (`LockGrace`: `.after(Duration)` on a `ContinuousClock`, never `Date`, or
+  `.untilTomorrow` = the calendar day changed; stored as seconds, -1 the sentinel), on launch
+  when `lockOnLaunch` (off, the last background's date in `UserDefaults` is the start of the
+  measure), never from the inactive bounce of the prompt itself; the phone's own recent biometric unlock counts
   (`touchIDAuthenticationAllowableReuseDuration` = `min(grace, 5 min)`); the cover is a second
   `UIWindow` above `.alert`, so sheets hide too; the relay keeps streaming behind it; `RootView`
   holds a `flok://pair` or `flok://link` in `pendingURL` until unlocked and `AgentView` marks

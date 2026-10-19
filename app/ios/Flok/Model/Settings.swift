@@ -69,5 +69,5 @@ final class Settings {
 
     var isConfigured: Bool { baseURL != nil && !deviceToken.isEmpty }
     var baseURL: URL? { RelayURL.base(relayURL) }
-    var lockGrace: Duration { .seconds(lockGraceSeconds) }
+    var lockGrace: LockGrace { LockGrace(seconds: lockGraceSeconds) }
 }

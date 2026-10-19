@@ -113,8 +113,9 @@ the agents between starts.
 
 Settings › Privacy has an optional app lock (`Model/LockGate.swift`, `LockPolicy.swift`): Face
 ID or Touch ID with the passcode as fallback, after the app was away longer than the grace the
-user picked (Immediately … 1 hour, 1 minute by default), on a cold start when "Lock on launch"
-is on; a recent Face ID unlock of the phone itself counts for up to five minutes. The cover is a
+user picked (Immediately … 24 hours, or Until tomorrow: once a day; 1 minute by default), on a
+cold start when "Lock on launch" is on (off, the last background the app remembered is the
+start of the measure); a recent Face ID unlock of the phone itself counts for up to five minutes. The cover is a
 second window above the alert level, so sheets hide under it too, and the relay keeps streaming
 behind it. "Hide details until unlocked" redacts agent names and screens in the Live Activity
 and the notification card while the phone is locked (`.privacySensitive`, a flag in the

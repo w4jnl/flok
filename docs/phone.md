@@ -233,11 +233,13 @@ screens and types into them. Settings › Privacy has an app lock for that, off 
 
 - **Require Face ID** (Touch ID or the passcode, whatever the phone has; the passcode is always
   the fallback, so a missed scan never locks you out). Turning it on and off each ask once.
-- **Lock after**: Immediately, 30 seconds, 1 minute (the default), 5, 15 minutes or 1 hour away
-  from the app. Within that time nothing is asked. Unlocking the phone itself with Face ID within
+- **Lock after**: Immediately, 30 seconds, 1 minute (the default), 5, 15 minutes, 1 hour or
+  24 hours away from the app, or **Until tomorrow**: once a day, again only when the date has
+  changed. Within that time nothing is asked. Unlocking the phone itself with Face ID within
   that time counts too, up to five minutes, so a tap on a push right after unlocking the phone
   opens flok without a second glance.
-- **Lock on launch**, on by default: a cold start always asks; off, it relies on the grace alone.
+- **Lock on launch**, on by default: a cold start always asks; off, a cold start measures the
+  time from the last moment the app went to the background, so it is a return like any other.
 - **Hide details until unlocked**: agent names, places and labels in the Live Activity, and the
   screen lines in the notification card, are redacted while the phone is locked. Independent of
   the lock, and no prompt of its own: the phone's Face ID on the Lock Screen resolves it.

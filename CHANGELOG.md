@@ -8,8 +8,9 @@ updates this file first. Dates are the tag dates.
 
 - **App: lock it with Face ID.** Settings › Privacy has an app lock, off by default: *Require
   Face ID* (Touch ID or the passcode, whatever the phone has, the passcode always the fallback),
-  *Lock after* Immediately, 30 seconds, 1 minute (the default), 5, 15 minutes or 1 hour away
-  from the app, and *Lock on launch*. Within the grace nothing is asked, and unlocking the phone
+  *Lock after* Immediately, 30 seconds, 1 minute (the default), 5, 15 minutes, 1 hour or
+  24 hours away from the app, or *Until tomorrow* (once a day, when the date has changed), and
+  *Lock on launch*. Within the grace nothing is asked, and unlocking the phone
   itself with Face ID counts for up to five minutes, so a tap on a push right after unlocking
   the phone opens flok without a second glance. While it is on, the app covers itself with the
   flok mark in the app switcher, holds a pairing or join QR until unlocked, and never asks for

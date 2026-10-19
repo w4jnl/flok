@@ -20,7 +20,10 @@ final class LockGate {
     /// A flok://pair or flok://link that arrived while locked; RootView opens it after the unlock.
     var pendingURL: URL?
     private var backgroundedAt: ContinuousClock.Instant?
+    private var backgroundedOn: Date? // for Until tomorrow: the calendar day it went away
     private var activatedOnce = false
+    /// The last background, as a date, so a cold start with Lock on launch off measures from it.
+    private static let rememberedKey = "lockBackgroundedAt"
     private var reuse: TimeInterval = 0
     private var window: UIWindow?
 
@@ -44,18 +47,29 @@ final class LockGate {
         switch phase {
         case .background:
             backgroundedAt = .now
+            backgroundedOn = .now
+            UserDefaults.standard.set(backgroundedOn, forKey: Self.rememberedKey)
             covered = settings.lockEnabled
         case .inactive:
             covered = settings.lockEnabled // the switcher's thumbnail; never a prompt from here
         case .active:
-            let since = backgroundedAt.map { ContinuousClock.now - $0 }
             let launching = !activatedOnce
-            if LockPolicy.shouldLock(since: since, grace: settings.lockGrace, enabled: settings.lockEnabled,
+            var since: Duration?
+            var sameDay = true
+            if let backgroundedAt, let backgroundedOn {
+                since = ContinuousClock.now - backgroundedAt
+                sameDay = Calendar.current.isDateInToday(backgroundedOn)
+            } else if launching, let remembered = UserDefaults.standard.object(forKey: Self.rememberedKey) as? Date {
+                since = .seconds(Date.now.timeIntervalSince(remembered)) // a cold start is a return from the last background
+                sameDay = Calendar.current.isDateInToday(remembered)
+            }
+            if LockPolicy.shouldLock(since: since, sameDay: sameDay, grace: settings.lockGrace, enabled: settings.lockEnabled,
                                      onLaunch: settings.lockOnLaunch, launching: launching) {
                 locked = true
             }
             activatedOnce = true
             backgroundedAt = nil
+            backgroundedOn = nil
             covered = false
             reuse = LockPolicy.reuse(forGrace: settings.lockGraceSeconds)
             // Asked on a launch and on a return from the background, not after the inactive
