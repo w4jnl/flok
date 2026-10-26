@@ -577,6 +577,27 @@ func sessionIDs(inner tmux.Client) map[string]bool {
 	return ids
 }
 
+// OuterSocketEnv is the global environment variable the attach loop sets on the inner server:
+// the outer server's socket path, the terminal behind flok. A program in one of the user's
+// sessions that must ask the real terminal something (an image protocol riding on the outer's
+// allow-passthrough, for instance) cannot see the outer from inside the inner: its $TMUX names
+// the inner server. It reads this instead (`tmux show-environment -g FLOK_OUTER_SOCKET`, so
+// panes older than the variable see it too) and asks that server (`tmux -S <path>
+// display-message -p …`). Unset again when the outer goes.
+const OuterSocketEnv = "FLOK_OUTER_SOCKET"
+
+// publishOuterSocket tells the inner server where the terminal behind flok is (OuterSocketEnv).
+func publishOuterSocket(inner tmux.Client, outer *tmux.Local) {
+	if outer != nil && outer.Path != "" {
+		_, _ = inner.Run("set-environment", "-g", OuterSocketEnv, outer.Path)
+	}
+}
+
+// forgetOuterSocket takes it away again: a stale path would send a program to a dead socket.
+func forgetOuterSocket(inner tmux.Client) {
+	_, _ = inner.Run("set-environment", "-gu", OuterSocketEnv)
+}
+
 // AttachLoop runs inside the outer's right pane: it attaches the inner client and decides what
 // a client exit means. A destroyed session (kill-session while attached) re-attaches to another
 // one; an explicit detach (prefix d) ends the outer like a normal detach would end `tmux attach`,
@@ -596,7 +617,8 @@ func AttachLoop(cfg config.Config) error {
 	failures := 0
 	for {
 		before := sessionIDs(inner)
-		delete(before, boot) // its retirement is not a destroyed session, so a later detach still closes the outer
+		delete(before, boot)             // its retirement is not a destroyed session, so a later detach still closes the outer
+		publishOuterSocket(inner, outer) // before every attach: an inner server that came back gets it again
 		args := inner.Argv("attach-session")
 		if cfg.Inner.Session != "" {
 			if _, err := inner.Run("has-session", "-t", cfg.Inner.Session); err == nil {
@@ -642,6 +664,7 @@ func AttachLoop(cfg config.Config) error {
 	snapshot.Remove(config.StateDir())
 	resetKeepAwake()
 	StopBar()
+	forgetOuterSocket(inner) // before the kill: this process lives in the outer's pane
 	if outer != nil {
 		_, _ = outer.Run("kill-server")
 	}
@@ -650,18 +673,21 @@ func AttachLoop(cfg config.Config) error {
 	return nil
 }
 
-// Down stops the outer server; the inner server is never touched.
+// Down stops the outer server; the inner server keeps running, only flok's keys and
+// OuterSocketEnv are taken out of it.
 func Down(cfg config.Config) error {
 	_ = os.WriteFile(quitMarker(), []byte("1"), 0o644)
 	outer := tmux.NewLocal(cfg.Outer.Socket)
+	inner := tmux.NewLocal(cfg.Inner.Socket)
 	_, err := outer.Run("kill-server")
 	_ = os.Remove(quitMarker())
 	_ = os.Remove(RuntimePath())
 	snapshot.Remove(config.StateDir())
 	resetKeepAwake()
 	StopBar()
+	forgetOuterSocket(inner)
 	remote.CloseMasters(cfg.Hosts, config.StateDir())
-	_ = remote.RestoreLocalKeys(tmux.NewLocal(cfg.Inner.Socket), config.StateDir())
+	_ = remote.RestoreLocalKeys(inner, config.StateDir())
 	if err != nil && strings.Contains(err.Error(), "no server running") {
 		return nil
 	}

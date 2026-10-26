@@ -5,6 +5,12 @@ source "$(dirname "$0")/lib.sh"
 CLIENT=$(IN list-clients -F '#{client_tty}' | head -1)
 SESS=$(IN list-clients -F '#{client_session}' | head -1)
 
+# the inner server learns where the terminal behind flok is: FLOK_OUTER_SOCKET in its global
+# environment, the outer's socket path, for programs that must ask the real terminal (inline images)
+OUTER_SOCK=$(OUT display -p '#{socket_path}')
+outer_env() { IN show-environment -g FLOK_OUTER_SOCKET 2>/dev/null || true; }   # empty once unset
+if [ "$(outer_env)" = "FLOK_OUTER_SOCKET=$OUTER_SOCK" ]; then ok "inner server has FLOK_OUTER_SOCKET = the outer socket path"; else bad "inner server lacks FLOK_OUTER_SOCKET (have '$(outer_env)', want $OUTER_SOCK)"; fi
+
 # the sidebar width is pinned: window resizes (window manager moving the terminal) must not scale it
 if tmux_at_least 2 9; then   # resize-window exists from tmux 2.9
 OUT resize-window -t flok -x 120 -y 40; sleep 0.4
@@ -28,11 +34,13 @@ IN kill-session -t "$SESS"; sleep 1.2
 if OUT has-session -t flok 2>/dev/null; then ok "outer survives killing the attached session"; else bad "outer died with the session"; fi
 expect "client re-attached to the remaining session" "^$OTHER\$" "$(IN list-clients -F '#{client_session}' | head -1)"
 expect "sidebar still alive" '^sessions' "$(capture)"
+expect "FLOK_OUTER_SOCKET survives the re-attach" "^FLOK_OUTER_SOCKET=$OUTER_SOCK\$" "$(outer_env)"
 
 IN detach-client -t "$(IN list-clients -F '#{client_tty}' | head -1)"; sleep 1.2
 if OUT has-session -t flok 2>/dev/null; then bad "outer still running after an explicit detach"; else ok "explicit detach closes the outer"; fi
 if IN ls >/dev/null 2>&1; then ok "inner server untouched"; else bad "inner server died"; fi
 expect "runtime.json removed" '^0$' "$(ls "$T/state" | grep -cx runtime.json || true)"
+expect "the detach takes FLOK_OUTER_SOCKET out of the inner server" '^$' "$(outer_env)"
 
 # reattach_on_detach = true: a detach comes straight back
 python3 - "$T/config.toml" <<'PY'
@@ -45,6 +53,7 @@ if OUT has-session -t flok 2>/dev/null; then ok "outer kept with reattach_on_det
 expect "client re-attached after detach" '^1$' "$(IN list-clients | wc -l | tr -d ' ')"
 "$BIN" down; sleep 0.5
 expect "flok down takes flok's keys out of the inner server" '^0$' "$(IN list-keys -T prefix | grep -c "$BIN" || true)"
+expect "flok down takes FLOK_OUTER_SOCKET out as well" '^$' "$(outer_env)"
 expect "tmux's own o is still there" 'prefix +o +select-pane' "$(IN list-keys -T prefix)"
 if OUT has-session -t flok 2>/dev/null; then bad "down left the outer running"; else ok "down closes the outer"; fi
 
