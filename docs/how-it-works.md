@@ -66,6 +66,14 @@ The sidebar never modifies the inner server. It reads it (`list-sessions`, `list
 optional tmux.conf snippet) are plain `run-shell` calls to `flok jump|next|toggle|hide|focus|
 menu …|host …`; the help is `flok keys --open`, a popup on tmux 3.2+.
 
+One thing flok does leave on the inner server while it runs: `FLOK_OUTER_SOCKET` in its global
+environment, the outer server's socket path. A program in one of your sessions sees only the
+inner tmux in its `$TMUX`; one that must ask the real terminal something (a terminal image
+protocol riding on the outer's `allow-passthrough`, say) reads
+`tmux show-environment -g FLOK_OUTER_SOCKET` and asks that server with
+`tmux -S <path> display-message -p …`. The attach loop sets it before every attach and removes
+it when the outer goes (a detach, `flok down`).
+
 ## Where agent state comes from
 
 ```

@@ -85,7 +85,11 @@ One binary, several roles selected by subcommand (`internal/cli/root.go`):
 - `flok up` (`internal/launcher`): renders `outer.tmux.conf.tmpl` into the state dir, creates
   the outer session whose right pane runs `flok _attach-loop` and whose left pane runs
   `flok sidebar`, writes `runtime.json`, then execs `tmux attach`. `_attach-loop` decides what a
-  client exit means (destroyed session → re-attach elsewhere; deliberate detach → kill outer).
+  client exit means (destroyed session → re-attach elsewhere; deliberate detach → kill outer);
+  before every attach it sets `FLOK_OUTER_SOCKET` (`launcher.OuterSocketEnv`, the outer's socket
+  path) in the inner server's global environment, for programs inside the sessions that must ask
+  the real terminal (inline images through the outer's `allow-passthrough`), and its teardown and
+  `Down` unset it (m5 checks both).
 - `flok sidebar` (`internal/cli/sidebar.go` → `internal/ui`): the long-lived Bubble Tea
   program. It knows it is inside the outer via `FLOK_OUTER`, its own pane via `TMUX_PANE`, and
   the work pane via `FLOK_RIGHT_PANE` or `runtime.json`.

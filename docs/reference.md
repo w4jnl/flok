@@ -211,3 +211,10 @@ brand = "#12999D"
 | `~/.copilot/hooks/flok.json` | the Copilot CLI hook file |
 
 `FLOK_CONFIG` and `FLOK_STATE` override the two locations.
+
+## Environment
+
+| variable | where | meaning |
+|---|---|---|
+| `FLOK_CONFIG`, `FLOK_STATE` | yours | the config file and the state directory, instead of the XDG locations above |
+| `FLOK_OUTER_SOCKET` | the inner server's global environment (`tmux show-environment -g FLOK_OUTER_SOCKET`) | the outer server's socket path while flok runs, for a program in your sessions that must ask the terminal behind flok (`tmux -S <path> display-message -p …`); set before every attach, removed when the outer goes |

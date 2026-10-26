@@ -4,6 +4,14 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
+## Unreleased
+
+- **Programs inside flok can find the real terminal.** The inner server's global environment
+  carries `FLOK_OUTER_SOCKET`, the outer server's socket path, while flok runs (removed when it
+  goes). A program in one of your sessions that must ask the terminal behind flok something, an
+  inline-image protocol for one, reads `tmux show-environment -g FLOK_OUTER_SOCKET` and talks to
+  that server with `tmux -S <path> …`.
+
 ## 0.9.0 (2026-10-19)
 
 - **App: lock it with Face ID.** Settings › Privacy has an app lock, off by default: *Require
