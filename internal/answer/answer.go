@@ -13,19 +13,41 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/w4jnl/flok/internal/agent"
 )
 
 // Answer is what is typed into an agent pane: Text first, literally, then Keys in order.
 type Answer struct {
-	Pane  string   `json:"pane"`            // pane ref: %12 here, beta:%12 on a remote host
-	Text  string   `json:"text,omitempty"`  // typed as is: printable, tabs and newlines, at most MaxLongText runes (see Long)
-	Keys  []string `json:"keys,omitempty"`  // named keys after the text: Enter, Escape, Up, … (see Keys)
-	Files []File   `json:"files,omitempty"` // saved on the agent's machine, their paths typed after the text, in order
-	File  *File    `json:"file,omitempty"`  // one file, as the first app build sent it; Normalize folds it into Files
+	Pane  string      `json:"pane"`            // pane ref: %12 here, beta:%12 on a remote host
+	Text  string      `json:"text,omitempty"`  // typed as is: printable, tabs and newlines, at most MaxLongText runes (see Long)
+	Keys  []string    `json:"keys,omitempty"`  // named keys after the text: Enter, Escape, Up, … (see Keys)
+	Files []File      `json:"files,omitempty"` // saved on the agent's machine, their paths typed after the text, in order
+	File  *File       `json:"file,omitempty"`  // one file, as the first app build sent it; Normalize folds it into Files
+	Form  *FormAnswer `json:"form,omitempty"`  // fills the question form the agent shows (agent.Form), on its own: no text, keys or files with it
 }
+
+// FormAnswer answers a question form (agent.Form): one Choice per question, in the form's
+// order. The instance drives the agent's own form with it (Fill), so the agent sees exactly
+// what it would have seen typed at the keyboard.
+type FormAnswer struct {
+	Answers []Choice `json:"answers"`
+}
+
+// Choice answers one question: the options picked (indexes into the question's options, any
+// number for a multi-select, one otherwise) and/or words of the user's own, typed into the
+// form's "Type something" field (one line of at most MaxFormOther runes).
+type Choice struct {
+	Selected []int  `json:"selected,omitempty"`
+	Other    string `json:"other,omitempty"`
+}
+
+// Empty reports a choice that picks nothing and says nothing.
+func (c Choice) Empty() bool { return len(c.Selected) == 0 && c.Other == "" }
 
 // File is an attachment: a screenshot, a photo, a PDF.
 type File struct {
@@ -43,6 +65,9 @@ const (
 	MaxKeys     = 8       // named keys per answer
 	MaxFile     = 4 << 20 // bytes of a file
 	MaxFiles    = 6       // files per answer
+	// MaxFormOther bounds the user's own words for one question of a form: typed into the
+	// form's field as one line.
+	MaxFormOther = 200
 	// MaxBody bounds an answer on the wire (the files, base64, and the rest).
 	MaxBody = 36 << 20
 	// KeyGap separates the text from the keys that follow it. Written in one burst, an Enter
@@ -83,7 +108,7 @@ var keyByLower = func() map[string]string {
 
 // Empty reports an answer that types nothing.
 func (a Answer) Empty() bool {
-	return a.Text == "" && len(a.Keys) == 0 && len(a.Files) == 0 && a.File == nil
+	return a.Text == "" && len(a.Keys) == 0 && len(a.Files) == 0 && a.File == nil && a.Form == nil
 }
 
 // Long reports a text that is pasted rather than typed: over MaxText runes, or more than one
@@ -97,6 +122,16 @@ func Long(text string) bool {
 func Normalize(a Answer) (Answer, error) {
 	if a.Empty() {
 		return a, errors.New("nothing to type")
+	}
+	if a.Form != nil {
+		if a.Text != "" || len(a.Keys) > 0 || len(a.Files) > 0 || a.File != nil {
+			return a, errors.New("a form answer carries nothing else: no text, keys or files")
+		}
+		f, err := normalizeForm(*a.Form)
+		if err != nil {
+			return a, err
+		}
+		return Answer{Pane: a.Pane, Form: &f}, nil
 	}
 	text := strings.ReplaceAll(strings.ReplaceAll(a.Text, "\r\n", "\n"), "\r", "\n")
 	if n := len([]rune(text)); n > MaxLongText {
@@ -131,6 +166,44 @@ func Normalize(a Answer) (Answer, error) {
 			return a, err
 		}
 		out.Files = append(out.Files, n)
+	}
+	return out, nil
+}
+
+// normalizeForm checks a form answer: a bounded number of choices, each picking options by
+// index without repeats, with the user's own words one printable line.
+func normalizeForm(f FormAnswer) (FormAnswer, error) {
+	switch n := len(f.Answers); {
+	case n == 0:
+		return f, errors.New("the form answer answers no question")
+	case n > agent.MaxFormQuestions:
+		return f, fmt.Errorf("%d answers, a form has at most %d questions", n, agent.MaxFormQuestions)
+	}
+	out := FormAnswer{Answers: make([]Choice, 0, len(f.Answers))}
+	for i, c := range f.Answers {
+		var picked Choice
+		seen := map[int]bool{}
+		for _, j := range c.Selected {
+			if j < 0 || j >= agent.MaxFormOptions {
+				return f, fmt.Errorf("answer %d picks option %d, options are 0 to %d", i+1, j, agent.MaxFormOptions-1)
+			}
+			if !seen[j] {
+				seen[j] = true
+				picked.Selected = append(picked.Selected, j)
+			}
+		}
+		sort.Ints(picked.Selected)
+		other := strings.TrimSpace(c.Other)
+		if n := len([]rune(other)); n > MaxFormOther {
+			return f, fmt.Errorf("answer %d's text is %d characters, at most %d", i+1, n, MaxFormOther)
+		}
+		for _, r := range other {
+			if !unicode.IsPrint(r) {
+				return f, fmt.Errorf("answer %d's text contains a control character (%U)", i+1, r)
+			}
+		}
+		picked.Other = other
+		out.Answers = append(out.Answers, picked)
 	}
 	return out, nil
 }
@@ -319,6 +392,20 @@ func Describe(a Answer) string {
 	}
 	if len(a.Keys) > 0 {
 		parts = append(parts, strings.Join(a.Keys, " "))
+	}
+	if a.Form != nil {
+		picked, other := 0, 0
+		for _, c := range a.Form.Answers {
+			picked += len(c.Selected)
+			if c.Other != "" {
+				other++
+			}
+		}
+		s := fmt.Sprintf("form: %d answers, %d picked", len(a.Form.Answers), picked)
+		if other > 0 {
+			s += fmt.Sprintf(", %d typed", other)
+		}
+		parts = append(parts, s)
 	}
 	return strings.Join(parts, " + ")
 }

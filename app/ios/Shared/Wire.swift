@@ -82,10 +82,13 @@ struct InstanceState: Decodable, Sendable, Identifiable {
     var takesLongText: Bool { features?.contains(Feature.longText) ?? false }
     /// Whether an answer may carry a file there.
     var takesFiles: Bool { features?.contains(Feature.files) ?? false }
+    /// Whether a question form may be answered as choices there (else with keys on the screen).
+    var takesForms: Bool { features?.contains(Feature.form) ?? false }
 
     enum Feature {
         static let longText = "long-text"
         static let files = "files"
+        static let form = "form"
     }
 }
 
@@ -138,6 +141,9 @@ struct Agent: Decodable, Sendable, Identifiable, Hashable {
     var kind: String?
     var state: AgentState
     var reason: String?
+    /// The question form a blocked agent waits on (reason "question"), when the instance's hook
+    /// saw it; nil on an older flok, or for a question the hooks did not report.
+    var form: QuestionForm?
     var tool: String?
     var detail: String?
     var unseen: Int
@@ -147,6 +153,30 @@ struct Agent: Decodable, Sendable, Identifiable, Hashable {
     /// The pane ref the relay addresses: "%12" here, "beta:%12" on the instance's remote host.
     var paneRef: String { PaneRef.compose(host: host, pane: paneId) }
     var id: String { paneRef }
+    /// Waiting on a question form the phone can fill in.
+    var asksForm: Bool { state == .blocked && reason == "question" && form != nil }
+}
+
+/// A question form an agent put up (Claude Code's AskUserQuestion) as the instance's hook saw
+/// it: the phone renders it natively and answers it with a FormAnswerBody, which the instance
+/// types into the agent's own form.
+struct QuestionForm: Decodable, Sendable, Hashable {
+    var questions: [FormQuestion]
+}
+
+struct FormQuestion: Decodable, Sendable, Hashable {
+    var header: String?
+    var text: String
+    var options: [FormOption]
+    /// Several options may be picked; one otherwise.
+    var multi: Bool?
+
+    var isMulti: Bool { multi ?? false }
+}
+
+struct FormOption: Decodable, Sendable, Hashable {
+    var label: String
+    var description: String?
 }
 
 enum AgentState: String, Decodable, Sendable {
@@ -202,6 +232,21 @@ struct AnswerBody: Encodable, Sendable {
     var text: String?
     var keys: [String]?
     var files: [AttachedFile]?
+    /// The agent's question form answered; on its own, without text, keys or files.
+    var form: FormAnswerBody?
+}
+
+/// A question form answered: one choice per question, in the form's order. The instance drives
+/// the agent's form with it key by key, so the agent sees what the keyboard would have typed.
+struct FormAnswerBody: Encodable, Sendable, Equatable {
+    var answers: [FormChoice]
+}
+
+/// One question's answer: the options picked (indexes into the question's options) and/or
+/// words of the user's own, typed into the form's "Type something" row.
+struct FormChoice: Encodable, Sendable, Equatable {
+    var selected: [Int]?
+    var other: String?
 }
 
 /// The longest text an instance without the long-text feature takes, on one line.

@@ -159,7 +159,7 @@ expect "the log holds no typed text" '^0$' "$(grep -c '"y"' "$T/state/events.log
 # a long reply with newlines is pasted through a tmux buffer; a file is saved under the state
 # dir and typed as its path (what an image for Claude Code looks like); the relay tells the app
 # what the instance takes, and refuses what it does not
-expect "the relay lists what the instance takes" '"features":\["answer","screen","long-text","files","phone","enroll"\]' "$(GET /api/instances)"
+expect "the relay lists what the instance takes" '"features":\["answer","screen","long-text","files","phone","enroll","form"\]' "$(GET /api/instances)"
 expect "a long reply with newlines is taken" '"ok":true' "$(POST /api/answer '{"instance":"e2e","pane":"'"$AGENT"'","text":"first long line\nsecond long line","keys":["Enter"]}')"
 expect_soon "the pane shows both lines" '^first long line *$' IN capture-pane -p -J -t "$AGENT"
 expect "… the second as well" '^second long line *$' "$(IN capture-pane -p -J -t "$AGENT")"
@@ -176,6 +176,11 @@ OTHER=$(IN display -p -t Alpha:0 '#{pane_id}')
 expect "a pane without an agent is refused" '"error":"no agent in pane '"$OTHER"'"' "$(POST /api/answer '{"instance":"e2e","pane":"'"$OTHER"'","text":"rm -rf /"}')"
 expect "the refusal never reached tmux" '^0$' "$(IN capture-pane -p -t "$OTHER" | grep -c 'rm -rf' || true)"
 expect "a key outside the allowlist is refused by the relay" 'not allowed' "$(POST /api/answer '{"instance":"e2e","pane":"'"$AGENT"'","keys":["C-d"]}')"
+# a form answer: the relay checks its shape, the instance checks the agent shows a form (the
+# fake agent shows none: the message tells the phone to use the screen)
+expect "a form answer with text is refused by the relay" 'carries nothing else' "$(POST /api/answer '{"instance":"e2e","pane":"'"$AGENT"'","text":"y","form":{"answers":[{"selected":[0]}]}}')"
+expect "a form answer picking beyond the digits is refused by the relay" 'options are 0 to 8' "$(POST /api/answer '{"instance":"e2e","pane":"'"$AGENT"'","form":{"answers":[{"selected":[9]}]}}')"
+expect "a form answer for an agent without a form is refused by the instance" 'no question form open in pane '"$AGENT" "$(POST /api/answer '{"instance":"e2e","pane":"'"$AGENT"'","form":{"answers":[{"selected":[0]}]}}')"
 expect "an unknown instance is refused" 'no instance office' "$(POST /api/answer '{"instance":"office","pane":"%1","text":"y"}')"
 expect "seen through the API is taken" '"ok":true' "$(POST /api/seen '{"instance":"e2e","pane":"'"$AGENT"'"}')"
 hook claude '{"hook_event_name":"PostToolUse","session_id":"ph1","tool_name":"Bash","tool_use_id":"t1"}'

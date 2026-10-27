@@ -262,9 +262,9 @@ final class Relay {
     /// Types into an agent pane: text first, then the keys; files are saved on the agent's
     /// machine and their paths typed after the text. The relay waits for the instance to
     /// confirm, so a thrown error means it did not happen.
-    func answer(_ t: Target, text: String? = nil, keys: [String]? = nil, files: [AttachedFile] = []) async throws {
+    func answer(_ t: Target, text: String? = nil, keys: [String]? = nil, files: [AttachedFile] = [], form: FormAnswerBody? = nil) async throws {
         try await post("/api/answer", AnswerBody(instance: t.instance, pane: t.pane, text: text?.isEmpty == false ? text : nil, keys: keys?.isEmpty == false ? keys : nil,
-                                                 files: files.isEmpty ? nil : files))
+                                                 files: files.isEmpty ? nil : files, form: form))
     }
 
     func markSeen(_ t: Target) async throws {

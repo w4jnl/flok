@@ -107,9 +107,23 @@ OUT send-keys -t "$SIDEBAR" '!'   # look at Alpha window 0 again? '!' selects sp
 IN select-window -t Alpha:0        # move the inner client away from the agent pane
 sleep 0.4
 hook claude '{"hook_event_name":"UserPromptSubmit","session_id":"abc"}'
-hook claude '{"hook_event_name":"PreToolUse","session_id":"abc","tool_name":"AskUserQuestion","tool_input":{},"tool_use_id":"q1"}'
+hook claude '{"hook_event_name":"PreToolUse","session_id":"abc","tool_name":"AskUserQuestion","tool_input":{"questions":[{"question":"Which fruits do you like?","header":"Fruit","options":[{"label":"Apple","description":"red or green"},{"label":"Banana"},{"label":"Cherry"}],"multiSelect":true},{"question":"Which size?","header":"Size","options":[{"label":"Small"},{"label":"Large"}],"multiSelect":false}]},"tool_use_id":"q1"}'
 wait_for 'question' 3 || true
 expect "AskUserQuestion -> question" "● $PROJ +question" "$(capture)"
+# the form the hook saw rides in the record and the published snapshot, for the phone to render
+snap_form() { python3 -c "
+import json
+a=[a for a in json.load(open('$T/state/snapshot.json'))['agents'] if a['pane_id']=='$AGENT'][0]
+f=a.get('form')
+print('none' if not f else ' '.join(q['header']+'/'+str(len(q['options']))+('/multi' if q.get('multi') else '') for q in f['questions']))" 2>/dev/null || echo unread; }
+expect_soon "the question's form is in the snapshot" '^Fruit/3/multi Size/2$' snap_form
+# Claude Code announces the form a second time as a permission request for the tool (no
+# tool_use_id) and as a permission notification: both stay the question, with its form
+hook claude '{"hook_event_name":"PermissionRequest","session_id":"abc","tool_name":"AskUserQuestion","tool_input":{"questions":[{"question":"Which fruits do you like?","header":"Fruit","options":[{"label":"Apple"},{"label":"Banana"},{"label":"Cherry"}],"multiSelect":true},{"question":"Which size?","header":"Size","options":[{"label":"Small"},{"label":"Large"}]}]}}'
+hook claude '{"hook_event_name":"Notification","session_id":"abc","notification_type":"permission_prompt","message":"Claude needs your permission"}'
+sleep 0.6
+expect "the permission request for the form is still the question" "● $PROJ +question" "$(capture)"
+expect "and the form is still there" '^Fruit/3/multi Size/2$' "$(snap_form)"
 
 # The block sticks while the title is idle (that is what a real prompt looks like) ...
 sleep 1.5
@@ -119,6 +133,7 @@ IN select-pane -t "$AGENT" -T "◑ fake-agent"
 hook claude '{"hook_event_name":"PostToolUse","session_id":"abc","tool_name":"AskUserQuestion","tool_use_id":"q1"}'
 wait_for "[◐◓◑◒] $PROJ" 3 || true
 expect "answered question -> working" "[◐◓◑◒] $PROJ" "$(capture)"
+expect_soon "the form goes with the question" '^none$' snap_form
 # Inside tmux Claude keeps the idle "✳" title while busy: that must NOT clear a hook working state.
 IN select-pane -t "$AGENT" -T "✳ fake-agent"
 sleep 2.5

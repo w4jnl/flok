@@ -35,6 +35,7 @@ type Event struct {
 	Tool           string    `json:"tool,omitempty"`
 	Detail         string    `json:"detail,omitempty"`
 	Reason         string    `json:"reason,omitempty"` // permission | question | elicitation | error
+	Form           *Form     `json:"form,omitempty"`   // question: the form the agent put up, when the hook saw it
 	ToolUseID      string    `json:"tool_use_id,omitempty"`
 	At             time.Time `json:"at"`
 }

@@ -53,12 +53,34 @@ func TestTurnUnfocused(t *testing.T) {
 	if a.State != agent.Working || a.Notifications != nil {
 		t.Fatalf("new prompt should reset: %+v", a)
 	}
-	step(agent.Event{Kind: agent.EvBlocked, Reason: "question", Tool: "AskUserQuestion"}, func() bool { return true })
-	if a.State != agent.Blocked || a.Reason != "question" || len(sounds) != 2 {
-		t.Fatalf("question while focused must not beep: %+v %v", a, sounds)
+	form := &agent.Form{Questions: []agent.Question{{Text: "Which?", Options: []agent.Option{{Label: "a"}, {Label: "b"}}}}}
+	step(agent.Event{Kind: agent.EvBlocked, Reason: "question", Tool: "AskUserQuestion", Form: form, ToolUseID: "q1"}, func() bool { return true })
+	if a.State != agent.Blocked || a.Reason != "question" || a.Form != form || len(sounds) != 2 {
+		t.Fatalf("question while focused must not beep, and carries its form: %+v %v", a, sounds)
 	}
+	// the same block announced again without the form (a permission notification) keeps it
+	step(agent.Event{Kind: agent.EvBlocked, Reason: "question", Tool: "AskUserQuestion"}, unfocused)
+	if a.Form != form || len(a.Notifications) != 1 {
+		t.Fatalf("a repeated question must keep its form and stay one block: %+v", a)
+	}
+	// Claude's "Claude needs your permission" notification names no tool: the question stays one
+	step(agent.Event{Kind: agent.EvBlocked, Reason: "permission"}, unfocused)
+	if a.Reason != "question" || a.Form != form || len(a.Notifications) != 1 {
+		t.Fatalf("a bare permission notification must not replace the question: %+v", a)
+	}
+	// a different block takes it away
+	step(agent.Event{Kind: agent.EvBlocked, Reason: "permission", Tool: "Bash", ToolUseID: "t9"}, unfocused)
+	if a.Form != nil || a.Reason != "permission:Bash" {
+		t.Fatalf("a new block must drop the form: %+v", a)
+	}
+	step(agent.Event{Kind: agent.EvBlocked, Reason: "question", Tool: "AskUserQuestion", Form: form, ToolUseID: "q1b"}, unfocused)
+	step(agent.Event{Kind: agent.EvToolEnd, Tool: "AskUserQuestion"}, unfocused) // answered: the form goes with the block
+	if a.State != agent.Working || a.Form != nil {
+		t.Fatalf("after the question's tool end: %+v", a)
+	}
+	step(agent.Event{Kind: agent.EvBlocked, Reason: "question", Tool: "AskUserQuestion", Form: form, ToolUseID: "q2"}, unfocused)
 	step(agent.Event{Kind: agent.EvStop, Reason: "error"}, unfocused)
-	if a.State != agent.Done || a.Reason != "error" || sounds[len(sounds)-1] != "error" {
+	if a.State != agent.Done || a.Reason != "error" || a.Form != nil || sounds[len(sounds)-1] != "error" {
 		t.Fatalf("error stop: %+v %v", a, sounds)
 	}
 	if fx := Apply(&a, agent.Event{Kind: agent.EvSessionEnd}, unfocused, now); !fx.Delete {

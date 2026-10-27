@@ -75,11 +75,12 @@ struct RelayAPI: Sendable {
 
     /// Types into an agent pane: text first, then the keys; files are saved there and their
     /// paths typed after the text. The relay waits for the instance.
-    func answer(instance: String, pane: String, text: String? = nil, keys: [String]? = nil, files: [AttachedFile] = []) async throws {
+    func answer(instance: String, pane: String, text: String? = nil, keys: [String]? = nil, files: [AttachedFile] = [], form: FormAnswerBody? = nil) async throws {
         var body: [String: AnyEncodable] = ["instance": .init(instance), "pane": .init(pane)]
         if let text, !text.isEmpty { body["text"] = .init(text) }
         if let keys, !keys.isEmpty { body["keys"] = .init(keys) }
         if !files.isEmpty { body["files"] = .init(files) }
+        if let form { body["form"] = .init(form) }
         try await send("POST", "/api/answer", body: JSONEncoder().encode(body))
     }
 
