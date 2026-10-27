@@ -48,7 +48,7 @@ func (m *Model) notePush() {
 		m.pushLast[key+" "+kind] = now
 		m.debugf("push %s %s (%s)", kind, key, a.Reason)
 		if m.linker != nil {
-			m.linker.Event(wire.Event{Pane: key, Host: a.Host, Agent: a.Name, Kind: kind, Reason: a.Reason, At: now})
+			m.linker.Event(wire.Event{Pane: key, Host: a.Host, Agent: a.Name, Kind: kind, Reason: a.Reason, Question: a.Form.Summary(160), At: now})
 		}
 		if m.pusher != nil && m.d.Cfg.Notify.Wants(kind) {
 			m.pusher.Send(push.Event{Instance: m.d.Cfg.InstanceName(), Host: a.Host, Agent: a.Name, Pane: key, Kind: kind, Reason: a.Reason, At: now})

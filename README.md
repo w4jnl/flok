@@ -23,8 +23,9 @@ while the terminal is out of sight. The sidebar is modelled on [herdr](https://h
 waiting on you, a spinner while any works, the agents in a dropdown; a click brings the terminal
 to the front on that pane. **On the iPhone**, the app, through a relay you run: every flok in one
 list, an agent's live screen with keys to answer, a reply typed or dictated (hold the
-microphone), a screenshot or a photo sent to the agent, a push with Approve, Deny and Reply when
-one needs you (a long press shows its screen), and a Live Activity while agents work.
+microphone), Claude's question forms filled in as forms, a screenshot or a photo sent to the
+agent, a push with Approve, Deny and Reply when one needs you (a long press shows its screen),
+and a Live Activity while agents work.
 
 ## Setup
 

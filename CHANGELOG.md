@@ -6,6 +6,17 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+- **App: answer an agent's questions with a form.** When Claude Code asks with its question
+  form (tabs, numbered options, checkboxes), the phone shows the same form natively: a section
+  per question, rows to tick or pick, a field for words of your own, Submit. Your choices go
+  to the Mac, which presses them into the agent's own form key by key and reads the screen
+  after each, so what Claude gets is exactly what you chose; if the form on the screen does
+  not follow, the phone says so and the keys finish it. The push for a question now carries
+  the question itself instead of "needs you: question", and the key bar under a question's
+  screen offers the keys the form takes (digits, Space, the arrows, Enter, Esc). A flok older
+  than this on the instance keeps the keys only; the app says so. Claude Code announces a
+  question form a second time as a permission request for its tool: flok now keeps that a
+  question, so the sidebar, the push and the phone say `question`, not `perm:AskUserQuestion`.
 - **Programs inside flok can find the real terminal.** The inner server's global environment
   carries `FLOK_OUTER_SOCKET`, the outer server's socket path, while flok runs (removed when it
   goes). A program in one of your sessions that must ask the terminal behind flok something, an

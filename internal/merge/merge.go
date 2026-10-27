@@ -279,7 +279,7 @@ func (t *Tracker) Build(in Inputs) Snapshot {
 				// means the prompt is gone (dismissed with Esc).
 				if tr.screenIdle >= 2 {
 					out.Corrections = append(out.Corrections, Correction{PaneID: p.ID, From: a.State, Since: a.StateSince, Reason: "prompt gone"})
-					a.State, a.Reason = agent.Idle, ""
+					a.State, a.Reason, a.Form = agent.Idle, "", nil
 				}
 			case agent.Working, agent.Paused:
 				// An interrupted turn (Esc), a usage-limit cut-off or an errored turn emits no hook.

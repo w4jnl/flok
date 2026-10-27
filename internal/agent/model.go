@@ -38,6 +38,7 @@ type Agent struct {
 	State          State          `json:"state"`
 	StateSince     time.Time      `json:"state_since"`
 	Reason         string         `json:"reason,omitempty"`
+	Form           *Form          `json:"form,omitempty"` // the question form it waits on (Reason "question"), gone with the block
 	LastEvent      string         `json:"last_event,omitempty"`
 	LastEventAt    time.Time      `json:"last_event_at,omitempty"`
 	CurrentTool    string         `json:"current_tool,omitempty"`

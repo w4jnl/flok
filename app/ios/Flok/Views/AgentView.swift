@@ -22,6 +22,7 @@ struct AgentView: View {
     @State private var voice = Voice()
     @State private var voiceBase = "" // what the field held before the microphone was pressed
     @State private var pressStarted: Date?
+    @State private var showForm = false // the agent's question form, filled in natively
     @FocusState private var typing: Bool
 
     private var found: (InstanceState, Agent)? { relay.agent(target) }
@@ -38,6 +39,10 @@ struct AgentView: View {
                 header
             }
             Divider()
+            if let (inst, a) = found, a.asksForm {
+                formBanner(inst, a)
+                Divider()
+            }
             ScreenView(text: relay.screens[target], fontSize: settings.fontSize, wrap: settings.wrapLines, onZoom: { settings.fontSize = $0 })
                 .onTapGesture { typing = false } // a tap on the screen puts the keyboard away
             Divider()
@@ -45,7 +50,7 @@ struct AgentView: View {
                 // The keys get the whole row and the controls sit in the reply row, each in its
                 // own place: nothing floats over anything (the keyboard's own toolbar did, over
                 // the send button, on iOS 26 and later).
-                KeyBar { key in Task { await send(text: key.text, keys: key.keys) } }
+                KeyBar(form: found?.1.asksForm ?? false) { key in Task { await send(text: key.text, keys: key.keys) } }
                     .clipped()
                 if attachments.count == 1, let f = attachments.first {
                     AttachmentChip(file: f) { attachments.removeAll() }
@@ -121,6 +126,11 @@ struct AgentView: View {
             }
             .ignoresSafeArea()
         }
+        .sheet(isPresented: $showForm) {
+            if let (_, a) = found, let form = a.form {
+                QuestionFormView(agentName: a.name, form: form) { body in await submitForm(body) }
+            }
+        }
         .task(id: target) {
             relay.subscribe(target)
             await seenIfUnseen()
@@ -136,6 +146,14 @@ struct AgentView: View {
         .onChange(of: phase) { _, p in if p == .active { Task { await seenIfUnseen() } } }
         .onChange(of: lock.locked) { _, l in if !l { Task { await seenIfUnseen() } } }
         .onChange(of: compact) { _, _ in inputChoice = nil } // a turn of the phone goes back to that orientation's default
+        // the question was answered elsewhere (on the Mac, with the keys) or replaced by another:
+        // the sheet's copy is stale, so it goes, with a word
+        .onChange(of: found?.1.form) { old, new in
+            if showForm, old != nil, new != old {
+                showForm = false
+                flash(new == nil ? "the question was answered elsewhere" : "the agent asks something else now")
+            }
+        }
         .onChange(of: voice.live) { _, live in if voice.listening { input = voiceBase + live } } // the words as they come
     }
 
@@ -164,6 +182,31 @@ struct AgentView: View {
         } else {
             Text("this agent is gone from the instance's view").font(.footnote).foregroundStyle(.secondary).padding(8)
         }
+    }
+
+    /// The agent asks with a form: fill it in here, or with the keys under the screen.
+    private func formBanner(_ inst: InstanceState, _ a: Agent) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "checklist").foregroundStyle(Palette.orange)
+            Text(Self.formWords(a.form)).font(.footnote).lineLimit(2)
+            Spacer()
+            if inst.takesForms {
+                Button("Answer") { showForm = true }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+            } else {
+                Text("keys only: update flok on \(inst.name)").font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 12).padding(.vertical, 6)
+    }
+
+    /// "2 questions: Fruit, Size", for the banner.
+    nonisolated static func formWords(_ form: QuestionForm?) -> String {
+        guard let qs = form?.questions, !qs.isEmpty else { return "" }
+        let count = qs.count == 1 ? "a question" : "\(qs.count) questions"
+        let headers = qs.compactMap(\.header).filter { !$0.isEmpty }
+        return headers.isEmpty ? count : count + ": " + headers.joined(separator: ", ")
     }
 
     /// Landscape: one thin strip with the way back, the state and the menus.
@@ -199,6 +242,9 @@ struct AgentView: View {
 
     private var actionMenu: some View {
         Menu {
+            if let (inst, a) = found, a.asksForm, inst.takesForms {
+                Button { showForm = true } label: { Label("Answer the question…", systemImage: "checklist") }
+            }
             Button { Task { await send(keys: ["Enter"]) } } label: { Label("Approve (Enter)", systemImage: "checkmark") }
             Button { Task { await send(keys: ["Escape"]) } } label: { Label("Deny (Esc)", systemImage: "xmark") }
             Button { Task { await seen() } } label: { Label("Mark seen", systemImage: "eye") }
@@ -375,6 +421,19 @@ struct AgentView: View {
     private func seenIfUnseen() async {
         guard phase == .active, !lock.locked, let (_, a) = found, a.unseen > 0 else { return }
         try? await relay.markSeen(target)
+    }
+
+    /// The form's choices to the instance, which presses them into the agent's form; the
+    /// message when it could not, nil when the agent took them.
+    private func submitForm(_ body: FormAnswerBody) async -> String? {
+        do {
+            try await relay.answer(target, form: body)
+            await seenIfUnseen()
+            flash("answered")
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
     }
 
     private func send(text: String? = nil, keys: [String]? = nil, files: [AttachedFile] = []) async {
@@ -578,12 +637,25 @@ struct KeyBar: View {
         Key(label: "⇥", text: nil, keys: ["Tab"]), Key(label: "⌫", text: nil, keys: ["BSpace"]),
     ]
 
+    /// The keys a question form takes: digits tick or pick a row, Space ticks the highlighted
+    /// one, ← → move between the questions, Enter is Next and Submit, Esc cancels the form.
+    static let formKeys: [Key] = [
+        Key(label: "1", text: "1", keys: nil), Key(label: "2", text: "2", keys: nil), Key(label: "3", text: "3", keys: nil),
+        Key(label: "4", text: "4", keys: nil), Key(label: "5", text: "5", keys: nil), Key(label: "6", text: "6", keys: nil),
+        Key(label: "␣", text: nil, keys: ["Space"]), Key(label: "↵", text: nil, keys: ["Enter"]),
+        Key(label: "←", text: nil, keys: ["Left"]), Key(label: "→", text: nil, keys: ["Right"]),
+        Key(label: "↑", text: nil, keys: ["Up"]), Key(label: "↓", text: nil, keys: ["Down"]),
+        Key(label: "⇥", text: nil, keys: ["Tab"]), Key(label: "esc", text: nil, keys: ["Escape"]),
+    ]
+
+    /// A question form is on the screen: its keys instead of the usual ones.
+    var form = false
     let onKey: (Key) -> Void
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
-                ForEach(Self.keys) { k in
+                ForEach(form ? Self.formKeys : Self.keys) { k in
                     Button(k.label) { onKey(k) }
                         .buttonStyle(.bordered)
                         .font(.system(.body, design: .monospaced))

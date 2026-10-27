@@ -31,6 +31,7 @@ type Agent struct {
 	Kind        string      `json:"kind"`
 	State       agent.State `json:"state"`
 	Reason      string      `json:"reason,omitempty"`
+	Form        *agent.Form `json:"form,omitempty"` // a question's form, for the phone to render and answer
 	Tool        string      `json:"tool,omitempty"`
 	Detail      string      `json:"detail,omitempty"`
 	Unseen      int         `json:"unseen"`
@@ -106,7 +107,7 @@ func FromMerge(s merge.Snapshot) Snapshot {
 		Focus: Focus{Host: s.Focus.Host, SessionName: s.Focus.SessionName, PaneID: s.Focus.PaneID}}
 	for _, a := range s.Agents {
 		out.Agents = append(out.Agents, Agent{PaneID: a.PaneID, Host: a.Host, SessionID: a.SessionID, SessionName: a.SessionName,
-			WindowID: a.WindowID, Name: a.Name, Kind: a.Kind, State: a.State, Reason: a.Reason, Tool: a.CurrentTool,
+			WindowID: a.WindowID, Name: a.Name, Kind: a.Kind, State: a.State, Reason: a.Reason, Form: a.Form, Tool: a.CurrentTool,
 			Detail: a.ToolDetail, Unseen: a.Unseen, StateSince: a.StateSince, HasHooks: a.HasHooks})
 	}
 	for _, sp := range s.Spaces {

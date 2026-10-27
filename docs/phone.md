@@ -80,7 +80,15 @@ plain mode: `send-keys` over ssh, the files streamed into `~/.local/state/flok/a
   up to read and it holds still as the screen changes under it, until you scroll back down or
   tap the arrow in the corner (iOS 18 and later; before it the screen keeps to the bottom).
   Below it a key bar (`1 2 3 y n ↵ esc ↑ ↓`, Ctrl-C behind a
-  confirmation) and a reply field. Next to it a paperclip attaches photos, screenshots or the
+  confirmation) and a reply field. When Claude Code asks with its question form (tabs, numbered
+  options, checkboxes), a banner over the screen names the questions and **Answer** opens the
+  same form natively: a section per question, rows to tick (several) or pick (one), a field
+  for words of your own, Submit. The Mac presses your choices into the agent's own form key by
+  key and reads the screen after each, so Claude gets what a keyboard would have typed; if the
+  form on the screen does not follow (answered meanwhile, moved), the phone says what did not
+  happen and the key bar, which under such a screen offers the form's keys (digits, Space, the
+  arrows, Enter, Esc), finishes it. A Mac whose flok is older than the form keeps the keys
+  only, and the banner says so. Next to the field a paperclip attaches photos, screenshots or the
   clipboard's picture, up to six (shrunk on the phone; the agent gets them as files and reads
   them) and a
   microphone: **hold it and talk**, let go and the words are in the field (or sent, if you
@@ -91,7 +99,8 @@ plain mode: `send-keys` over ssh, the files streamed into `~/.local/state/flok/a
 - **The share sheet**: *flok* is among the apps when you share screenshots, photos, a PDF,
   text or a link; pick the agent, add a few words, send.
 - **Pushes**, one per agent that needs you, worded like the sidebar: the agent as the title,
-  `home · api` under it, `● needs you: perm:Bash`, flok's own sounds and a state tile.
+  `home · api` under it, `● needs you: perm:Bash` (for a question, the question itself:
+  `● needs you: Fruit: Which fruits do you like?`), flok's own sounds and a state tile.
   Permission prompts carry **Approve** (Enter on the highlighted choice) and **Deny** (Escape)
   for the Lock Screen, every push **Reply…** (the system's text field with the keyboard's
   dictation, an Apple Watch dictates it too; typed into the agent, then Enter) and **Mute

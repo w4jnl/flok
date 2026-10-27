@@ -169,12 +169,13 @@ type Hello struct {
 
 // Event is one user-facing transition: an agent needs the user, finished, or failed.
 type Event struct {
-	Pane   string    `json:"pane"`           // pane ref on the instance
-	Host   string    `json:"host,omitempty"` // the instance's remote host the agent runs on; "" = the instance itself
-	Agent  string    `json:"agent"`          // the row name
-	Kind   string    `json:"kind"`           // blocked | done | error
-	Reason string    `json:"reason,omitempty"`
-	At     time.Time `json:"at"`
+	Pane     string    `json:"pane"`           // pane ref on the instance
+	Host     string    `json:"host,omitempty"` // the instance's remote host the agent runs on; "" = the instance itself
+	Agent    string    `json:"agent"`          // the row name
+	Kind     string    `json:"kind"`           // blocked | done | error
+	Reason   string    `json:"reason,omitempty"`
+	Question string    `json:"question,omitempty"` // blocked by a question: its first question in a line, for the push's body
+	At       time.Time `json:"at"`
 }
 
 // Screen is a pane's visible text, streamed while someone subscribed to it.
@@ -209,10 +210,11 @@ const (
 	FeatureFiles    = "files"     // an answer may carry a file, saved next to the agent and typed as its path
 	FeaturePhone    = "phone"     // sends phone frames (flok phone pair | list | forget) and takes the replies
 	FeatureEnroll   = "enroll"    // sends enroll and tenant frames (flok link approve | list | forget, flok tenant) and takes the replies
+	FeatureForm     = "form"      // an answer may fill a question form (answer.Answer.Form): the instance types the choices into the agent's form
 )
 
 // InstanceFeatures is what this flok's link advertises.
-var InstanceFeatures = []string{FeatureAnswer, FeatureScreen, FeatureLongText, FeatureFiles, FeaturePhone, FeatureEnroll}
+var InstanceFeatures = []string{FeatureAnswer, FeatureScreen, FeatureLongText, FeatureFiles, FeaturePhone, FeatureEnroll, FeatureForm}
 
 // MaxFrame bounds one frame from an instance (a snapshot of a busy site is a few hundred KB).
 const MaxFrame = 8 << 20

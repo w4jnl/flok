@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/w4jnl/flok/internal/agent"
 )
 
 func TestNormalizeAndArgs(t *testing.T) {
@@ -195,5 +197,40 @@ func TestNormalizeRefuses(t *testing.T) {
 	}
 	if _, err := Normalize(Answer{Text: strings.Repeat("x", 201)}); err != nil {
 		t.Fatalf("over MaxText is long, not refused: %v", err)
+	}
+}
+
+func TestNormalizeForm(t *testing.T) {
+	a, err := Normalize(Answer{Pane: "%3", Form: &FormAnswer{Answers: []Choice{{Selected: []int{2, 0, 2}, Other: "  Kiwi "}, {Selected: []int{1}}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.Form == nil || len(a.Form.Answers) != 2 || !a.Empty() == false || a.Text != "" {
+		t.Fatalf("normalized: %+v", a)
+	}
+	if c := a.Form.Answers[0]; len(c.Selected) != 2 || c.Selected[0] != 0 || c.Selected[1] != 2 || c.Other != "Kiwi" {
+		t.Errorf("choice 1 not sorted, deduplicated and trimmed: %+v", c)
+	}
+	if d := Describe(a); d != "form: 2 answers, 3 picked, 1 typed" {
+		t.Errorf("describe %q", d)
+	}
+	bad := []Answer{
+		{Form: &FormAnswer{}}, // answers nothing
+		{Form: &FormAnswer{Answers: []Choice{{Selected: []int{9}}}}},              // beyond the digits
+		{Form: &FormAnswer{Answers: []Choice{{Selected: []int{-1}}}}},             // below them
+		{Form: &FormAnswer{Answers: []Choice{{Other: strings.Repeat("x", 201)}}}}, // too long
+		{Form: &FormAnswer{Answers: []Choice{{Other: "a\nb"}}}},                   // not one line
+		{Text: "yes", Form: &FormAnswer{Answers: []Choice{{Selected: []int{0}}}}}, // nothing else with a form
+		{Keys: []string{"Enter"}, Form: &FormAnswer{Answers: []Choice{{Selected: []int{0}}}}},
+		{Form: &FormAnswer{Answers: make([]Choice, agent.MaxFormQuestions+1)}}, // too many questions
+	}
+	for i, a := range bad {
+		if _, err := Normalize(a); err == nil {
+			t.Errorf("case %d accepted: %+v", i, a)
+		}
+	}
+	// an empty choice passes Normalize (the relay cannot know the form); Fill refuses it against the form
+	if _, err := Normalize(Answer{Form: &FormAnswer{Answers: []Choice{{}}}}); err != nil {
+		t.Errorf("an empty choice is Fill's to refuse: %v", err)
 	}
 }

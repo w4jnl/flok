@@ -293,11 +293,26 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
   (`$FLOK_STATE/attach/<stamp>-<name>`, swept after a day: the sidebar's dir for local
   panes, serve's own for a full-mode host, `~/.local/state/flok/attach` streamed over ssh for
   plain mode, `conn.saveRemote`) and types as their paths after the text (`WithPaths`,
-  `@path` for Copilot).
-  Long text and files are features: `wire.FeatureLongText`/`FeatureFiles` in the instance's
-  hello (shown to the app as `Instance.Features`; the relay's `tooOldFor` refuses with the
-  update named) and `proto.FeatureLongText`/`FeatureFiles` in a serve's hello
-  (`ui.hostFeatureNotice`). The relay's `/api/answer` body may be `answer.MaxBody` (36 MB),
+  `@path` for Copilot). A question form (Claude Code's AskUserQuestion): the PreToolUse hook's
+  `tool_input` becomes `agent.Form` (`FormFromInput`, bounded) on the record (`Agent.Form`,
+  set and cleared with `Reason` in `machine.go`; Claude announces the form a second time as a
+  `PermissionRequest` for the tool, same input, no tool_use_id, and as a permission
+  notification naming it: `agent.question` keeps both a `question`, and a repeated block
+  without a form keeps the form it has), rides in the snapshot and to the app, which
+  renders it (`Views/QuestionFormView.swift`, `FormDraft` pure) and answers with
+  `answer.Answer.Form` (`FormAnswer`, choices by index plus own words); `TypeAnswer` hands that
+  to `answer.Fill` (`internal/answer/form.go`), which drives the agent's own form through the
+  tmux client key by key, parsing `capture-pane` after every key (`parseForm`), so a key that
+  did not take stops it with a message; the choreography (digits toggle or pick, the free-text
+  row takes every key as text, ↓ to Next or Submit, Enter, the review; a lone single-select
+  question has no tab bar and no review, only its ` ☐ Header` line, and a digit submits it) is
+  pinned by `TestFill` against a stand-in and `TestFillLive` against the real form (skipped
+  without `FLOK_LIVE_FORM`; `TestParseFormLive` parses a pane read-only); the push for a
+  question carries `wire.Event.Question` (`Form.Summary`).
+  Long text, files and forms are features: `wire.FeatureLongText`/`FeatureFiles`/`FeatureForm`
+  in the instance's hello (shown to the app as `Instance.Features`; the relay's `tooOldFor`
+  refuses with the update named) and `proto.FeatureLongText`/`FeatureFiles`/`FeatureForm` in a
+  serve's hello (`ui.hostFeatureNotice`). The relay's `/api/answer` body may be `answer.MaxBody` (36 MB),
   frames from the relay to an instance `wire.MaxRelayFrame` (36 MB); the app's socket stays small.
   `internal/relay` is `flok-relay` (`cmd/flok-relay`: serve, tail, token, tenants, instances, phones, pin, health): `/link` for
   instances (bearer: a flok's own key from a join, a static instance token or an admin token,

@@ -38,21 +38,21 @@ func Apply(a *agent.Agent, ev agent.Event, focused func() bool, now time.Time) E
 	switch ev.Kind {
 	case agent.EvSessionStart:
 		a.State, a.StateSince = agent.Idle, now
-		a.Reason, a.CurrentTool, a.ToolDetail, a.LastToolUseID = "", "", "", ""
+		a.Reason, a.Form, a.CurrentTool, a.ToolDetail, a.LastToolUseID = "", nil, "", "", ""
 		a.TurnStarted, a.Notifications = time.Time{}, nil
 	case agent.EvSessionRefresh:
 	case agent.EvPrompt:
 		set(agent.Working)
-		a.TurnStarted, a.Reason, a.CurrentTool, a.ToolDetail, a.Notifications = now, "", "", "", nil
+		a.TurnStarted, a.Reason, a.Form, a.CurrentTool, a.ToolDetail, a.Notifications = now, "", nil, "", "", nil
 	case agent.EvToolStart:
 		set(agent.Working)
-		a.CurrentTool, a.ToolDetail, a.Reason = ev.Tool, ev.Detail, ""
+		a.CurrentTool, a.ToolDetail, a.Reason, a.Form = ev.Tool, ev.Detail, "", nil
 		if a.TurnStarted.IsZero() {
 			a.TurnStarted = now
 		}
 	case agent.EvToolEnd:
 		set(agent.Working)
-		a.CurrentTool, a.ToolDetail, a.Reason = "", "", ""
+		a.CurrentTool, a.ToolDetail, a.Reason, a.Form = "", "", "", nil
 		if a.TurnStarted.IsZero() {
 			a.TurnStarted = now
 		}
@@ -61,9 +61,18 @@ func Apply(a *agent.Agent, ev agent.Event, focused func() bool, now time.Time) E
 		if reason == "permission" && ev.Tool != "" {
 			reason = "permission:" + ev.Tool
 		}
-		dup := a.State == agent.Blocked && ((ev.ToolUseID != "" && ev.ToolUseID == a.LastToolUseID) || (ev.ToolUseID == "" && sameBlock(a.Reason, reason)))
+		// Claude's permission notification ("Claude needs your permission") names no tool: while
+		// a block is up it is that block again, whatever it is (a question form too), and says
+		// nothing the record does not know.
+		bare := reason == "permission" && ev.ToolUseID == ""
+		dup := a.State == agent.Blocked && ((ev.ToolUseID != "" && ev.ToolUseID == a.LastToolUseID) || (ev.ToolUseID == "" && (sameBlock(a.Reason, reason) || bare)))
 		set(agent.Blocked)
-		a.Reason = reason
+		if !(dup && bare && a.Reason != "") {
+			a.Reason = reason
+		}
+		if ev.Form != nil || !dup { // the form goes with its question; the same block announced again without it keeps it
+			a.Form = ev.Form
+		}
 		if ev.ToolUseID != "" {
 			a.LastToolUseID = ev.ToolUseID
 		}
@@ -81,7 +90,7 @@ func Apply(a *agent.Agent, ev agent.Event, focused func() bool, now time.Time) E
 		// The main turn ended but background tasks will wake the agent: paused, showing what it
 		// waits for, no sound and nothing unseen until the real end of the work.
 		set(agent.Paused)
-		a.Reason, a.CurrentTool, a.ToolDetail = "waiting", ev.Detail, ""
+		a.Reason, a.Form, a.CurrentTool, a.ToolDetail = "waiting", nil, ev.Detail, ""
 		if a.TurnStarted.IsZero() {
 			a.TurnStarted = now
 		}
@@ -107,7 +116,7 @@ func sameBlock(have, want string) bool {
 }
 
 func stop(a *agent.Agent, reason string, focused func() bool, now time.Time) Effects {
-	a.CurrentTool, a.ToolDetail, a.TurnStarted, a.Reason = "", "", time.Time{}, reason
+	a.CurrentTool, a.ToolDetail, a.TurnStarted, a.Reason, a.Form = "", "", time.Time{}, reason, nil
 	if focused() {
 		a.State, a.StateSince = agent.Idle, now
 		return Effects{}

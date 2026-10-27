@@ -104,7 +104,11 @@ the key bar offers (Enter, Esc, arrows, Tab, Backspace; Ctrl-C behind a confirma
 file (an image shrunk here to about 1568 px as JPEG, or a PDF; the instance saves it next to
 the agent and types its path after the words, which Claude Code and Copilot read). Approve on
 a permission push sends Enter (the highlighted choice), Deny sends Escape, Reply… opens the
-system's text field (dictation included, on the Watch too) and types it, then Enter.
+system's text field (dictation included, on the Watch too) and types it, then Enter. A
+question Claude Code asks with its form comes as the form itself (`Views/QuestionFormView.swift`,
+the choices in `FormDraft`): the phone sends the choices, the instance presses them into the
+agent's own form key by key and reads the screen after each, so Claude gets what a keyboard
+would have typed; the key bar under such a screen offers the form's keys for the rest.
 Everything is logged on the instance in `events.log`, by size and file name, never the text.
 The app keeps the relay address and the phone's key (the keychain group the extensions read),
 what the pairing said (the phone's id and name, the tenant), its notification settings and

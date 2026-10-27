@@ -308,6 +308,12 @@ func TypeAnswer(c tmux.Client, snap merge.Snapshot, a answer.Answer, save answer
 	if !found {
 		return errors.New("no agent in pane " + a.Pane)
 	}
+	if a.Form != nil { // the phone answered the agent's question form: drive it, key by key
+		if ag.Form == nil {
+			return errors.New("no question form open in pane " + a.Pane)
+		}
+		return answer.Fill(c.Run, a.Pane, *ag.Form, *a.Form)
+	}
 	if len(a.Files) > 0 {
 		if save == nil {
 			return errors.New("files cannot be saved here")

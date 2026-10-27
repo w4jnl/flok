@@ -37,6 +37,17 @@ func (Claude) TitleName(t string) string {
 
 func init() { Register(Claude{}) }
 
+// questionTool is Claude Code's question form: a block with reason "question", which the phone
+// answers as a form (Event.Form) rather than with keys.
+const questionTool = "AskUserQuestion"
+
+// question makes ev the block a question form is, with the form from the payload's tool_input
+// (the PreToolUse and the PermissionRequest both carry it).
+func question(ev *Event, raw map[string]any) {
+	ev.Kind, ev.Reason, ev.Tool = EvBlocked, "question", questionTool
+	ev.Form = FormFromInput(sub(raw, "tool_input"))
+}
+
 // MapHook implements HookMapper for Claude Code's hook payloads.
 func (Claude) MapHook(raw map[string]any) (Event, bool) {
 	if str(raw, "agent_id") != "" { // subagent events never change the pane's state
@@ -54,8 +65,8 @@ func (Claude) MapHook(raw map[string]any) (Event, bool) {
 		ev.Kind = EvPrompt
 	case "PreToolUse":
 		tool := str(raw, "tool_name")
-		if tool == "AskUserQuestion" {
-			ev.Kind, ev.Reason, ev.Tool = EvBlocked, "question", tool
+		if tool == questionTool {
+			question(&ev, raw)
 			break
 		}
 		ev.Kind = EvToolStart
@@ -64,12 +75,21 @@ func (Claude) MapHook(raw map[string]any) (Event, bool) {
 		ev.Kind = EvToolEnd
 		ev.Tool, _ = ToolSummary(str(raw, "tool_name"), nil)
 	case "PermissionRequest":
+		// Claude Code announces its question form a second time, as a permission request for
+		// the AskUserQuestion tool (the same input, no tool_use_id): still the question.
+		if str(raw, "tool_name") == questionTool {
+			question(&ev, raw)
+			break
+		}
 		ev.Kind, ev.Reason = EvBlocked, "permission"
 		ev.Tool, ev.Detail = ToolSummary(str(raw, "tool_name"), sub(raw, "tool_input"))
 	case "Notification":
 		switch str(raw, "notification_type") {
 		case "permission_prompt":
 			ev.Kind, ev.Reason, ev.Tool = EvBlocked, "permission", toolFromMessage(str(raw, "message"))
+			if ev.Tool == questionTool {
+				ev.Reason = "question" // the prompt is the form: no input here, the record keeps the form it has
+			}
 		case "elicitation_dialog", "elicitation_url_dialog":
 			ev.Kind, ev.Reason = EvBlocked, "elicitation"
 		case "idle_prompt":

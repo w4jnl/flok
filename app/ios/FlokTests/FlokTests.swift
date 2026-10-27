@@ -457,3 +457,53 @@ struct PairTests {
         #expect(f.inst?.gone == true && f.inst?.name == "office")
     }
 }
+
+struct FormTests {
+    static let agentJSON = """
+    {"pane_id":"%3","session_id":"$1","session_name":"nt","window_id":"@2","name":"nt","kind":"claude","state":"blocked","reason":"question","unseen":1,"state_since":"2026-10-27T20:39:00Z","has_hooks":true,
+     "form":{"questions":[{"header":"Fruit","text":"Which fruits do you like?","options":[{"label":"Apple","description":"red or green"},{"label":"Banana"},{"label":"Cherry"}],"multi":true},
+                          {"header":"Size","text":"Which size?","options":[{"label":"Small"},{"label":"Large"}]}]}}
+    """
+
+    @Test func decodesTheFormTheInstanceSends() throws {
+        let a = try Wire.decoder.decode(Agent.self, from: Data(Self.agentJSON.utf8))
+        #expect(a.asksForm)
+        let form = try #require(a.form)
+        #expect(form.questions.count == 2 && form.questions[0].isMulti && !form.questions[1].isMulti)
+        #expect(form.questions[0].options[0].description == "red or green" && form.questions[1].header == "Size")
+        #expect(AgentView.formWords(form) == "2 questions: Fruit, Size")
+        // without the form (an older flok, a question the hooks missed) the keys are all there is
+        let bare = try Wire.decoder.decode(Agent.self, from: Data(#"{"pane_id":"%3","name":"nt","state":"blocked","reason":"question","unseen":1}"#.utf8))
+        #expect(!bare.asksForm && bare.form == nil)
+        let old = try Wire.decoder.decode(InstanceState.self, from: Data(#"{"name":"Home","online":true,"since":"2026-10-27T20:39:00Z","features":["answer","files"]}"#.utf8))
+        #expect(!old.takesForms)
+        let new = try Wire.decoder.decode(InstanceState.self, from: Data(#"{"name":"Home","online":true,"since":"2026-10-27T20:39:00Z","features":["answer","form"]}"#.utf8))
+        #expect(new.takesForms)
+    }
+
+    @Test func theDraftFollowsTheFormsRules() throws {
+        let form = try #require(try Wire.decoder.decode(Agent.self, from: Data(Self.agentJSON.utf8)).form)
+        var d = FormDraft(form: form)
+        #expect(!d.complete && !d.answered(0))
+        d.tap(0, 0); d.tap(0, 2); d.tap(0, 0) // tick, tick, untick: a multi-select keeps a set
+        #expect(d.selected[0] == [2] && d.answered(0) && !d.complete)
+        d.tap(1, 0); d.tap(1, 1) // a single-select keeps one
+        #expect(d.selected[1] == [1] && d.complete)
+        d.setOther(1, " Medium ") // words replace the pick there
+        #expect(d.selected[1].isEmpty && d.answered(1))
+        d.tap(1, 0) // and a pick drops the words
+        #expect(d.other[1].isEmpty && d.selected[1] == [0])
+        d.tap(1, 0) // tapped again it is unpicked
+        #expect(d.selected[1].isEmpty && !d.complete)
+        d.tap(1, 1)
+        d.setOther(0, "Kiwi") // on a multi-select the words come on top of the ticks
+        #expect(d.selected[0] == [2])
+        #expect(d.body == FormAnswerBody(answers: [FormChoice(selected: [2], other: "Kiwi"), FormChoice(selected: [1], other: nil)]))
+        // on the wire, under "form", as the relay reads it
+        let data = try Wire.encoder.encode(AnswerBody(instance: "Home", pane: "%3", form: d.body))
+        let obj = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let answers = try #require((obj["form"] as? [String: Any])?["answers"] as? [[String: Any]])
+        #expect(answers.count == 2 && answers[0]["selected"] as? [Int] == [2] && answers[0]["other"] as? String == "Kiwi" && answers[1]["other"] == nil)
+        #expect(obj["text"] == nil && obj["keys"] == nil)
+    }
+}

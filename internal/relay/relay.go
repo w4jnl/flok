@@ -709,6 +709,8 @@ func (s *Server) tooOldFor(t *tenant, instance string, a answer.Answer) string {
 	switch {
 	case len(a.Files) > 0 && !hasFeature(features, wire.FeatureFiles):
 		return who + " cannot take files: update flok there"
+	case a.Form != nil && !hasFeature(features, wire.FeatureForm):
+		return who + " cannot fill a question form: update flok there, or answer with keys"
 	case answer.Long(a.Text) && !hasFeature(features, wire.FeatureLongText):
 		return fmt.Sprintf("%s takes at most %d characters on one line: update flok there for longer text", who, answer.MaxText)
 	}
@@ -984,6 +986,9 @@ func Alert(instance string, ev wire.Event, badge int, session string) apns.Notif
 		Sound: defaults.Sound(kind), TimeSensitive: defaults.TimeSensitive(kind),
 		Data: map[string]any{"instance": instance, "pane": ev.Pane, "kind": ev.Kind, "reason": ev.Reason, "agent": ev.Agent, "host": ev.Host,
 			"session": session, "push_kind": kind}}
+	if ev.Question != "" {
+		n.Data["question"] = ev.Question
+	}
 	switch kind {
 	case KindPermission:
 		n.Body, n.Category = "● needs you: perm", CategoryPermission
@@ -992,7 +997,10 @@ func Alert(instance string, ev wire.Event, badge int, session string) apns.Notif
 		}
 	case KindQuestion:
 		n.Body, n.Category = "● needs you", CategoryQuestion
-		if ev.Reason != "" {
+		switch {
+		case ev.Question != "": // the question itself, as the form's first tab asks it
+			n.Body += ": " + ev.Question
+		case ev.Reason != "":
 			n.Body += ": " + ev.Reason
 		}
 	case KindError:
@@ -1074,12 +1082,13 @@ func (s *Server) request(t *tenant, instance string, f wire.Frame) error {
 }
 
 type answerReq struct {
-	Instance string        `json:"instance"`
-	Pane     string        `json:"pane"`
-	Text     string        `json:"text,omitempty"`
-	Keys     []string      `json:"keys,omitempty"`
-	Files    []answer.File `json:"files,omitempty"`
-	File     *answer.File  `json:"file,omitempty"` // one file, as the first app build sent it
+	Instance string             `json:"instance"`
+	Pane     string             `json:"pane"`
+	Text     string             `json:"text,omitempty"`
+	Keys     []string           `json:"keys,omitempty"`
+	Files    []answer.File      `json:"files,omitempty"`
+	File     *answer.File       `json:"file,omitempty"` // one file, as the first app build sent it
+	Form     *answer.FormAnswer `json:"form,omitempty"` // the agent's question form, answered
 }
 
 func (s *Server) handleAnswer(w http.ResponseWriter, r *http.Request) {
@@ -1088,7 +1097,7 @@ func (s *Server) handleAnswer(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "instance, pane and text, keys or a file are needed"})
 		return
 	}
-	a, err := answer.Normalize(answer.Answer{Pane: req.Pane, Text: req.Text, Keys: req.Keys, Files: req.Files, File: req.File})
+	a, err := answer.Normalize(answer.Answer{Pane: req.Pane, Text: req.Text, Keys: req.Keys, Files: req.Files, File: req.File, Form: req.Form})
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 		return

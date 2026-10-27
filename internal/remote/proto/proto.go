@@ -100,13 +100,15 @@ const (
 	FeatureKeyMap = "keymap" // binds the mapped keys of a prefix frame and relays `last …`
 	FeatureAnswer = "answer" // types answer frames into agent panes and streams captured screens (the phone)
 	// FeatureLongText: an answer's text may be long and multi-line (pasted through a buffer);
-	// FeatureFiles: an answer may carry a file, saved in the host's state dir and typed as its path.
+	// FeatureFiles: an answer may carry a file, saved in the host's state dir and typed as its path;
+	// FeatureForm: an answer may fill a question form, driven into the agent's pane key by key.
 	FeatureLongText = "long-text"
 	FeatureFiles    = "files"
+	FeatureForm     = "form"
 )
 
 // ServeFeatures is what this flok's serve advertises.
-var ServeFeatures = []string{FeatureKeys, FeaturePrefix, FeatureNotify, FeatureKeyMap, FeatureAnswer, FeatureLongText, FeatureFiles}
+var ServeFeatures = []string{FeatureKeys, FeaturePrefix, FeatureNotify, FeatureKeyMap, FeatureAnswer, FeatureLongText, FeatureFiles, FeatureForm}
 
 // Has says whether the hello advertised a feature.
 func (h *Hello) Has(feature string) bool {

@@ -75,6 +75,19 @@ instance's own tmux, `beta:%12` for a pane on its remote host `beta` (compose it
 agent's `host` and `pane_id`). An answer on the WebSocket is the same without `files` (its
 frames are small; files go over HTTP).
 
+A **form answer** answers the question form an agent shows (an agent with `reason`
+`question` and a `form`, below): `{"instance","pane","form":{"answers":[{"selected":[0,2],
+"other":"Kiwi"},{"selected":[1]}]}}`, one entry per question in the form's order, `selected`
+the indexes into that question's `options` (any number for a `multi` question, one
+otherwise), `other` words of the user's own (one line, at most 200 characters; on a
+single-select instead of a pick). It carries no `text`, `keys` or `files`. The instance
+presses the choices into the agent's own form key by key and reads the pane after each, so
+the agent receives what a keyboard would have typed; a 200 means the form was submitted. When
+the form on the screen does not follow (it was answered or moved meanwhile), the error says
+what did not happen and that the user should finish it on the screen, and the screen shows
+the form as far as it got. Every question needs an answer. An instance whose `features` lack
+`form` is refused with a message naming the update; such an agent is answered with keys.
+
 ## The live stream (`/api/ws`)
 
 Text frames, one JSON object each. The relay agrees to permessage-deflate (RFC 7692) when the
@@ -127,7 +140,7 @@ offline:
 {"updated_at","unseen":int,
  "focus":{"host"?,"session_name"?,"pane_id"?},
  "agents":[{"pane_id","host"?,"session_id","session_name","window_id","name","kind",
-            "state":"working|blocked|paused|done|idle|unknown","reason"?,"tool"?,"detail"?,
+            "state":"working|blocked|paused|done|idle|unknown","reason"?,"form"?,"tool"?,"detail"?,
             "unseen":int,"state_since":time,"has_hooks":bool}],
  "sessions":[{"id","host"?,"name","rollup"?,"agents":int}],
  "hosts":[{"name","mode","state","detail"?,"agents","pending","front"}],   absent without remote hosts
@@ -135,8 +148,16 @@ offline:
 ```
 
 `event.kind` is `blocked`, `done` or `error`; `reason` for a block is `permission:<tool>`,
-`question`, or another wait. Agents are in the sidebar's order (sessions, then window and
+`question`, or another wait; an event for a question carries `question`, the first question in
+a line, for a notification's body. Agents are in the sidebar's order (sessions, then window and
 pane); sort by `state` priority blocked < done < working < paused < idle for a "needs you" view.
+
+An agent blocked by a question whose form the instance's hook saw (Claude Code's
+AskUserQuestion) carries it as `form`: `{"questions":[{"header"?,"text","options":[{"label",
+"description"?}],"multi"?:bool}]}`, at most 6 questions of at most 9 options. Render it
+natively and answer it with a form answer (above); the agent's screen stays the reference, and
+an agent without `form` (an older flok, a question the hooks did not see) is answered with
+keys. The form goes with the block: it is absent once the agent moves on.
 
 ## Pushes
 
