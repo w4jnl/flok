@@ -4,7 +4,7 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
-## Unreleased
+## 0.10.0 (2026-10-27)
 
 - **App: answer an agent's questions with a form.** When Claude Code asks with its question
   form (tabs, numbered options, checkboxes), the phone shows the same form natively: a section
