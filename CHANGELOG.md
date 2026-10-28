@@ -4,7 +4,7 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
-## Unreleased
+## 0.11.0 (2026-10-28)
 
 - **The admin token out of config.toml.** `flok link admin` keeps one of the relay's admin
   tokens in the state dir (`link-admin`, readable by you alone), read from the terminal without
