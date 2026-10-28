@@ -4,7 +4,7 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
-## Unreleased
+## 0.11.1 (2026-10-28)
 
 - **Fixed: a watch kept an agent paused.** Claude Code lists the comment watch on an artifact
   a session published, and any other monitor (a PR watch, a log tail), among the background
