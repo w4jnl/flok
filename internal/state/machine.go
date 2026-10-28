@@ -88,9 +88,10 @@ func Apply(a *agent.Agent, ev agent.Event, focused func() bool, now time.Time) E
 		}
 	case agent.EvWaiting:
 		// The main turn ended but background tasks will wake the agent: paused, showing what it
-		// waits for, no sound and nothing unseen until the real end of the work.
+		// waits for (the kinds as the tool, the tasks' names as the detail), no sound and nothing
+		// unseen until the real end of the work.
 		set(agent.Paused)
-		a.Reason, a.Form, a.CurrentTool, a.ToolDetail = "waiting", nil, ev.Detail, ""
+		a.Reason, a.Form, a.CurrentTool, a.ToolDetail = "waiting", nil, ev.Tool, ev.Detail
 		if a.TurnStarted.IsZero() {
 			a.TurnStarted = now
 		}

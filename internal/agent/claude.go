@@ -102,11 +102,14 @@ func (Claude) MapHook(raw map[string]any) (Event, bool) {
 	case "Stop":
 		// Claude lists in-flight background work (subagents, shells, workflows) on Stop so a hook
 		// can tell "done" from "paused until a background task wakes me": that is a waiting state.
-		if tasks := BackgroundTasks(raw); tasks != "" {
-			ev.Kind, ev.Reason, ev.Detail = EvWaiting, "waiting", tasks
+		// A monitor is a watch and counts as nothing (BackgroundTasks); the detail names it, so
+		// the events log shows what a turn ended behind.
+		work, what := BackgroundTasks(raw)
+		if work != "" {
+			ev.Kind, ev.Reason, ev.Tool, ev.Detail = EvWaiting, "waiting", work, what
 			break
 		}
-		ev.Kind = EvStop
+		ev.Kind, ev.Detail = EvStop, what
 	case "StopFailure":
 		ev.Kind, ev.Reason = EvStop, "error"
 	case "SessionEnd":

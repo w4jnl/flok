@@ -117,15 +117,20 @@ func toolFromMessage(msg string) string {
 	return ""
 }
 
-// BackgroundTasks summarises a Stop payload's in-flight tasks ("2 agents", "agent + shell");
-// "" when nothing is in flight.
-func BackgroundTasks(raw map[string]any) string {
+// BackgroundTasks reads a Stop payload's in-flight tasks. work is the kinds of work that will
+// wake the agent again ("2 agents", "agent + shell"), "" when nothing will; what names every
+// task for the log and the row ("Explore: nt docs; go test; watch: comments on Plan"). A
+// monitor is a watch, not work: the comments on an artifact the session published, a PR watch,
+// a log tail, a plugin's monitor. It may never fire, Claude's own registry calls the session
+// idle while only monitors run, and a turn that ended behind one is done: it is named, not
+// counted.
+func BackgroundTasks(raw map[string]any) (work, what string) {
 	list, _ := raw["background_tasks"].([]any)
 	if len(list) == 0 {
-		return ""
+		return "", ""
 	}
 	counts := map[string]int{}
-	var order []string
+	var order, names []string
 	for _, item := range list {
 		m, _ := item.(map[string]any)
 		t := str(m, "type")
@@ -136,6 +141,23 @@ func BackgroundTasks(raw map[string]any) string {
 			t = "session"
 		case "MCP task":
 			t = "mcp task"
+		}
+		name := str(m, "description")
+		if name == "" {
+			for _, k := range []string{"command", "agent_type", "name", "tool"} {
+				if name = str(m, k); name != "" {
+					break
+				}
+			}
+		} else if at := str(m, "agent_type"); at != "" {
+			name = at + ": " + name
+		}
+		if t == "monitor" {
+			names = append(names, strings.TrimSpace("watch: "+squash(name, 40)))
+			continue
+		}
+		if name != "" {
+			names = append(names, squash(name, 40))
 		}
 		if counts[t] == 0 {
 			order = append(order, t)
@@ -151,5 +173,5 @@ func BackgroundTasks(raw map[string]any) string {
 		}
 		parts = append(parts, fmt.Sprintf("%d %ss", n, t))
 	}
-	return strings.Join(parts, " + ")
+	return strings.Join(parts, " + "), squash(strings.Join(names, "; "), 120)
 }

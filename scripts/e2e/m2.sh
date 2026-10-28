@@ -102,6 +102,19 @@ wait_for "○ $PROJ" 3 || true
 expect "final Stop with nothing in flight ends the turn" "○ $PROJ" "$(capture)"
 expect "nothing unseen after a watched wait" '^agents *$' "$(capture)"
 
+# A monitor is a watch, not work that ends: the comments on an artifact the agent published, a PR
+# watch, a log tail. Beside a shell the shell pauses the turn; alone it ends it (Claude's own
+# registry calls the session idle), the watch only named in the events log.
+hook claude '{"hook_event_name":"UserPromptSubmit","session_id":"abc"}'
+hook claude '{"hook_event_name":"Stop","session_id":"abc","background_tasks":[{"id":"m1","type":"monitor","status":"running","description":"Comments on artifact Plan"},{"id":"s1","type":"shell","status":"running","description":"Wait for CI","command":"gh pr checks --watch"}]}'
+wait_for 'bg shell' 3 || true
+expect "a shell beside a monitor pauses the turn" "◍ $PROJ +bg shell" "$(capture)"
+hook claude '{"hook_event_name":"Stop","session_id":"abc","background_tasks":[{"id":"m1","type":"monitor","status":"running","description":"Comments on artifact Plan"}]}'
+wait_for "○ $PROJ" 3 || true
+expect "a monitor alone does not pause the turn" "○ $PROJ" "$(capture)"
+expect "nothing unseen after a stop behind a watch" '^agents *$' "$(capture)"
+expect "the events log names the watch the turn ended behind" '"detail":"watch: Comments on artifact Plan".*"kind":"stop"' "$(tail -n 3 "$T/state/events.log")"
+
 # AskUserQuestion is a block with reason question.
 OUT send-keys -t "$SIDEBAR" '!'   # look at Alpha window 0 again? '!' selects space 1 = Alpha (same session) -> still focused on agent pane
 IN select-window -t Alpha:0        # move the inner client away from the agent pane

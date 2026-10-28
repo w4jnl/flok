@@ -4,6 +4,16 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
+## Unreleased
+
+- **Fixed: a watch kept an agent paused.** Claude Code lists the comment watch on an artifact
+  a session published, and any other monitor (a PR watch, a log tail), among the background
+  tasks of every Stop, and flok took it for work in flight: the row stayed paused
+  (`bg monitor`) for half an hour after each turn, with no done push and no sound. A monitor
+  no longer pauses a turn; shells, subagents, workflows, MCP tasks and cloud sessions still
+  do. A paused row now also names what it waits for (the app shows it), and `events.log`
+  names the watches a turn ended behind.
+
 ## 0.11.0 (2026-10-28)
 
 - **The admin token out of config.toml.** `flok link admin` keeps one of the relay's admin

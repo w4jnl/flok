@@ -36,7 +36,11 @@ func TestClaudeMapHook(t *testing.T) {
 		{`{"hook_event_name":"PostToolUse","tool_name":"Bash"}`, EvToolEnd, true, "Bash", "", ""},
 		{`{"hook_event_name":"Stop","stop_hook_active":false}`, EvStop, true, "", "", ""},
 		{`{"hook_event_name":"Stop","background_tasks":[]}`, EvStop, true, "", "", ""},
-		{`{"hook_event_name":"Stop","background_tasks":[{"id":"1","type":"subagent","status":"running","agent_type":"Explore"},{"id":"2","type":"subagent"},{"id":"3","type":"shell","command":"go test"}]}`, EvWaiting, true, "", "2 agents + shell", "waiting"},
+		{`{"hook_event_name":"Stop","background_tasks":[{"id":"1","type":"subagent","status":"running","agent_type":"Explore"},{"id":"2","type":"subagent"},{"id":"3","type":"shell","command":"go test"}]}`, EvWaiting, true, "2 agents + shell", "Explore; go test", "waiting"},
+		// a monitor is a watch (the comments on a published artifact, a PR, a log): named, never
+		// counted, so alone it ends the turn
+		{`{"hook_event_name":"Stop","background_tasks":[{"id":"m1","type":"monitor","status":"running","description":"Comments on artifact Plan"}]}`, EvStop, true, "", "watch: Comments on artifact Plan", ""},
+		{`{"hook_event_name":"Stop","background_tasks":[{"id":"m1","type":"monitor","status":"running","description":"PR #18"},{"id":"s1","type":"shell","status":"running","description":"Wait for CI","command":"gh pr checks --watch"},{"id":"a1","type":"subagent","status":"running","description":"nt docs","agent_type":"Explore"}]}`, EvWaiting, true, "shell + agent", "watch: PR #18; Wait for CI; Explore: nt docs", "waiting"},
 		{`{"hook_event_name":"Notification","notification_type":"agent_completed"}`, "", false, "", "", ""},
 		{`{"hook_event_name":"StopFailure"}`, EvStop, true, "", "", "error"},
 		{`{"hook_event_name":"SessionEnd","reason":"clear"}`, EvSessionRefresh, true, "", "", ""},

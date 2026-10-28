@@ -161,8 +161,8 @@ func TestWaitingForBackgroundTasks(t *testing.T) {
 	unfocused := func() bool { return false }
 	now := time.Now()
 	a := agent.Agent{State: agent.Working, TurnStarted: now, HasHooks: true}
-	fx := Apply(&a, agent.Event{Kind: agent.EvWaiting, Name: "Stop", Reason: "waiting", Detail: "2 agents"}, unfocused, now.Add(time.Second))
-	if fx.Sound != "" || a.State != agent.Paused || a.Reason != "waiting" || a.CurrentTool != "2 agents" || len(a.Notifications) != 0 {
+	fx := Apply(&a, agent.Event{Kind: agent.EvWaiting, Name: "Stop", Reason: "waiting", Tool: "2 agents", Detail: "Explore: docs; Plan: design"}, unfocused, now.Add(time.Second))
+	if fx.Sound != "" || a.State != agent.Paused || a.Reason != "waiting" || a.CurrentTool != "2 agents" || a.ToolDetail != "Explore: docs; Plan: design" || len(a.Notifications) != 0 {
 		t.Fatalf("waiting: %+v %+v", a, fx)
 	}
 	if fx := Apply(&a, agent.Event{Kind: agent.EvNudge}, unfocused, now.Add(70*time.Second)); fx.Sound != "" || a.State != agent.Paused {
