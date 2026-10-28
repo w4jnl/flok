@@ -113,7 +113,7 @@ agent's name means no hook data has arrived for that pane (restart the agent aft
 | state | glyph | colour | entered by | left by |
 |---|---|---|---|---|
 | working | `◐◓◑◒` | cyan | prompt submitted, tool start/end | stop, block, interrupted turn |
-| paused | `◍` | grey | stop while background subagents, shells or workflows are still running (`bg 2 agents`): answered, but the work will wake the agent again | the task wakes it (working), a stop with nothing in flight (done or idle) |
+| paused | `◍` | grey | stop while background subagents, shells or workflows are still running (`bg 2 agents`): answered, but the work will wake the agent again; a monitor (a watch: the comments on an artifact the agent published, a PR, a log tail) does not count, it may never fire | the task wakes it (working), a stop with nothing in flight (done or idle) |
 | blocked | `●` | orange | permission request, `AskUserQuestion`, elicitation dialog, a visible prompt the hooks missed | tool end, next prompt, stop, dialog gone |
 | done | `✓` | green | stop while the pane is not the one you look at | looking at it (or jumping there) |
 | idle | `○` | grey | session start, stop while you watch, done once seen | prompt |

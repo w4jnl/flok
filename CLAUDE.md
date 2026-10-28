@@ -208,9 +208,13 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
 ```
 
 - `internal/agent` is the shared model: `Agent`, `Space`, `State` (working/blocked/paused/done/
-  idle/unknown; `paused` = a Stop with `background_tasks` in flight, reason `waiting`, detail
-  the task list, cleared by the next tool start, prompt or Stop, or by the merge's stale rule
-  after `StaleWorking`; older hosts send it as working+waiting and `proto.ToMerge` maps it), `Event`/`EventKind` (agent-neutral hook events), and the `Adapter` interface
+  idle/unknown; `paused` = a Stop with `background_tasks` in flight, reason `waiting`, the
+  kinds of work as the tool (`2 agents + shell`) and the tasks' names as the detail, cleared by
+  the next tool start, prompt or Stop, or by the merge's stale rule after `StaleWorking`; a
+  `monitor` task never counts (`agent.BackgroundTasks`): it is a watch that may never fire, such
+  as the comment watch on an artifact the session published, and a Stop behind one is a plain
+  stop with the watch named in `events.log`; older hosts send paused as working+waiting and
+  `proto.ToMerge` maps it), `Event`/`EventKind` (agent-neutral hook events), and the `Adapter` interface
   (process names, title parsing) plus optional `HookMapper`. Adapters self-register in `init()`;
   `claude.go` and `copilot.go` are the two implementations.
 - `internal/state/machine.go` is the pure hook state machine: `Apply(agent, event, focused, now)`

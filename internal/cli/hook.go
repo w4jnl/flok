@@ -119,7 +119,11 @@ func runHook(cfg config.Config, args []string) (code int) {
 	if err != nil {
 		hookLog("%s %s: update: %v", id, pane, err)
 	}
+	detail := a.ToolDetail
+	if detail == "" { // a Stop leaves the record no tool: the event's own words (the watches it ended behind)
+		detail = ev.Detail
+	}
 	st.AppendEvent(map[string]any{"at": now, "pane": pane, "agent": id, "event": ev.Name, "kind": ev.Kind,
-		"state": a.State, "reason": a.Reason, "tool": a.CurrentTool, "detail": a.ToolDetail, "sound": fx.Sound})
+		"state": a.State, "reason": a.Reason, "tool": a.CurrentTool, "detail": detail, "sound": fx.Sound})
 	return 0
 }
