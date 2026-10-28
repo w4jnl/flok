@@ -30,10 +30,10 @@ plain mode: `send-keys` over ssh, the files streamed into `~/.local/state/flok/a
 
 1. Run the relay: [`deploy/relay`](../deploy/relay) has the image (`ghcr.io/w4jnl/flok-relay`,
    amd64 and arm64), a compose stack for Portainer with Traefik labels and the example configs.
-   `flok-relay token` makes one **admin token** for the flok you manage the relay from (it
-   goes in that flok's `[link] admin`, and lets it let others in, below); every flok joins by
-   a code and every phone pairs (step 4), so neither needs a token in the relay's config
-   (`instance_tokens` stay as a static alternative). Pushes need an APNs
+   `flok-relay token` makes one **admin token** for the flok you manage the relay from (that
+   flok keeps it with `flok link admin`, or in its `[link] admin`, and it lets it let others
+   in, below); every flok joins by a code and every phone pairs (step 4), so neither needs a
+   token in the relay's config (`instance_tokens` stay as a static alternative). Pushes need an APNs
    key from your Apple developer account (`FLOK_RELAY_APNS_*`); without one the relay runs and
    the app works, only nothing is pushed.
 2. Link your first flok with the admin token (an admin token links like an instance token):
@@ -45,14 +45,21 @@ plain mode: `send-keys` over ssh, the files streamed into `~/.local/state/flok/a
    admin = "…"                            # the admin token: this flok manages the tenants (flok tenant)
    # pin = "sha256:…"                     # behind a proxy that reads HTTPS: flok-relay pin
    ```
-   then `flok reload`; `flok doctor` and `flok link status` say whether it connected. Every
-   further flok **joins** instead: `flok link join https://flok.example.net` there shows a code
-   and its QR, you approve it from the phone app (scan it: Settings › *Link a computer*), from
-   a linked flok (`flok link approve <code>`) or from the admin flok (`flok tenant approve
-   <code> --tenant <name>`), the Mac shows who approved it and for which tenant, and Enter
-   accepts: the relay hands it a key of its own, kept in the state dir (`link.json`), and no
-   `[link]` section is needed there. `flok link list` shows the floks of your tenant, `flok link
-   forget <name>` revokes one, `flok link leave` undoes a join.
+   then `flok reload`; `flok doctor` and `flok link status` say whether it connected. A
+   config.toml you keep in git or share between machines need not hold the token: leave
+   `token` and `admin` out and hand the admin token to `flok link admin`, which reads it from
+   the terminal without echo, or from stdin (`op read op://… | flok link admin`), never from
+   the command line, keeps it in the state dir (`link-admin`, mode 0600), where it wins over
+   `[link] admin`, and has the running sidebar link again with it; alone it links this flok
+   like `[link] admin` alone, besides a join it rides along. `flok link admin --clear` removes
+   it, `flok link leave` keeps it. Every further flok **joins** instead: `flok link join
+   https://flok.example.net` there shows a code and its QR, you approve it from the phone app
+   (scan it: Settings › *Link a computer*), from a linked flok (`flok link approve <code>`) or
+   from the admin flok (`flok tenant approve <code> --tenant <name>`), the Mac shows who
+   approved it and for which tenant, and Enter accepts: the relay hands it a key of its own,
+   kept in the state dir (`link.json`), and no `[link]` section is needed there. `flok link
+   list` shows the floks of your tenant, `flok link forget <name>` revokes one, `flok link
+   leave` undoes a join.
 3. The app: build [`app/ios`](../app/ios) with your Apple team (Xcode, `make ios-project`; the
    simulator needs no signing) and install it from Xcode or TestFlight (`make ios-testflight`).
 4. Pair the phone: `flok phone pair` on a Mac that runs flok shows a code and its QR (in a tmux
@@ -161,7 +168,8 @@ that showed it the pairing code. The tokens in the relay's config (`instance_tok
 is where a relay from before tenants finds all its phones and devices after an upgrade: nothing
 changes for them.
 
-A flok whose `[link] admin` holds one of the relay's `admin_tokens` manages the tenants from
+A flok that holds one of the relay's `admin_tokens` (kept by `flok link admin`, or in its
+`[link] admin`) manages the tenants from
 its terminal, whichever tenant it lives in and however it linked (its own key from a join, or a
 token; an admin token in `[link] token`, or `[link] admin` alone, links it into the relay's own
 tenant with the same powers, which is how the first flok on a fresh relay gets in):

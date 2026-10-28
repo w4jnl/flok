@@ -15,7 +15,7 @@ import (
 // doctorLink reports the relay link: the running sidebar's own state when it publishes one,
 // else a GET of the relay's /healthz (through HTTPS_PROXY like the link itself).
 func doctorLink(cfg config.Config, add func(level, format string, args ...any)) {
-	settings := state.New(config.StateDir()).LinkSettings(cfg.Link.URL, cfg.Link.Token, cfg.Link.Pin)
+	settings := state.New(config.StateDir()).LinkSettings(cfg.Link.URL, cfg.Link.Token, cfg.Link.Pin, cfg.Link.Admin)
 	u := settings.URL
 	if u == "" {
 		add("ok", "link: off ([link] url in config.toml, or flok link join <relay>, connects this flok to your relay, for the phone app)")
@@ -35,13 +35,20 @@ func doctorLink(cfg config.Config, add func(level, format string, args ...any)) 
 			add("ok", "link: [link] token in config.toml is not used while this flok is joined by code")
 		}
 	}
+	admin := "[link] admin"
+	if settings.AdminKept {
+		admin = "the admin token in " + state.LinkAdminFile + " (flok link admin)"
+		if cfg.Link.Admin != "" && cfg.Link.Admin != settings.Admin {
+			add("warn", "link: [link] admin in config.toml is not used: %s wins (flok link admin --clear goes back to the config)", admin)
+		}
+	}
 	switch {
-	case settings.Token == "" && cfg.Link.Admin == "":
+	case settings.Token == "" && settings.Admin == "":
 		add("warn", "link: [link] token is empty; the relay will refuse %s (flok link join <relay> gets it a key of its own)", name)
 	case settings.Token == "":
-		add("ok", "link: [link] admin alone links %s into the relay's own tenant, with the tenants in its hands (flok tenant; flok link join moves it to a tenant of its own)", name)
-	case cfg.Link.Admin != "":
-		add("ok", "link: [link] admin is set: %s may manage the relay's tenants (flok tenant)", name)
+		add("ok", "link: %s alone links %s into the relay's own tenant, with the tenants in its hands (flok tenant; flok link join moves it to a tenant of its own)", admin, name)
+	case settings.Admin != "":
+		add("ok", "link: %s is set: %s may manage the relay's tenants (flok tenant)", admin, name)
 	}
 	how := ""
 	if p := settings.Pin; p != "" {

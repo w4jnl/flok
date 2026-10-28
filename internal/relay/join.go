@@ -423,7 +423,7 @@ func (s *Server) forgetInstance(t *tenant, nameOrID, reason string) (wire.Instan
 func (s *Server) tenantOp(in *instance, gen uint64, id string, q wire.Tenant, admin bool) {
 	reply := wire.Frame{Type: wire.TypeTenant, ID: id, Tenant: &wire.Tenant{Op: q.Op}}
 	if !admin {
-		reply.Error = "this flok's link holds no admin token: put one of the relay's admin_tokens in [link] admin (flok reload) to manage tenants"
+		reply.Error = "this flok's link holds no admin token: flok link admin keeps one of the relay's admin_tokens for it (or [link] admin in config.toml, then flok reload) to manage tenants"
 		s.replyTo(in, gen, reply)
 		return
 	}

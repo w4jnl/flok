@@ -39,7 +39,7 @@ func (c relayCmd) fail(err error) int {
 
 // settings is the relay link as this flok has it: a join record, else [link] in config.toml.
 func (c relayCmd) settings() state.LinkSettings {
-	return state.New(c.dir).LinkSettings(c.cfg.Link.URL, c.cfg.Link.Token, c.cfg.Link.Pin)
+	return state.New(c.dir).LinkSettings(c.cfg.Link.URL, c.cfg.Link.Token, c.cfg.Link.Pin, c.cfg.Link.Admin)
 }
 
 // ready checks that this flok can reach its relay: a link in the config or a join record, a

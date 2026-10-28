@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -347,5 +349,71 @@ func TestLinkOpsAndTenantThroughTheSidebar(t *testing.T) {
 	}
 	if last.Cmd != "tenant" || last.Op != "approve" || last.Code != "AB7Q-K2MN" || last.Name != "acme" {
 		t.Fatalf("the tenant approve request: %+v", last)
+	}
+}
+
+// flok link admin keeps the token from stdin or the terminal, never from the arguments; the
+// running sidebar links again with it; --clear goes back to [link] admin; link status says
+// where the token comes from.
+func TestLinkAdmin(t *testing.T) {
+	dir := t.TempDir()
+	c, out, errw := newLinkOps(dir, newFakeJoinRelay(t))
+	path := filepath.Join(dir, state.LinkAdminFile)
+
+	if rc := c.run([]string{"admin", "s3cret"}); rc != 2 || !strings.Contains(errw.String(), "never from the command line") {
+		t.Fatalf("a token in the arguments: %d %s", rc, errw)
+	}
+	if _, err := os.Stat(path); err == nil {
+		t.Fatal("nothing is kept from the arguments")
+	}
+	for in, want := range map[string]string{"\n": "no token given", "two words\n": "that is not a token", "line1\nline2\n": "that is not a token"} {
+		errw.Reset()
+		c.in = strings.NewReader(in)
+		if rc := c.run([]string{"admin"}); rc != 1 || !strings.Contains(errw.String(), want) {
+			t.Fatalf("admin from %q: %d %s", in, rc, errw)
+		}
+	}
+	c.in = strings.NewReader("adm1n\n")
+	if rc := c.run([]string{"admin"}); rc != 0 || !strings.Contains(out.String(), "admin token kept in "+path) || !strings.Contains(out.String(), "no relay link yet") {
+		t.Fatalf("admin from stdin: %d %s %s", rc, out, errw)
+	}
+	if got := state.New(dir).LoadLinkAdmin(); got != "adm1n" {
+		t.Fatalf("kept: %q", got)
+	}
+
+	c.cfg.Link.URL = "wss://flok.example.net/link"
+	livePhoneSidebar(t, dir, &snapshot.Link{State: "connected"})
+	out.Reset()
+	errw.Reset()
+	c.in, c.readPassword = nil, func() ([]byte, error) { return []byte("t3rm"), nil }
+	if rc := c.run([]string{"admin"}); rc != 0 || !strings.Contains(out.String(), "the sidebar links again with it now") || !strings.Contains(errw.String(), "admin token (one of the relay's admin_tokens): ") {
+		t.Fatalf("admin from the terminal: %d %s %s", rc, out, errw)
+	}
+	if reqs := state.New(dir).DrainRequests(time.Now(), time.Minute); len(reqs) != 1 || reqs[0].Cmd != "relink" {
+		t.Fatalf("the sidebar is asked to link again: %+v", reqs)
+	}
+	if s := c.settings(); s.Admin != "t3rm" || !s.AdminKept {
+		t.Fatalf("the settings carry it: %+v", s)
+	}
+	out.Reset()
+	if rc := (linkCmd{dir: dir, url: c.cfg.Link.URL, admin: adminSource(c.settings()), out: out, errw: errw}).run([]string{"status"}); rc != 0 || !strings.Contains(out.String(), "admin token: link-admin in the state dir (flok link admin)") {
+		t.Fatalf("link status: %d %s", rc, out)
+	}
+
+	c.cfg.Link.Admin = "cfgadmin"
+	out.Reset()
+	if rc := c.run([]string{"admin", "--clear"}); rc != 0 || !strings.Contains(out.String(), "the admin token is gone from "+path) || !strings.Contains(out.String(), "[link] admin in config.toml counts again") || !strings.Contains(out.String(), "links again without it now") {
+		t.Fatalf("admin --clear: %d %s", rc, out)
+	}
+	if s := c.settings(); s.Admin != "cfgadmin" || s.AdminKept {
+		t.Fatalf("back to [link] admin: %+v", s)
+	}
+	out.Reset()
+	if rc := c.run([]string{"admin", "--clear"}); rc != 0 || !strings.Contains(out.String(), "no admin token kept") {
+		t.Fatalf("admin --clear with none: %d %s", rc, out)
+	}
+	out.Reset()
+	if rc := (linkCmd{dir: dir, url: c.cfg.Link.URL, admin: adminSource(c.settings()), out: out, errw: errw}).run([]string{"status"}); rc != 0 || !strings.Contains(out.String(), "admin token: [link] admin in config.toml") {
+		t.Fatalf("link status with [link] admin: %d %s", rc, out)
 	}
 }

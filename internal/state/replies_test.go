@@ -75,3 +75,52 @@ func TestLinkFile(t *testing.T) {
 		t.Fatal("removing twice is fine")
 	}
 }
+
+// flok link admin keeps the admin token beside the join record: private, trimmed, and it wins
+// over [link] admin whichever way the flok links; without it the config's counts.
+func TestLinkAdmin(t *testing.T) {
+	dir := t.TempDir()
+	s := New(dir)
+	if s.LoadLinkAdmin() != "" {
+		t.Fatal("no token yet")
+	}
+	if ls := s.LinkSettings("wss://flok.example.net/link", "inst", "", "cfgadmin"); ls.Admin != "cfgadmin" || ls.AdminKept || ls.Token != "inst" {
+		t.Fatalf("[link] admin without a kept one: %+v", ls)
+	}
+	if err := s.SaveLinkAdmin("adm1n"); err != nil {
+		t.Fatal(err)
+	}
+	if st, err := os.Stat(filepath.Join(dir, LinkAdminFile)); err != nil || st.Mode().Perm() != 0o600 {
+		t.Fatalf("the token is private: %v %v", err, st.Mode())
+	}
+	if err := os.WriteFile(filepath.Join(dir, LinkAdminFile), []byte("  adm1n\n\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.LoadLinkAdmin(); got != "adm1n" {
+		t.Fatalf("written by hand, read trimmed: %q", got)
+	}
+	if ls := s.LinkSettings("wss://flok.example.net/link", "inst", "", "cfgadmin"); ls.Admin != "adm1n" || !ls.AdminKept || ls.Token != "inst" || ls.Joined != nil {
+		t.Fatalf("the kept token wins over [link] admin: %+v", ls)
+	}
+	if err := s.SaveLink(LinkFile{Relay: "https://flok.example.net", Token: "k3y"}); err != nil {
+		t.Fatal(err)
+	}
+	if ls := s.LinkSettings("", "", "", ""); ls.Admin != "adm1n" || !ls.AdminKept || ls.Token != "k3y" || ls.Joined == nil {
+		t.Fatalf("a joined flok carries it too: %+v", ls)
+	}
+	if err := s.RemoveLink(); err != nil {
+		t.Fatal(err)
+	}
+	if s.LoadLinkAdmin() != "adm1n" {
+		t.Fatal("leaving a join keeps the admin token")
+	}
+	if err := s.RemoveLinkAdmin(); err != nil {
+		t.Fatal(err)
+	}
+	if ls := s.LinkSettings("wss://flok.example.net/link", "inst", "", "cfgadmin"); ls.Admin != "cfgadmin" || ls.AdminKept {
+		t.Fatalf("removed: back to [link] admin: %+v", ls)
+	}
+	if err := s.RemoveLinkAdmin(); err != nil {
+		t.Fatal("removing twice is fine")
+	}
+}

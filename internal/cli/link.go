@@ -16,7 +16,7 @@ import (
 )
 
 const linkUsage = `usage: flok link [on|off|toggle|status] [--notify]
-       flok link join <relay> | approve <code> | list | forget <name> | leave   (flok link join --help)
+       flok link join <relay> | approve <code> | list | forget <name> | leave | admin [--clear]   (flok link join --help)
 
 Switches the relay link ([link] url, or the relay this flok joined) off and on again (no
 argument toggles). Off, nothing leaves this machine for the relay: the phone shows this flok as
@@ -29,6 +29,7 @@ type linkCmd struct {
 	dir       string
 	url       string          // the relay: [link] url, or the join record's; "" = no link to switch
 	joined    *state.LinkFile // the join record, when the link comes from one
+	admin     string          // where the admin token comes from, for status; "" = none
 	wait      time.Duration   // how long to wait for the sidebar to confirm a change
 	out, errw io.Writer
 }
@@ -39,14 +40,30 @@ func runLink(cfg config.Config, args []string) int {
 			fmt.Fprintln(os.Stdout, linkOpsUsage)
 			return 0
 		}
+		var readPassword func() ([]byte, error)
+		if term.IsTerminal(int(os.Stdin.Fd())) {
+			readPassword = func() ([]byte, error) { return term.ReadPassword(int(os.Stdin.Fd())) }
+		}
 		return linkOps{relayCmd: relayCmd{name: "link", dir: config.StateDir(), cfg: cfg, now: time.Now, wait: 5 * time.Second,
 			tty: term.IsTerminal(int(os.Stdout.Fd())), out: os.Stdout, errw: os.Stderr}, version: Version,
-			joiner: func(origin string) link.Joiner { return link.Joiner{Origin: origin} }}.run(args)
+			joiner: func(origin string) link.Joiner { return link.Joiner{Origin: origin} },
+			in:     os.Stdin, readPassword: readPassword}.run(args)
 	}
-	settings := state.New(config.StateDir()).LinkSettings(cfg.Link.URL, cfg.Link.Token, cfg.Link.Pin)
+	settings := state.New(config.StateDir()).LinkSettings(cfg.Link.URL, cfg.Link.Token, cfg.Link.Pin, cfg.Link.Admin)
 	return withNotify(args, func(args []string, out, errw io.Writer) int {
-		return linkCmd{dir: config.StateDir(), url: settings.URL, joined: settings.Joined, wait: 2 * time.Second, out: out, errw: errw}.run(args)
+		return linkCmd{dir: config.StateDir(), url: settings.URL, joined: settings.Joined, admin: adminSource(settings), wait: 2 * time.Second, out: out, errw: errw}.run(args)
 	})
+}
+
+// adminSource says where the link's admin token comes from; "" without one.
+func adminSource(s state.LinkSettings) string {
+	switch {
+	case s.Admin == "":
+		return ""
+	case s.AdminKept:
+		return state.LinkAdminFile + " in the state dir (flok link admin)"
+	}
+	return "[link] admin in config.toml"
 }
 
 // linkState is the switch and what the running sidebar reports of its link. Shared by
@@ -135,6 +152,9 @@ func (c linkCmd) run(args []string) int {
 		fmt.Fprintln(c.out, cur)
 		if j := c.joined; j != nil {
 			fmt.Fprintf(c.out, "joined %s as %s on %s, approved by %s (flok link leave undoes it)\n", j.Tenant, j.Name, j.Joined.Local().Format("2006-01-02"), j.ApprovedBy)
+		}
+		if c.admin != "" {
+			fmt.Fprintf(c.out, "admin token: %s; flok tenant manages the relay's tenants\n", c.admin)
 		}
 		return 0
 	case "toggle":

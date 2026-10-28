@@ -44,20 +44,21 @@ type (
 const linkWarnAfter = 30 * time.Second
 
 // newLinker builds the link from the settings: a join record in the state dir (flok link join)
-// wins over [link] url, token and pin in config.toml. Nil without either.
+// wins over [link] url, token and pin in config.toml, a kept admin token (flok link admin) over
+// [link] admin. Nil without a relay.
 func (m Model) newLinker() *link.Client {
 	l := m.d.Cfg.Link
-	settings := state.LinkSettings{URL: l.URL, Token: l.Token, Pin: l.Pin}
+	settings := state.LinkSettings{URL: l.URL, Token: l.Token, Pin: l.Pin, Admin: l.Admin}
 	off := false
 	if m.d.Store != nil {
-		settings = m.d.Store.LinkSettings(l.URL, l.Token, l.Pin)
+		settings = m.d.Store.LinkSettings(l.URL, l.Token, l.Pin, l.Admin)
 		off = m.d.Store.LinkOff()
 	}
 	if settings.URL == "" {
 		return nil
 	}
 	hostname, _ := os.Hostname()
-	return link.New(link.Config{URL: settings.URL, Token: settings.Token, Admin: l.Admin, Pin: settings.Pin, Name: m.d.Cfg.InstanceName(),
+	return link.New(link.Config{URL: settings.URL, Token: settings.Token, Admin: settings.Admin, Pin: settings.Pin, Name: m.d.Cfg.InstanceName(),
 		Off: off, Version: m.d.Version, Hostname: hostname, Logf: m.debugf})
 }
 
