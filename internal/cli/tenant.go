@@ -25,8 +25,8 @@ const tenantUsage = `usage: flok tenant <command>
                                    its phones' keys and pushes
 
 A tenant is the set of floks and phones that see each other on the relay. Managing them takes
-an admin token: one of the relay's admin_tokens as this flok's [link] admin (or as its [link]
-token). The relay's own tenant, default, is where the tokens of its config link and sign in; it
+an admin token: one of the relay's admin_tokens, kept by flok link admin (or as this flok's
+[link] admin, or its [link] token). The relay's own tenant, default, is where the tokens of its config link and sign in; it
 can be renamed, not removed.`
 
 // tenantCmd is `flok tenant`.

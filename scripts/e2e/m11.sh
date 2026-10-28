@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # M11: flok on the phone. A real flok-relay (built here) listens on 127.0.0.1; the sidebar links
-# to it ([link] url/token), the "app" looks through the relay's API and WebSocket (flok-relay
-# tail), a stand-in APNs logs the pushes, an answer typed on the phone lands in the agent pane
-# (local, then on a remote host through the main instance), a subscription streams the screen,
-# the link comes back after the relay restarts, flok link switches it off (the phone sees off, not
-# offline) and prefix U on again, and the encrypted link ([link] pin) carries the same through a
-# tap that reads every byte, which sees neither the token nor an answer. Both links are deflated
-# (permessage-deflate on /link, flok-link/2 inside the tunnel).
+# to it ([link] url/token, then the admin token from flok link admin), the "app" looks through
+# the relay's API and WebSocket (flok-relay tail), a stand-in APNs logs the pushes, an answer
+# typed on the phone lands in the agent pane (local, then on a remote host through the main
+# instance), a subscription streams the screen, the link comes back after the relay restarts,
+# flok link switches it off (the phone sees off, not offline) and prefix U on again, and the
+# encrypted link ([link] pin) carries the same through a tap that reads every byte, which sees
+# neither the token nor an answer. Both links are deflated (permessage-deflate on /link,
+# flok-link/2 inside the tunnel).
 R0=$(cd "$(dirname "$0")/../.." && pwd)
 RELAY=$R0/bin/flok-relay
 FH=$(mktemp -d)
@@ -33,7 +34,7 @@ start_relay() {
   RELAY_PID=$!
 }
 start_relay
-E2E_EXTRA_CONFIG=$(printf '[link]\nname = "e2e"\nurl = "http://127.0.0.1:%s"\ntoken = "%s"\nadmin = "%s"\n' "$RELAY_PORT" "$INST_TOK" "$ADM_TOK")
+E2E_EXTRA_CONFIG=$(printf '[link]\nname = "e2e"\nurl = "http://127.0.0.1:%s"\ntoken = "%s"\n' "$RELAY_PORT" "$INST_TOK")
 export E2E_EXTRA_CONFIG
 source "$(dirname "$0")/lib.sh"
 m11_cleanup() { kill "${RELAY_PID:-}" "${APNS_PID:-}" "${TAIL_PID:-}" "${TAP_PID:-}" 2>/dev/null || true; rm -rf "$FH" "$RELAY_LOG" "$RELAY_DATA" "$APNS_KEY" "$T/tail.out" 2>/dev/null || true; }
@@ -118,9 +119,15 @@ wait "$JOIN3_PID" || true
 expect "flok link forget revokes a flok" 'e2e-third forgotten: its key no longer works' "$("$BIN" link forget e2e-third)"
 expect "… and the other" 'e2e-office forgotten' "$("$BIN" link forget e2e-office)"
 expect "the records are gone" 'no flok joined by code' "$("$RELAY" instances -data "$RELAY_DATA")"
-# tenants: this flok's link carries the admin token ([link] admin, the X-Flok-Admin header; inside
-# the tunnel the auth frame), so it manages them
-expect "flok tenant list shows the relay's own tenant" 'default.*the relay.s own' "$("$BIN" tenant list)"
+# tenants take an admin token, which config.toml does not hold here: flok link admin keeps it in
+# the state dir (from stdin, never the command line) and has the sidebar link again; the link
+# carries it besides the instance token (the X-Flok-Admin header; inside the tunnel the auth
+# frame), so this flok manages them
+expect "without an admin token the relay keeps the tenants to itself" 'holds no admin token: flok link admin' "$("$BIN" tenant list 2>&1 || true)"
+expect "flok link admin keeps the token from stdin" 'admin token kept in .*link-admin; the sidebar links again with it now' "$(printf '%s\n' "$ADM_TOK" | "$BIN" link admin)"
+expect "… for this user alone" '^-rw-------' "$(ls -l "$FLOK_STATE/link-admin")"
+expect_soon "flok tenant list shows the relay's own tenant" 'default.*the relay.s own' "$BIN" tenant list
+expect "doctor says where the admin token comes from" 'link: the admin token in link-admin \(flok link admin\) is set' "$("$BIN" doctor 2>&1 || true)"
 expect "flok tenant rename calls the relay's own tenant something else" 'renamed default to e2ehome' "$("$BIN" tenant rename default e2ehome)"
 expect "… which the list shows" 'e2ehome.*the relay.s own' "$("$BIN" tenant list)"
 expect "… and the relay's file" 'e2ehome' "$("$RELAY" tenants -data "$RELAY_DATA")"

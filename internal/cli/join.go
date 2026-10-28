@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"text/tabwriter"
@@ -23,6 +25,7 @@ const linkOpsUsage = `usage: flok link join <relay> [--name <name>] [--yes] [--o
        flok link list [--json]
        flok link forget <name|id>
        flok link leave
+       flok link admin [--clear]
 
   join     this flok asks the relay to let it in: it shows a code and its QR, good for five
            minutes. A member of the tenant approves it: the phone app scans the code, or
@@ -37,15 +40,22 @@ const linkOpsUsage = `usage: flok link join <relay> [--name <name>] [--yes] [--o
   list     the floks of this flok's tenant
   forget   revoke a flok: its key stops working, its link closes, the phones drop it
   leave    forget this flok on the relay and remove its join record (back to [link] in config.toml)
+  admin    keep one of the relay's admin_tokens in the state dir (link-admin), read from the
+           terminal without echo or from stdin (op read … | flok link admin), never from the
+           command line; it stands in for [link] admin in config.toml, so the config holds no
+           secret, and lets this flok manage the relay's tenants (flok tenant) however it
+           linked. --clear removes it; flok link leave keeps it
 
 approve, list and forget go through this flok's relay link (the sidebar must be running); join
 talks to the relay itself, over HTTPS, since there is no link yet. docs/phone.md has the setup.`
 
-// linkOps is `flok link join | approve | list | forget | leave`.
+// linkOps is `flok link join | approve | list | forget | leave | admin`.
 type linkOps struct {
 	relayCmd
-	version string
-	joiner  func(origin string) link.Joiner // the relay's API for a join; tests point it at a fake
+	version      string
+	joiner       func(origin string) link.Joiner // the relay's API for a join; tests point it at a fake
+	in           io.Reader                       // flok link admin reads the token here when stdin is no terminal
+	readPassword func() ([]byte, error)          // reads it from the terminal without echo; nil when stdin is no terminal
 }
 
 func (c linkOps) run(args []string) int {
@@ -60,6 +70,8 @@ func (c linkOps) run(args []string) int {
 		return c.forget(args[1:])
 	case "leave":
 		return c.leave(args[1:])
+	case "admin":
+		return c.admin(args[1:])
 	}
 	fmt.Fprintf(c.errw, "flok link: unknown command %q\n\n%s\n", args[0], linkOpsUsage)
 	return 2
@@ -68,7 +80,7 @@ func (c linkOps) run(args []string) int {
 // isLinkOp says whether a flok link argument is one of the join commands (the rest switch the link).
 func isLinkOp(arg string) bool {
 	switch arg {
-	case "join", "approve", "list", "forget", "leave":
+	case "join", "approve", "list", "forget", "leave", "admin":
 		return true
 	}
 	return false
@@ -276,13 +288,17 @@ func (c linkOps) waitJoin(w *joinWatch, expires time.Time) (codeStep, string) {
 
 // relinkNote tells the running sidebar to take the new settings, and says what happens next.
 func (c linkOps) relinkNote() string {
-	s, f := snapshot.Load(c.dir, c.now())
-	if f == snapshot.Fresh && s.SidebarAlive() {
-		if err := state.New(c.dir).WriteRequest(state.Request{Cmd: "relink"}); err == nil {
-			return "; the sidebar connects with its new key now"
-		}
+	if c.relinkSidebar() {
+		return "; the sidebar connects with its new key now"
 	}
 	return "; flok up connects it"
+}
+
+// relinkSidebar files a relink request when a sidebar runs; false when none does (or the
+// request could not be written), so the settings are read at the next flok up.
+func (c linkOps) relinkSidebar() bool {
+	s, f := snapshot.Load(c.dir, c.now())
+	return f == snapshot.Fresh && s.SidebarAlive() && state.New(c.dir).WriteRequest(state.Request{Cmd: "relink"}) == nil
 }
 
 func (c linkOps) approve(args []string) int {
@@ -409,4 +425,71 @@ func (c linkOps) leave(args []string) int {
 	}
 	fmt.Fprintf(c.out, "left %s: the join record is gone%s\n", s.Joined.Tenant, c.relinkNote())
 	return 0
+}
+
+// maxAdminToken bounds what flok link admin keeps: flok-relay token makes 43 characters.
+const maxAdminToken = 512
+
+// admin keeps an admin token in the state dir, where it stands in for [link] admin, or removes
+// it (--clear). The token comes from the terminal without echo, or from stdin, never from the
+// arguments, where ps and the shell's history would show it.
+func (c linkOps) admin(args []string) int {
+	st := state.New(c.dir)
+	path := filepath.Join(c.dir, state.LinkAdminFile)
+	switch {
+	case len(args) == 1 && args[0] == "--clear":
+		had := st.LoadLinkAdmin() != ""
+		if err := st.RemoveLinkAdmin(); err != nil {
+			return c.fail(err)
+		}
+		if !had {
+			fmt.Fprintf(c.out, "no admin token kept in %s\n", path)
+			return 0
+		}
+		back := ""
+		if c.cfg.Link.Admin != "" {
+			back = "; [link] admin in config.toml counts again"
+		}
+		fmt.Fprintf(c.out, "the admin token is gone from %s%s%s\n", path, back, c.adminNote("without it"))
+		return 0
+	case len(args) != 0:
+		fmt.Fprintf(c.errw, "flok link admin: the token is read from the terminal or stdin, never from the command line (op read … | flok link admin)\n\n%s\n", linkOpsUsage)
+		return 2
+	}
+	var raw []byte
+	var err error
+	if c.readPassword != nil {
+		fmt.Fprint(c.errw, "admin token (one of the relay's admin_tokens): ")
+		raw, err = c.readPassword()
+		fmt.Fprintln(c.errw)
+	} else {
+		raw, err = io.ReadAll(io.LimitReader(c.in, maxAdminToken+2))
+	}
+	if err != nil {
+		return c.fail(fmt.Errorf("reading the token: %v", err))
+	}
+	token := strings.TrimSpace(string(raw))
+	switch {
+	case token == "":
+		return c.fail(errors.New("no token given: flok link admin --clear removes the one kept"))
+	case len(token) > maxAdminToken || strings.ContainsFunc(token, func(r rune) bool { return r <= ' ' || r == 0x7f }):
+		return c.fail(errors.New("that is not a token: one line, no spaces (flok-relay token makes one)"))
+	}
+	if err := st.SaveLinkAdmin(token); err != nil {
+		return c.fail(err)
+	}
+	fmt.Fprintf(c.out, "admin token kept in %s%s\n", path, c.adminNote("with it"))
+	return 0
+}
+
+// adminNote has the running sidebar link again with the admin token as it now is (how: "with
+// it" or "without it"), and says what happens next.
+func (c linkOps) adminNote(how string) string {
+	switch {
+	case c.settings().URL == "":
+		return "; this flok has no relay link yet ([link] url, or flok link join <relay>)"
+	case c.relinkSidebar():
+		return "; the sidebar links again " + how + " now"
+	}
+	return "; flok up links " + how
 }

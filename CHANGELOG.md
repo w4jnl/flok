@@ -4,6 +4,18 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
+## Unreleased
+
+- **The admin token out of config.toml.** `flok link admin` keeps one of the relay's admin
+  tokens in the state dir (`link-admin`, readable by you alone), read from the terminal without
+  echo or piped in (`op read … | flok link admin`), never from the command line, where `ps`
+  and your shell's history would show it. It counts like `[link] admin` and wins over it, so a
+  config.toml you keep in git or share between machines needs no secret: with `[link] url`
+  alone it links the flok into the relay's own tenant, beside a join it lets the flok manage
+  the tenants. The running sidebar links again with it at once; `flok link admin --clear`
+  removes it, `flok link leave` keeps it, and `flok link status` and `flok doctor` say where
+  the admin token comes from.
+
 ## 0.10.0 (2026-10-27)
 
 - **App: answer an agent's questions with a form.** When Claude Code asks with its question

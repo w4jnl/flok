@@ -53,7 +53,7 @@ observes the BEL), m8 `flok resurrect save`, m9 keep-awake (`pmset -g assertions
 sidebar pid on macOS, the macOS-only message elsewhere), m10 remote hosts: `fake_ssh_setup` /
 `fake_host` in lib.sh put a fake `ssh` on PATH that runs the remote command locally against
 isolated servers `e2e-<host>` with per-host state and config (`$T/down-<host>` / `$T/auth-<host>`
-simulate failures) and `rhook` replays a hook on a host, m11 flok on the phone (pairing too: `flok phone pair --json` through the sidebar, `/api/pair`, list, forget; joining and tenants: `flok link join --json` from a second state dir approved by `flok link approve`, `/api/enroll/approve` and `flok tenant approve`, `flok link list|forget`, `flok tenant list|show|rename|remove`; the sidebar links with an instance token plus `[link] admin`): it builds and runs
+simulate failures) and `rhook` replays a hook on a host, m11 flok on the phone (pairing too: `flok phone pair --json` through the sidebar, `/api/pair`, list, forget; joining and tenants: `flok link join --json` from a second state dir approved by `flok link approve`, `/api/enroll/approve` and `flok tenant approve`, `flok link list|forget`, `flok tenant list|show|rename|remove`; the sidebar links with an instance token alone, is refused the tenants, then `flok link admin` hands it the admin token from stdin and the relink carries it): it builds and runs
 the real `flok-relay` on 127.0.0.1 with a stand-in APNs (`scripts/e2e/fakehttp`, the Go HTTP
 stand-in m2 also uses for ntfy: it listens before it reports its port, because on macOS a connect to
 a bound-but-unlistened port is dropped, not refused) and a generated P-256 key (openssl), links the sidebar to it through `E2E_EXTRA_CONFIG`, drives the relay's API with curl
@@ -388,7 +388,14 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
   flok's own credential: `[link] admin` → `link.AdminHeader` (`X-Flok-Admin`) on the plain
   link, `Frame.Admin` in the tunnel's auth frame → `linkAuth(tok, admin)`, so a flok joined
   into any tenant can manage tenants; an admin token as `[link] token`, or `[link] admin` alone
-  (no token, no join record yet), links into the default tenant with the same powers. `New` refuses a relay nothing could link in to (`ErrNothingLinks`). The iOS app lives in `app/ios` (SwiftUI, iOS 17+, Swift 6 strict
+  (no token, no join record yet), links into the default tenant with the same powers. `flok
+  link admin` (`cli/join.go` `linkOps.admin`) keeps it in the state dir instead
+  (`state.LinkAdminFile`, `link-admin`, 0600, the token alone so it can be written by hand),
+  read with `term.ReadPassword` on a terminal, else from stdin, never from argv (ps, shell
+  history); `Store.LinkSettings` resolves it like the join record (kept wins over `[link]
+  admin`, `AdminKept` says which, for `flok link status` and doctor), so a config.toml kept in
+  git holds no secret; it is not part of a join (`flok link leave` keeps it, `--clear` removes
+  it) and it files the same `relink` request. `New` refuses a relay nothing could link in to (`ErrNothingLinks`). The iOS app lives in `app/ios` (SwiftUI, iOS 17+, Swift 6 strict
   concurrency; XcodeGen `project.yml` → `Flok.xcodeproj`, not committed; `make ios-project`,
   `ios-build`, `ios-test` against the iPhone 15 simulator, no signing; `ios-device` (`IOS_DEVICE=<udid>` picks one; a new device is registered in the developer account on the way) installs on
   the phone on the cable, `ios-testflight` archives and uploads with `ExportOptions.plist`;
