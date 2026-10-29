@@ -79,6 +79,8 @@ it when the outer goes (a detach, `flok down`).
 ```
  Claude Code / Copilot CLI ──hooks──► flok hook ──► ~/.local/state/flok/agents/<pane>.json
                                                   (per-pane record, flock + atomic write, plays the sound)
+                                              └──► ~/.local/state/flok/sessions/<session>.json ──► nt agent import
+                                                  (the session's journal; with [notes] on, a report in your notes)
                                                               │ fsnotify
  tmux snapshot (1 s) ──────────────────────────────────────┐  │
  claude agents --json (10 s, pid → tty → pane) ────────────┤  ▼
@@ -107,6 +109,12 @@ idle prompt box visible for three polls, six while Claude's registry still repor
 a *working* state that no hook closed; the idle
 prompt box visible for two polls clears a *blocked* state whose dialog is gone. A `~` before an
 agent's name means no hook data has arrived for that pane (restart the agent after `flok install`).
+
+The hook keeps one more thing, beside the pane's record: a journal per session, the turns with
+the first line of each answer, the tools as names and counts, the blocks, questions, waits and
+errors. It is what the session's report in your notes is made of, when `[notes]` hands it to
+[nt](https://github.com/w4jnl/nt); the sidebar itself never reads it.
+[Session reports](notes.md)
 
 ## States
 
