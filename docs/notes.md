@@ -16,7 +16,7 @@ command = "auto"            # off | auto (the nt on PATH) | a path to nt
 ```
 
 ```sh
-flok doctor                 # notes: nt 0.6.0 at /opt/homebrew/bin/nt, last import 2 min ago
+flok doctor                 # notes: /opt/homebrew/bin/nt writes the session reports, last import 2m0s ago
 flok host notes beta off    # a remote host whose agents this machine does not report
 ```
 

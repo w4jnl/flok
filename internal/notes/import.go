@@ -80,7 +80,7 @@ func Probe(nt string) (int, error) {
 	defer cancel()
 	out, err := exec.CommandContext(ctx, nt, "agent", "import", "--probe").Output()
 	if err != nil {
-		return 0, fmt.Errorf("%s has no agent import (nt 0.6 or newer)", nt)
+		return 0, fmt.Errorf("%s has no agent import (nt 0.7.0 or newer)", nt)
 	}
 	v, err := strconv.Atoi(strings.TrimSpace(string(out)))
 	if err != nil {

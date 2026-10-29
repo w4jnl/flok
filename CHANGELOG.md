@@ -13,7 +13,7 @@ updates this file first. Dates are the tag dates.
   totals) and hands it to `nt agent import` at the start, on a block, a wait, a Stop, an error
   and the end, after its own work, so the sidebar never waits on nt. nt writes the report into
   the notes repository and compiles the digests as before, and installs no hooks of its own
-  (needs nt with `agent import`). A full-mode host's agents are reported too: its serve streams
+  (needs nt 0.7.0 or newer). A full-mode host's agents are reported too: its serve streams
   the journals to the flok that claims them (one machine per host, `flok host notes <name>
   off|on --take`); nothing on the host needs nt. `flok doctor` shows the nt it found and the
   last import. [docs/notes.md](docs/notes.md)
