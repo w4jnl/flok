@@ -75,7 +75,7 @@ func TestObserveImports(t *testing.T) {
 	if spawned != 4 { // start, stop, stop, end
 		t.Fatalf("spawned %d workers", spawned)
 	}
-	if rec.Branch == "" || rec.Head == "" { // the worker read the git state of the session's directory (this repository)
+	if rec.Head == "" { // the worker read the git state of the session's directory (this repository; CI checks out a detached HEAD, so no branch)
 		t.Fatalf("git state missing: %+v", rec)
 	}
 	// off: the journal is kept, nothing runs

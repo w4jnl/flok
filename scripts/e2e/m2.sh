@@ -35,7 +35,7 @@ budget=80; [ -n "${CI:-}" ] && budget=250   # shared CI runners start processes 
 expect "hook round trip < ${budget} ms (took ${ms} ms)" '^ok$' "$([ "$ms" -lt "$budget" ] && echo ok || echo slow)"
 wait_for "○ $PROJ *$" 3 || true
 expect "hooked agent shows without ~" "○ $PROJ *$" "$(capture)"
-expect_soon "the session's start is imported into nt (version, agent slug, session, cwd, the branch)" '"version":1,"agent":"claude-code","session":"abc","host":"","cwd":"'"$R"'","branch":"[^"]+","head":"[0-9a-f]+".*"state":"idle"' cat "$NT_LOG"
+expect_soon "the session's start is imported into nt (version, agent slug, session, cwd, the git head)" '"version":1,"agent":"claude-code","session":"abc","host":"","cwd":"'"$R"'",("branch":"[^"]+",)?"head":"[0-9a-f]+".*"state":"idle"' cat "$NT_LOG"
 expect "the journal is kept under sessions/" '^1$' "$(ls "$T/state/sessions" | grep -c '^abc\.json$' || true)"
 
 # Claude's registry says idle right until a prompt is submitted (and for a moment after): that must
