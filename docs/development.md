@@ -48,6 +48,7 @@ internal/awake         keep-awake power assertions (IOKit through purego, no cgo
 internal/merge         authority merge of all state sources into one snapshot
 internal/state         hook state machine and the file store (flock, atomic writes)
 internal/agent         model, events, adapters (claude, copilot)
+internal/notes         the journal per agent session, its import worker and the hosts' claim; the record is the contract with nt (docs/notes.md)
 internal/rules         herdr manifest engine (regions, matchers), bundled manifests
 internal/claudereg     `claude agents --json` reader, pid → tty → pane
 internal/tmux          exec-based tmux client, one-call snapshot

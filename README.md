@@ -11,11 +11,13 @@ the sessions, the agents below with their state, a sound when an agent needs you
 all three, and a `prefix ?` popup with your live keybinds. Agents can run wherever the work is:
 a host runs the same flok over your ssh config, and its agents arrive in the one sidebar, its
 tmux a key press away. A menu bar item on the Mac and an app on the iPhone show the same states
-while the terminal is out of sight. The sidebar is modelled on [herdr](https://herdr.dev)'s.
+while the terminal is out of sight. With [nt](https://github.com/w4jnl/nt), the notes tool,
+every session also leaves a report in your notes. The sidebar is modelled on
+[herdr](https://herdr.dev)'s.
 
 <p align="center"><img src="assets/demo.gif" alt="A 20-second recording of the sidebar next to three tmux sessions, with a servers panel listing local and the remote host beta: api asks for a Bash permission and turns orange, prefix o jumps to it, the answer is typed, api works again; docs stays done with one unread completion, build keeps working on beta" width="936"></p>
 
-<p align="center"><img src="assets/architecture.png" alt="How flok's parts connect. Your Mac: a terminal running the outer tmux with the flok sidebar next to the work pane, which attaches your own tmux server untouched; agents in it call flok hook, which writes the state dir; the sidebar merges hooks, Claude's registry, titles and screen rules and publishes snapshot.json for the menu bar; sounds, keys and ntfy. Your servers over ssh: beta in full mode runs flok serve, gpu-1 in plain mode is read through its tmux. One outbound WebSocket to your relay, flok-relay, which another flok at the office also dials; the relay talks to the app (answers, screens) and pushes through Apple's APNs to the phone, which shows the agents, a push with Approve and Deny, and the Dynamic Island" width="900"></p>
+<p align="center"><img src="assets/architecture.png" alt="How flok's parts connect. Your Mac: a terminal running the outer tmux with the flok sidebar next to the work pane, which attaches your own tmux server untouched; agents in it call flok hook, which writes the state dir; the sidebar merges hooks, Claude's registry, titles and screen rules and publishes snapshot.json for the menu bar; the hook's journal per session goes to nt as a report in your notes; sounds and keys. Your servers over ssh: beta in full mode runs flok serve, gpu-1 in plain mode is read through its tmux. One outbound WebSocket to your relay, flok-relay, which another flok at the office also dials; the relay talks to the app (answers, screens) and pushes through Apple's APNs to the phone, which shows the agents, a push with Approve and Deny, and the Dynamic Island" width="900"></p>
 
 <p align="center"><img src="assets/menubar-stack.png" alt="The macOS menu bar item with a working spinner and an orange badge for two agents waiting, and its dropdown: the agents with their states, one of them on the remote host beta, then a servers block with local and beta" height="360">&nbsp;&nbsp;&nbsp;&nbsp;<img src="assets/phone-screens.jpg" alt="Two iPhone screens of the flok app: the list of two instances, home and office, with their agents (api needs a Bash permission, web and build on the host beta work, docs is done, billing idle); a long-pressed push for api with the agent's screen, keys and Approve, Deny and Mute 1 h" height="360"></p>
 
@@ -25,7 +27,9 @@ to the front on that pane. **On the iPhone**, the app, through a relay you run: 
 list, an agent's live screen with keys to answer, a reply typed or dictated (hold the
 microphone), Claude's question forms filled in as forms, a screenshot or a photo sent to the
 agent, a push with Approve, Deny and Reply when one needs you (a long press shows its screen),
-and a Live Activity while agents work.
+and a Live Activity while agents work. **In your notes** (opt-in, with nt): a report per
+session, the turns with their tools, blocks, questions and waits, kept with nt's daily and
+weekly digests; flok is the one hook receiver, nt the one writer of the notes.
 
 ## Setup
 
@@ -86,6 +90,8 @@ manifests, the keys flok has in your tmux, the running outer session, every remo
   [tmux-resurrect](docs/tmux-resurrect.md).
 - Agents on other machines: [Remote hosts](docs/remote-hosts.md). The phone: [Setting it
   up](docs/phone.md#setting-it-up).
+- Session reports in your notes: `brew install w4jnl/tap/nt` (0.7.0 or newer), `nt init`, then
+  `command = "auto"` under `[notes]` in config.toml. [Session reports](docs/notes.md)
 
 ## Why flok
 

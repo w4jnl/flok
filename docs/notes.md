@@ -20,6 +20,74 @@ flok doctor                 # notes: /opt/homebrew/bin/nt writes the session rep
 flok host notes beta off    # a remote host whose agents this machine does not report
 ```
 
+## Setting it up
+
+1. nt 0.7.0 or newer on the machine that runs the sidebar (`brew install w4jnl/tap/nt`), with a
+   notes repository (`nt init`, or the one you have). Nothing on a remote host.
+2. `command = "auto"` under `[notes]` in `~/.config/flok/config.toml`; `flok doctor` then names
+   the nt it found. Sessions already running join at their next event.
+3. If nt's own hooks were installed before (nt 0.6 and earlier): `nt uninstall --hooks`. They
+   stop writing as soon as flok imports a session, so the order does not matter.
+
+## flok and nt
+
+The two tools split the work along what each one knows. flok watches the agents: it is the one
+receiver of Claude Code's and Copilot CLI's hooks, on this machine and on the hosts it drives,
+and the session's story (what it ran, where it blocked, what it asked, how long it waited, how
+it ended) is in flok and nowhere else. nt keeps the notes: the repository, its file format and
+lock, the sessions map that lets an agent find its own report, the day's digest and the week's.
+So flok produces the report's content and hands it over; nt renders and writes it, and installs
+no agent hooks of its own.
+
+What the agent itself writes stays with nt: at the end of a piece of work it runs `nt agent
+write` through the nt skill, with Done, Decisions and Open, and nt puts that into the same
+file; an import never touches those sections. A session's report therefore reads in two voices,
+flok's account of what happened and the agent's account of what it means.
+
+A report, as nt writes it from flok's record (the agent's own sections still empty):
+
+```markdown
+---
+type: agent-report
+schema: 1
+date: 2026-10-29
+created: 2026-10-29T23:22:58+01:00
+updated: 2026-10-29T23:23:02+01:00
+ended: 2026-10-29T23:23:02+01:00
+agent: claude-code
+model: claude-fable-5-1
+host: jaromac
+session: aaaa1111-2222-3333-4444-555566667777
+project: flok
+cwd: /Volumes/data/work/claude/flok
+git_branch: notes-reports
+git_head: da63aaf
+status: done
+turns: 3
+tools: 3
+---
+
+# flok
+
+## Done
+
+## Decisions
+
+## Open
+
+## Log
+
+- 23:22 started in /Volumes/data/work/claude/flok (notes-reports)
+- 23:23 All tests are green, the change is in main.go.
+  - Bash ×1, Edit ×1
+  - 23:22 blocked: permission: Bash
+- 23:23 Waiting for the explorer.
+  - 23:23 waited 1 s for agent
+- 23:23 The explorer found nothing new.
+  - Read ×1
+- 23:23 ended
+```
+
 ## What a report gets
 
 The hook on every machine keeps a journal under `~/.local/state/flok/sessions/<session id>.json`:

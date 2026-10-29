@@ -48,7 +48,8 @@ connect|disconnect` (or `c` on a row of the servers panel) changes the set while
 
 In **full** mode the local flok runs `flok serve --stdio` on the host: the same hooks, Claude
 registry and screen rules the sidebar would use there, merged on the host and streamed back as
-JSON lines over the ssh session. The sounds play here; the host's own hooks stay silent while it
+JSON lines over the ssh session, and, with `[notes]` on here, the journals of its sessions for
+their reports in your notes. The sounds play here; the host's own hooks stay silent while it
 is served (a `served` record in its state dir says so). In **plain** mode the local flok drives the
 host's tmux over ssh itself: titles and screen rules, no hook states, slower polls; for hosts
 where flok cannot be installed.

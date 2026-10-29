@@ -33,6 +33,13 @@
 - Agents on a full-mode host show only title and screen states: `flok install --claude` was not
   run on that host (`flok doctor` reports it). Sounds for remote agents play on the local side;
   `FLOK_DEBUG=1` writes the connection log to `remote.log` in the state dir.
+- No session reports in nt: `flok doctor` says whether `[notes]` is on, which nt it found and
+  when the last import was (`notes: off` means the key is not set; nt below 0.7.0 has no
+  `agent import`). A session outside tmux is never seen by flok. A failed import is one line in
+  `hook.log` in the state dir, per session; the next import carries the whole journal again.
+  For a host: its row's footer line says when another machine imports it (`flok host notes
+  <name> on --take`), `events.log` holds a record nt refused, and `hosts/<name>/notes-cursor`
+  moves with every import.
 - The phone shows nothing from this flok: `flok link status` says whether the link is on and
   connected (a `–` at the end of the `[flok]` line means switched off: `prefix U`), `flok doctor`
   why it is refused or out of reach. `flok-relay tail -url … -token <phone token>` shows what

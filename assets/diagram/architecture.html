@@ -92,16 +92,20 @@
   <h3>state dir</h3>
   <p><code>~/.local/state/flok</code><br>a record per agent pane, seen marks</p>
 </div>
-<div class="box" style="left:40px;top:660px;width:500px;height:80px">
+<div class="box" style="left:40px;top:646px;width:236px;height:94px">
   <h3>sounds <span class="m">and</span> keys</h3>
-  <p>a sound or the bell for an agent you are not looking at · <code>prefix o a A S @ u U</code> in your tmux</p>
+  <p>a sound or the bell when an agent needs you · <code>prefix o a A S @ u U</code> in your tmux</p>
+</div>
+<div class="box" style="left:304px;top:646px;width:236px;height:94px">
+  <h3>notes <span class="m">·</span> <code>nt</code></h3>
+  <p>a report per session in your notes, from the hook's journal; nt makes the digests</p>
 </div>
 
 <!-- your servers -->
 <div class="panel" style="left:596px;top:82px;width:236px;height:262px"><div class="ptitle">your servers</div></div>
 <div class="box" style="left:612px;top:104px;width:204px;height:110px">
   <h3><span class="h">beta</span> <span class="m">· full</span></h3>
-  <p><code>flok serve --stdio</code> over ssh: the same hooks and merge there, streamed back as JSON lines</p>
+  <p><code>flok serve --stdio</code> over ssh: the same hooks and merge there, streamed back as JSON lines, its session journals too</p>
 </div>
 <div class="box" style="left:612px;top:226px;width:204px;height:102px">
   <h3><span class="h">gpu-1</span> <span class="m">· plain</span></h3>
@@ -158,6 +162,7 @@
     <path d="M304 560 C286 560, 286 470, 278 470" marker-end="url(#a)"/>     <!-- state dir → sidebar -->
     <path d="M158 392 L158 360" marker-end="url(#a)"/>                      <!-- sidebar draws -->
     <path d="M158 496 L158 524" marker-end="url(#a)"/>                      <!-- snapshot.json → bar -->
+    <path d="M422 630 L422 644" marker-end="url(#a)"/>                      <!-- journal → nt -->
   </g>
   <g fill="none" stroke="#3FD0D4" stroke-width="2">
     <path d="M556 160 L610 160" marker-end="url(#ac)" marker-start="url(#ac)"/>   <!-- ssh beta -->
@@ -177,4 +182,5 @@
 <div class="lab" style="left:896px;top:372px">pushes</div>
 <div class="lab" style="left:430px;top:364px">hooks</div>
 <div class="lab" style="left:166px;top:500px">snapshot.json</div>
+<div class="lab" style="left:430px;top:629px">journal</div>
 </body></html>
