@@ -14,6 +14,7 @@ import (
 	"github.com/w4jnl/flok/internal/hosts"
 	"github.com/w4jnl/flok/internal/install"
 	"github.com/w4jnl/flok/internal/launcher"
+	"github.com/w4jnl/flok/internal/notes"
 	"github.com/w4jnl/flok/internal/notify"
 	"github.com/w4jnl/flok/internal/remote"
 	"github.com/w4jnl/flok/internal/rules"
@@ -204,6 +205,22 @@ func runDoctor(cfg config.Config) int {
 		add("ok", "notify: %s posts to %s (%s) as %q", strings.Join(cfg.Notify.Events, "/"), u, cfg.Notify.Format, cfg.InstanceName())
 	} else {
 		add("ok", "notify: off ([notify] url posts blocked/done/error to your phone, e.g. an ntfy topic)")
+	}
+	switch nt := notes.Resolve(cfg.Notes.Command); {
+	case nt == "" && (cfg.Notes.Command == "" || cfg.Notes.Command == "off"):
+		add("ok", "notes: off ([notes] command = auto hands every session's report to nt; docs/notes.md)")
+	case nt == "":
+		add("warn", "notes: [notes] command = %q, but no such nt: session reports are not written", cfg.Notes.Command)
+	default:
+		if v, err := notes.Probe(nt); err != nil {
+			add("warn", "notes: %v", err)
+		} else if v < notes.Version {
+			add("warn", "notes: %s takes record version %d, this flok sends %d: upgrade nt", nt, v, notes.Version)
+		} else if last := notes.LastImport(config.StateDir()); last.IsZero() {
+			add("ok", "notes: %s writes the session reports (none imported yet)", nt)
+		} else {
+			add("ok", "notes: %s writes the session reports, last import %s ago", nt, time.Since(last).Round(time.Second))
+		}
 	}
 	doctorLink(cfg, add)
 

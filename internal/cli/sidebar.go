@@ -16,6 +16,7 @@ import (
 	"github.com/w4jnl/flok/internal/config"
 	"github.com/w4jnl/flok/internal/git"
 	"github.com/w4jnl/flok/internal/launcher"
+	"github.com/w4jnl/flok/internal/notes"
 	"github.com/w4jnl/flok/internal/remote"
 	"github.com/w4jnl/flok/internal/rules"
 	"github.com/w4jnl/flok/internal/state"
@@ -62,8 +63,12 @@ func sidebarDeps(cfg config.Config) ui.Deps {
 			debugf = func(format string, args ...any) { appendLog("remote.log", format, args...) }
 		}
 		extra, _ := remote.KeyMap(cfg.Keys.Map)
+		importer := ""
+		if notes.Resolve(cfg.Notes.Command) != "" { // [notes] on: this flok imports its hosts' session reports too
+			importer = cfg.InstanceName()
+		}
 		return remote.New(remote.Deps{Cfg: cfg, StateDir: config.StateDir(), Sink: sink, Rules: rules, Adapters: adapters, Debugf: debugf,
-			LocalPrefix: localPrefix(cfg, d.Inner), ExtraKeys: extra})
+			LocalPrefix: localPrefix(cfg, d.Inner), ExtraKeys: extra, NotesName: importer})
 	}
 	return d
 }

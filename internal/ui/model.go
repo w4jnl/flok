@@ -84,6 +84,7 @@ type Model struct {
 	linkTicking   bool              // a 1 s capture tick for them is scheduled
 	linkWarned    bool              // the footer already says the link is down
 	confirmRemove string            // host `x` asked to remove; the next key answers (y removes)
+	notesFailed   map[string]bool   // host/session whose import into nt failed and was logged
 	names         map[string]string // row names chosen with n, by pane ref (state.NamesFile)
 	renaming      bool              // the "name:" prompt is open for renameKey
 	renameKey     string
@@ -608,6 +609,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case remoteMsg:
 		cmd := m.onRemote(msg.Msg)
 		return m, batch(cmd, m.waitRemote())
+	case notesImportedMsg:
+		m.onNotesImported(msg)
+		return m, nil
 	case linkMsg: // the relay: a state change, or a command from the phone
 		if msg.from != m.linker { // a link that was replaced (flok link join): its last words
 			return m, nil

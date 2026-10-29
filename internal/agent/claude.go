@@ -54,7 +54,7 @@ func (Claude) MapHook(raw map[string]any) (Event, bool) {
 		return Event{}, false
 	}
 	name := str(raw, "hook_event_name")
-	ev := Event{Name: name, AgentSessionID: str(raw, "session_id"), Cwd: str(raw, "cwd"), ToolUseID: str(raw, "tool_use_id")}
+	ev := Event{Name: name, AgentSessionID: str(raw, "session_id"), Cwd: str(raw, "cwd"), ToolUseID: str(raw, "tool_use_id"), Model: str(raw, "model")}
 	switch name {
 	case "SessionStart":
 		ev.Kind = EvSessionStart
@@ -104,6 +104,7 @@ func (Claude) MapHook(raw map[string]any) (Event, bool) {
 		// can tell "done" from "paused until a background task wakes me": that is a waiting state.
 		// A monitor is a watch and counts as nothing (BackgroundTasks); the detail names it, so
 		// the events log shows what a turn ended behind.
+		ev.Message = str(raw, "last_assistant_message")
 		work, what := BackgroundTasks(raw)
 		if work != "" {
 			ev.Kind, ev.Reason, ev.Tool, ev.Detail = EvWaiting, "waiting", work, what
@@ -111,10 +112,10 @@ func (Claude) MapHook(raw map[string]any) (Event, bool) {
 		}
 		ev.Kind, ev.Detail = EvStop, what
 	case "StopFailure":
-		ev.Kind, ev.Reason = EvStop, "error"
+		ev.Kind, ev.Reason, ev.Message = EvStop, "error", str(raw, "last_assistant_message")
 	case "SessionEnd":
-		ev.Kind = EvSessionEnd
-		if r := str(raw, "reason"); r == "clear" || r == "resume" {
+		ev.Kind, ev.Reason = EvSessionEnd, str(raw, "reason") // the reason rides along for the session report
+		if ev.Reason == "clear" || ev.Reason == "resume" {
 			ev.Kind = EvSessionRefresh // a SessionStart follows immediately
 		}
 	default:

@@ -15,6 +15,7 @@ import (
 	"github.com/w4jnl/flok/internal/answer"
 	"github.com/w4jnl/flok/internal/config"
 	"github.com/w4jnl/flok/internal/hosts"
+	"github.com/w4jnl/flok/internal/notes"
 	"github.com/w4jnl/flok/internal/remote/proto"
 	"github.com/w4jnl/flok/internal/tmux"
 )
@@ -699,5 +700,62 @@ func TestSaveRemote(t *testing.T) {
 	}
 	if _, err := os.Stat(path); err != nil {
 		t.Fatal("today's file was swept")
+	}
+}
+
+// With NotesName the connection claims the host's session reports after the hello (with the
+// cursor), a report frame reaches the sink, a refusal names the holder, and a granted take
+// becomes an ordinary claim in the registry.
+func TestFullModeNotes(t *testing.T) {
+	h := newHarness(t, hosts.ModeFull)
+	if _, err := hosts.Update(h.dir, func(s *hosts.Set) error {
+		return s.Set("beta", func(x *hosts.Host) { x.Notes = "take" })
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cursor := time.Now().Add(-time.Hour).Round(0)
+	notes.SetCursor(hosts.Dir(h.dir, "beta"), cursor)
+	h.manager(func(d *Deps) { d.NotesName = "jaromac" })
+	p := connectFull(t, h)
+	if f := p.next(t); f.Type != proto.TypeVisible {
+		t.Fatalf("visible first, got %+v", f)
+	}
+	if f := p.next(t); f.Type != proto.TypeNotes || f.Name != "jaromac" || !f.On || !f.Take || !f.Since.Equal(cursor) {
+		t.Fatalf("claim %+v", f)
+	}
+	p.send(t, proto.Frame{Type: proto.TypeNotes, Name: "jaromac", On: true})
+	if msg := h.msg(func(m Msg) bool { return m.Notes != nil }, "notes answer"); !msg.Notes.On {
+		t.Fatalf("granted %+v", msg)
+	}
+	set, _ := hosts.Load(h.dir)
+	if set.Hosts[0].Notes != "" {
+		t.Fatalf("a granted take becomes an ordinary claim, got %q", set.Hosts[0].Notes)
+	}
+	p.send(t, proto.Frame{Type: proto.TypeReport, Report: &notes.Record{Version: 1, Agent: "claude-code", Session: "r1"}})
+	if msg := h.msg(func(m Msg) bool { return m.Report != nil }, "report"); msg.Report.Session != "r1" || msg.Host != "beta" {
+		t.Fatalf("report %+v", msg)
+	}
+	p.send(t, proto.Frame{Type: proto.TypeNotes, Name: "work", On: false})
+	if msg := h.msg(func(m Msg) bool { return m.Notes != nil && !m.Notes.On }, "refusal"); msg.Notes.Name != "work" {
+		t.Fatalf("refusal %+v", msg)
+	}
+}
+
+// With notes off for a host, the connection lets go of the claim it may hold instead of
+// claiming, so another machine can take the host at once.
+func TestFullModeNotesOff(t *testing.T) {
+	h := newHarness(t, hosts.ModeFull)
+	if _, err := hosts.Update(h.dir, func(s *hosts.Set) error {
+		return s.Set("beta", func(x *hosts.Host) { x.Notes = "off" })
+	}); err != nil {
+		t.Fatal(err)
+	}
+	h.manager(func(d *Deps) { d.NotesName = "jaromac" })
+	p := connectFull(t, h)
+	if f := p.next(t); f.Type != proto.TypeVisible {
+		t.Fatalf("visible first, got %+v", f)
+	}
+	if f := p.next(t); f.Type != proto.TypeNotes || f.Name != "jaromac" || f.On {
+		t.Fatalf("release %+v", f)
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/w4jnl/flok/internal/agent"
 	"github.com/w4jnl/flok/internal/config"
 	"github.com/w4jnl/flok/internal/launcher"
+	"github.com/w4jnl/flok/internal/notes"
 	"github.com/w4jnl/flok/internal/notify"
 	"github.com/w4jnl/flok/internal/state"
 	"github.com/w4jnl/flok/internal/tmux"
@@ -125,5 +126,13 @@ func runHook(cfg config.Config, args []string) (code int) {
 	}
 	st.AppendEvent(map[string]any{"at": now, "pane": pane, "agent": id, "event": ev.Name, "kind": ev.Kind,
 		"state": a.State, "reason": a.Reason, "tool": a.CurrentTool, "detail": detail, "sound": fx.Sound})
+	// The session's journal, what its report in nt is made of, always (a served host's serve
+	// streams it to the flok that drives it); the import only here, with [notes] on and nobody
+	// serving this state dir.
+	nt := ""
+	if !served {
+		nt = notes.Resolve(cfg.Notes.Command)
+	}
+	notes.Observe(st.Dir, pane, ev, nt, now, hookLog)
 	return 0
 }

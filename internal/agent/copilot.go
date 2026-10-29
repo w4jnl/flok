@@ -49,7 +49,7 @@ func (Copilot) MapHook(raw map[string]any) (Event, bool) {
 			return Event{}, false
 		}
 	case "agentStop":
-		ev.Kind = EvStop
+		ev.Kind, ev.Message = EvStop, str(raw, "lastAssistantMessage")
 	case "errorOccurred":
 		if rec, ok := raw["recoverable"].(bool); ok && !rec {
 			ev.Kind, ev.Reason = EvStop, "error"

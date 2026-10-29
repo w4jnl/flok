@@ -37,6 +37,7 @@ flok host add [<name>] <user@host|ssh alias> [--mode full|plain] [--socket name]
 flok host install <name> [--from file] [--version v] [--hooks] [--open] [--wait]   put or upgrade flok on the host from here
 flok host reconnect <name>        the running sidebar redials the host now
 flok host set <name> [--mode full|plain] [--target t] [--socket s] [--session s] [--flok p] [--term t]
+flok host notes <name> on|off [--take]   whether this machine writes the host's agents' session reports into nt
 flok host remove | connect | disconnect <name>
 flok host list [--json|--names]  |  flok host status [--json]  |  flok host front <name>|local|<N> [--focus]
 flok host next | prev | last | menu     rotate the server in front, or pick one from a tmux menu
@@ -165,6 +166,11 @@ token = ""                  # sent as Authorization: Bearer <token>
 format = "ntfy"             # ntfy: Title/Priority/Tags headers and a text line | json
 events = ["blocked", "done", "error"]
 
+[notes]                     # session reports into nt (nt agent import): the hook keeps a journal per agent
+                            # session and hands it to nt, which writes the report into your notes; remote
+                            # hosts' agents too (flok host notes <name> off leaves one out). docs/notes.md
+command = "off"             # off | auto: the nt on PATH | a path to nt
+
 [link]                      # flok on your phone: this flok's name, and the relay it dials out to (a join, flok link join, stands in for url, token and pin)
 name = ""                   # "" = the machine's short hostname
 url = ""                    # your flok-relay: wss://flok.example.net/link (https://flok.example.net works too); "" = off
@@ -193,7 +199,10 @@ brand = "#12999D"
 | `~/.local/state/flok/agents/` | one JSON record per agent pane, written by the hook |
 | `~/.local/state/flok/seen/` | when you last looked at each agent pane |
 | `~/.local/state/flok/names.json` | row names chosen with `n`, by pane (`%12`, `beta:%12`) |
-| `~/.local/state/flok/events.log` | every hook event with the resulting state, and every command from the phone (JSON lines) |
+| `~/.local/state/flok/events.log` | every hook event with the resulting state, every command from the phone, and a host's session record nt refused (JSON lines) |
+| `~/.local/state/flok/sessions/` | one journal per agent session, what its report in nt is made of; ended ones go after 14 days |
+| `~/.local/state/flok/notes-importer.json` | on a served host: the flok that imports its session reports, and when it was last seen |
+| `~/.local/state/flok/hosts/<name>/notes-cursor` | the newest record imported from that host; the host resends what changed after it |
 | `~/.local/state/flok/runtime.json` | the running outer session: panes, sockets, client tty, terminal app |
 | `~/.local/state/flok/snapshot.json` | the sidebar's merged view, read by flok-bar |
 | `~/.local/state/flok/flok-bar.pid` | the menu bar process started by `flok up` |

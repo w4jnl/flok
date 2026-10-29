@@ -186,6 +186,13 @@ type Config struct {
 	Hosts     Hosts     `toml:"hosts"`
 	Notify    Notify    `toml:"notify"`
 	Link      Link      `toml:"link"`
+	Notes     Notes     `toml:"notes"`
+}
+
+// Notes is the session reports into nt: the hook keeps a journal per session and hands it to
+// `nt agent import`, which writes the report into the notes repository (docs/notes.md).
+type Notes struct {
+	Command string `toml:"command"` // off (default) | auto: the nt on PATH | a path to nt
 }
 
 // InstanceName is what this flok calls itself in notifications: [link] name, else the short
@@ -218,6 +225,7 @@ func (n Notify) Wants(kind string) bool {
 func Default() Config {
 	return Config{
 		Notify:  Notify{Format: "ntfy", Events: []string{"blocked", "done", "error"}},
+		Notes:   Notes{Command: "off"},
 		Inner:   Inner{Socket: "default", ReattachOnDetach: false},
 		Outer:   Outer{Socket: "flok", Session: "flok", ExtraConf: "~/.config/flok/outer.extra.conf"},
 		Sidebar: Sidebar{Width: 28, RailWidth: 6, RailThreshold: 12, SessionsMaxRatio: 0.4, AgentRows: 2, SessionOrder: "index", AgentOrder: "stable", ShowBranch: true, Brand: true, BranchSource: "active_pane", PollMs: 1000, IdlePollMs: 3000, SpinnerMs: 250, FPS: 15, RegistryPollMs: 10000, ScreenPollMs: 2000, CaptureLines: 0, StaleWorkingMin: 30},

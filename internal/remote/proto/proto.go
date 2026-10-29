@@ -16,6 +16,7 @@ import (
 	"github.com/w4jnl/flok/internal/agent"
 	"github.com/w4jnl/flok/internal/answer"
 	"github.com/w4jnl/flok/internal/merge"
+	"github.com/w4jnl/flok/internal/notes"
 )
 
 const (
@@ -44,6 +45,8 @@ const (
 	TypeCapture = "capture" // local to remote: stream a pane's visible screen (On), or stop (the phone looks at it)
 	TypeScreen  = "screen"  // remote to local: a captured pane's screen, whenever it changed
 	TypeAck     = "ack"     // remote to local: the outcome of an answer (ID, Error)
+	TypeNotes   = "notes"   // local to remote: claim this host's session reports (Name, On, Take, Since); remote to local: who holds the claim (Name, On = granted)
+	TypeReport  = "report"  // remote to local: a session's record for nt (notes.Record), whenever it changed
 )
 
 // Frame is one line; Type says which payload field is set.
@@ -65,6 +68,12 @@ type Frame struct {
 	ID     string         `json:"id,omitempty"`
 	Answer *answer.Answer `json:"answer,omitempty"`
 	Screen *Screen        `json:"screen,omitempty"`
+	// notes: the importer's name, whether it claims (On) or lets go, whether it takes the claim
+	// from another (Take), and the cursor the host resends from (Since); report: the record
+	Name   string        `json:"name,omitempty"`
+	Take   bool          `json:"take,omitempty"`
+	Since  time.Time     `json:"since,omitzero"`
+	Report *notes.Record `json:"report,omitempty"`
 }
 
 // Screen is a pane's visible text, sent while captured (the phone is looking at it).
@@ -105,10 +114,12 @@ const (
 	FeatureLongText = "long-text"
 	FeatureFiles    = "files"
 	FeatureForm     = "form"
+	// FeatureNotes: streams the sessions' records (report frames) to the flok that claims them.
+	FeatureNotes = "notes"
 )
 
 // ServeFeatures is what this flok's serve advertises.
-var ServeFeatures = []string{FeatureKeys, FeaturePrefix, FeatureNotify, FeatureKeyMap, FeatureAnswer, FeatureLongText, FeatureFiles, FeatureForm}
+var ServeFeatures = []string{FeatureKeys, FeaturePrefix, FeatureNotify, FeatureKeyMap, FeatureAnswer, FeatureLongText, FeatureFiles, FeatureForm, FeatureNotes}
 
 // Has says whether the hello advertised a feature.
 func (h *Hello) Has(feature string) bool {

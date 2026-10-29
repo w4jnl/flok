@@ -22,6 +22,7 @@ import (
 	"github.com/w4jnl/flok/internal/launcher"
 	"github.com/w4jnl/flok/internal/merge"
 	"github.com/w4jnl/flok/internal/nav"
+	"github.com/w4jnl/flok/internal/notes"
 	"github.com/w4jnl/flok/internal/remote"
 	"github.com/w4jnl/flok/internal/remote/proto"
 	"github.com/w4jnl/flok/internal/snapshot"
@@ -43,6 +44,16 @@ type hostView struct {
 	snap    merge.Snapshot // its last merged view while connected
 	hasSnap bool
 	gen     uint64 // generation of the connection the view came from (remote.Msg.Gen)
+	// notesHolder is the flok that imports this host's session reports when it is not this
+	// one (the host refused our claim); "" otherwise
+	notesHolder string
+}
+
+// notesImportedMsg is the outcome of handing a host's session record to nt.
+type notesImportedMsg struct {
+	host, session string
+	updated       time.Time
+	err           error
 }
 
 type (
@@ -273,6 +284,9 @@ func (m *Model) refederate() {
 					m.snap.Warnings = append(m.snap.Warnings, h.Name+": "+v.detail)
 				}
 			}
+			if v.notesHolder != "" { // another machine imports its session reports
+				m.snap.Warnings = append(m.snap.Warnings, h.Name+": session reports go through "+v.notesHolder+" (flok host notes "+h.Name+" on --take)")
+			}
 			// a host whose flok cannot relay keys says so too: nothing else would
 			if m.d.Cfg.Hosts.Keys && v.state == remote.Connected && v.hello != nil && !v.hello.Has(proto.FeatureKeys) {
 				m.snap.Warnings = append(m.snap.Warnings, h.Name+": upgrade flok there, no key relay ("+strings.TrimSpace(versionWord(v.hello.Version))+") · I")
@@ -308,6 +322,23 @@ func (m *Model) onRemote(msg remote.Msg) tea.Cmd {
 	if msg.Screen != nil {
 		if m.linker != nil {
 			m.linker.Screen(agent.PaneRef{Host: msg.Host, ID: msg.Screen.Pane}.String(), msg.Screen.Text)
+		}
+		return nil
+	}
+	if msg.Report != nil { // a session's record from the host: nt here writes its report
+		m.remotes[msg.Host] = v
+		return m.importReport(msg.Host, *msg.Report)
+	}
+	if msg.Notes != nil {
+		holder := ""
+		if !msg.Notes.On {
+			holder = msg.Notes.Name
+		}
+		if v.notesHolder != holder {
+			v.notesHolder = holder
+			m.remotes[msg.Host] = v
+			m.refederate()
+			m.publish()
 		}
 		return nil
 	}
@@ -1020,4 +1051,40 @@ func versionWord(v string) string {
 		return " " + v
 	}
 	return ""
+}
+
+// importReport hands a host's session record to nt, with the host's alias as the record's host,
+// off the UI goroutine; the cursor moves on success and a failure is logged once per session.
+func (m *Model) importReport(host string, rec notes.Record) tea.Cmd {
+	nt := notes.Resolve(m.d.Cfg.Notes.Command)
+	if nt == "" {
+		return nil
+	}
+	rec.Host = host
+	return func() tea.Msg {
+		err := notes.Import(nt, rec)
+		return notesImportedMsg{host: host, session: rec.Session, updated: rec.Updated, err: err}
+	}
+}
+
+// onNotesImported records an import's outcome: the host's cursor (what the host need not
+// resend after a reconnect), or one events.log line per failing session.
+func (m *Model) onNotesImported(msg notesImportedMsg) {
+	if m.d.Store == nil {
+		return
+	}
+	key := msg.host + "/" + msg.session
+	if msg.err == nil {
+		notes.SetCursor(hosts.Dir(m.d.Store.Dir, msg.host), msg.updated)
+		delete(m.notesFailed, key)
+		return
+	}
+	if m.notesFailed == nil {
+		m.notesFailed = map[string]bool{}
+	}
+	if m.notesFailed[key] {
+		return
+	}
+	m.notesFailed[key] = true
+	m.d.Store.AppendEvent(map[string]any{"at": time.Now(), "source": "notes", "host": msg.host, "session": msg.session, "error": msg.err.Error()})
 }
