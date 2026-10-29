@@ -4,7 +4,7 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
-## Unreleased
+## 0.12.0 (2026-10-29)
 
 - **Session reports into nt.** `[notes] command = "auto"` (off by default) makes flok the one
   hook receiver for [nt](https://github.com/w4jnl/nt)'s agent reports: the hook keeps a

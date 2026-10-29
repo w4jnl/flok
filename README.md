@@ -29,7 +29,7 @@ and a Live Activity while agents work.
 
 ## Setup
 
-Current version: 0.11.1 · [release notes](CHANGELOG.md). Needs tmux 2.7 or newer (everything
+Current version: 0.12.0 · [release notes](CHANGELOG.md). Needs tmux 2.7 or newer (everything
 from 3.3) and Claude Code or Copilot CLI; details under [Requirements](#requirements).
 
 1. Install the binary. Homebrew, on macOS or Linux:
@@ -39,7 +39,7 @@ from 3.3) and Claude Code or Copilot CLI; details under [Requirements](#requirem
    Or a prebuilt static binary from the [releases page](https://github.com/w4jnl/flok/releases)
    (Linux and macOS, `amd64` and `arm64`, no Go, no root):
    ```sh
-   ver=0.11.1; os=$(uname -s | tr A-Z a-z); arch=$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')
+   ver=0.12.0; os=$(uname -s | tr A-Z a-z); arch=$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')
    curl -fsSLO "https://github.com/w4jnl/flok/releases/download/v$ver/flok_${ver}_${os}_${arch}.tar.gz"
    curl -fsSLO "https://github.com/w4jnl/flok/releases/download/v$ver/sha256sums.txt"
    shasum -a 256 -c --ignore-missing sha256sums.txt
@@ -211,7 +211,7 @@ What that means in practice:
   `brew upgrade`.
 - Bug reports with a reproduction are welcome; support is best effort.
 
-flok is at 0.11.1 (2026-10-28). [`CHANGELOG.md`](CHANGELOG.md) lists what changed in every
+flok is at 0.12.0 (2026-10-29). [`CHANGELOG.md`](CHANGELOG.md) lists what changed in every
 release, newest first; the same text is on each GitHub release.
 
 ## Credits and license
