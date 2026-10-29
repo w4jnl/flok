@@ -16,6 +16,7 @@ import (
 	"github.com/w4jnl/flok/internal/config"
 	"github.com/w4jnl/flok/internal/hosts"
 	"github.com/w4jnl/flok/internal/launcher"
+	"github.com/w4jnl/flok/internal/notes"
 	"github.com/w4jnl/flok/internal/remote"
 	"github.com/w4jnl/flok/internal/remote/proto"
 	"github.com/w4jnl/flok/internal/snapshot"
@@ -38,6 +39,10 @@ const hostUsage = `usage: flok host <command>
   set <name> [--mode full|plain] [--target t] [--socket s] [--session s] [--flok p] [--term t]
               change a host in place (an empty value clears the field); the sidebar reconnects
   remove <name>       forget the host (and its local cache)
+  notes <name> on|off [--take]
+              whether this machine writes the host's agents' session reports into nt
+              ([notes] in config.toml; on for every host by default); one machine imports a
+              host, --take takes that over from another (docs/notes.md)
   connect <name>      enable the host: the sidebar connects now and at every flok up
   disconnect <name>   disable the host: disconnect and stay disconnected across restarts
   list [--json|--names]
@@ -116,6 +121,8 @@ func (c hostCmd) run(args []string) int {
 		return c.install(args[1:])
 	case "reconnect":
 		return c.reconnect(args[1:])
+	case "notes":
+		return c.notes(args[1:])
 	}
 	fmt.Fprintf(c.errw, "flok host: unknown command %q\n\n%s\n", args[0], hostUsage)
 	return 2
@@ -291,16 +298,19 @@ func (c hostCmd) list(args []string) int {
 		return 0
 	}
 	tw := tabwriter.NewWriter(c.out, 0, 8, 2, ' ', 0)
-	fmt.Fprintln(tw, "NAME\tTARGET\tMODE\tENABLED\tLAST CONNECTED")
+	fmt.Fprintln(tw, "NAME\tTARGET\tMODE\tENABLED\tNOTES\tLAST CONNECTED")
 	for _, h := range set.Hosts {
-		enabled, last := "yes", "never"
+		enabled, last, nts := "yes", "never", "on"
 		if !h.Enabled {
 			enabled = "no"
+		}
+		if h.Notes != "" {
+			nts = h.Notes
 		}
 		if !h.LastConnected.IsZero() {
 			last = h.LastConnected.Local().Format("2006-01-02 15:04")
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", h.Name, h.Target, h.Mode, enabled, last)
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", h.Name, h.Target, h.Mode, enabled, nts, last)
 	}
 	_ = tw.Flush()
 	return 0
@@ -599,5 +609,47 @@ func (c hostCmd) set(args []string) int {
 	}
 	h, _ := set.Get(name)
 	fmt.Fprintf(c.out, "%s: %s, %s\n", h.Name, h.Target, h.Mode)
+	return 0
+}
+
+// notes sets whether this machine imports a host's session reports: on (the default with
+// [notes]), off, or on --take, which claims the host from the machine that imports it now.
+func (c hostCmd) notes(args []string) int {
+	if len(args) < 2 || args[1] != "on" && args[1] != "off" {
+		fmt.Fprintf(c.errw, "flok host notes: need <name> on|off [--take]\n\n%s\n", hostUsage)
+		return 2
+	}
+	name, mode := args[0], ""
+	switch {
+	case args[1] == "off":
+		mode = "off"
+	case len(args) == 3 && args[2] == "--take":
+		mode = "take"
+	case len(args) > 2:
+		fmt.Fprintf(c.errw, "flok host notes: unknown argument %s\n\n%s\n", args[2], hostUsage)
+		return 2
+	}
+	if err := hosts.ValidateName(name); err != nil {
+		return c.fail(err)
+	}
+	set, err := hosts.Update(c.dir, func(s *hosts.Set) error {
+		return s.Set(name, func(h *hosts.Host) { h.Notes = mode })
+	})
+	if err != nil {
+		return c.fail(err)
+	}
+	h, _ := set.Get(name)
+	switch mode {
+	case "off":
+		fmt.Fprintf(c.out, "%s: its agents' session reports are not written from here\n", h.Name)
+	case "take":
+		fmt.Fprintf(c.out, "%s: this machine takes over its session reports when the sidebar connects\n", h.Name)
+	default:
+		if notes.Resolve(c.cfg.Notes.Command) == "" {
+			fmt.Fprintf(c.out, "%s: session reports on for the host, but [notes] command is off here (config.toml)\n", h.Name)
+		} else {
+			fmt.Fprintf(c.out, "%s: its agents' session reports are written from here\n", h.Name)
+		}
+	}
 	return 0
 }

@@ -53,6 +53,15 @@ is served (a `served` record in its state dir says so). In **plain** mode the lo
 host's tmux over ssh itself: titles and screen rules, no hook states, slower polls; for hosts
 where flok cannot be installed.
 
+## Session reports from a host
+
+With `[notes]` on, a full-mode host's agents get session reports in your notes like the local
+ones: the host's `flok hook` keeps the journals, `serve` streams a changed one, and the nt here
+writes the report with the host's alias as its host (`beta--claude-code--api--1a2b3c4d.md`).
+Nothing on the host needs nt. One machine imports a host; `flok host notes <name> off` leaves a
+host out, `on --take` claims it from the machine that imports it now.
+[Session reports](notes.md)
+
 ## The servers panel
 
 The sidebar grows a **servers** panel above the sessions: local first, then the hosts in the

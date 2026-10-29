@@ -15,6 +15,7 @@ import (
 	"github.com/w4jnl/flok/internal/answer"
 	"github.com/w4jnl/flok/internal/merge"
 	"github.com/w4jnl/flok/internal/nav"
+	"github.com/w4jnl/flok/internal/notes"
 	"github.com/w4jnl/flok/internal/poller"
 	"github.com/w4jnl/flok/internal/remote/proto"
 	"github.com/w4jnl/flok/internal/state"
@@ -136,6 +137,25 @@ func Serve(ctx context.Context, d ServeDeps) error {
 	lastScreen := map[string]string{}
 	capTick := time.NewTicker(time.Second)
 	defer capTick.Stop()
+	// the sessions' records for the flok that claimed them (notes frame): every 2 s the
+	// journals that changed since the claim's cursor and since they were last sent go out
+	notesOn, notesSince, notesSent := false, time.Time{}, map[string]time.Time{}
+	notesTick := time.NewTicker(2 * time.Second)
+	defer notesTick.Stop()
+	sendReports := func() {
+		if !notesOn || d.Store == nil {
+			return
+		}
+		for _, j := range notes.All(d.Store.Dir) {
+			r := j.Record
+			if !r.Updated.After(notesSince) || !r.Updated.After(notesSent[r.Session]) {
+				continue
+			}
+			notesSent[r.Session] = r.Updated
+			rec := r
+			_ = write(proto.Frame{Type: proto.TypeReport, Report: &rec})
+		}
+	}
 	var lastBody []byte
 	var last proto.Snapshot
 	var lastSent time.Time
@@ -177,6 +197,8 @@ func Serve(ctx context.Context, d ServeDeps) error {
 					_ = write(proto.Frame{Type: proto.TypeScreen, Screen: &proto.Screen{Pane: pane, Text: text}})
 				}
 			})
+		case <-notesTick.C:
+			sendReports()
 		case <-tick.C:
 			if lastBody != nil && time.Since(lastSent) >= hb {
 				if err := sendSnap(last); err != nil {
@@ -205,6 +227,23 @@ func Serve(ctx context.Context, d ServeDeps) error {
 			case proto.TypeVisible:
 				if d.Store != nil {
 					_ = d.Store.SetTerminalFocus(f.On)
+				}
+			case proto.TypeNotes: // the local side claims this host's session reports, or lets go
+				if d.Store == nil || f.Name == "" {
+					continue
+				}
+				if !f.On { // the importer lets go: its claim ends with it
+					notesOn = false
+					notes.Release(d.Store.Dir, f.Name)
+					continue
+				}
+				holder, ok := notes.Claim(d.Store.Dir, f.Name, f.Take, time.Now())
+				if err := write(proto.Frame{Type: proto.TypeNotes, Name: holder, On: ok}); err != nil {
+					return err
+				}
+				if ok {
+					notesOn, notesSince, notesSent = true, f.Since, map[string]time.Time{}
+					sendReports()
 				}
 			case proto.TypePrefix: // the local prefix and the mapped keys: this tmux takes them while served
 				if keys != nil {

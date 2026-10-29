@@ -10,9 +10,18 @@ NTFY_LOG=$FH/ntfy.log
 NTFY_PID=$!
 for _ in $(seq 1 100); do [ -s "$FH/port" ] && break; sleep 0.1; done
 NTFY_PORT=$(cat "$FH/port")
-E2E_EXTRA_CONFIG=$(printf '[notify]\nurl = "http://127.0.0.1:%s/flok"\ntoken = "t0k"\n[link]\nname = "e2e"\n' "$NTFY_PORT")
+E2E_EXTRA_CONFIG=$(printf '[notify]\nurl = "http://127.0.0.1:%s/flok"\ntoken = "t0k"\n[link]\nname = "e2e"\n[notes]\ncommand = "auto"\n' "$NTFY_PORT")
 export E2E_EXTRA_CONFIG
 source "$(dirname "$0")/lib.sh"
+# a stand-in nt on PATH ([notes] command = auto): nt agent import appends each record to $NT_LOG
+NT_LOG=$FH/nt-imports.log
+cat > "$FAKE/nt" <<NT
+#!/bin/sh
+[ "\$1" = agent ] && [ "\$2" = import ] || exit 3
+[ "\$3" = --probe ] && { echo 1; exit 0; }
+cat >> "$NT_LOG"; echo >> "$NT_LOG"
+NT
+chmod +x "$FAKE/nt"
 
 # Hooks outside tmux are ignored and write nothing.
 printf '{"hook_event_name":"Stop"}' | TMUX_PANE= "$BIN" hook claude
@@ -26,6 +35,8 @@ budget=80; [ -n "${CI:-}" ] && budget=250   # shared CI runners start processes 
 expect "hook round trip < ${budget} ms (took ${ms} ms)" '^ok$' "$([ "$ms" -lt "$budget" ] && echo ok || echo slow)"
 wait_for "○ $PROJ *$" 3 || true
 expect "hooked agent shows without ~" "○ $PROJ *$" "$(capture)"
+expect_soon "the session's start is imported into nt (version, agent slug, session, cwd, the git head)" '"version":1,"agent":"claude-code","session":"abc","host":"","cwd":"'"$R"'",("branch":"[^"]+",)?"head":"[0-9a-f]+".*"state":"idle"' cat "$NT_LOG"
+expect "the journal is kept under sessions/" '^1$' "$(ls "$T/state/sessions" | grep -c '^abc\.json$' || true)"
 
 # Claude's registry says idle right until a prompt is submitted (and for a moment after): that must
 # not delay or hide the working state.
@@ -61,7 +72,9 @@ wait_for "[◐◓◑◒] $PROJ" 3 || true
 expect "tool end -> working again" "[◐◓◑◒] $PROJ +0:0[0-9]" "$(capture)"
 
 IN select-pane -t "$AGENT" -T "✳ fake-agent"
-hook claude '{"hook_event_name":"Stop","session_id":"abc","stop_hook_active":false}'
+hook claude '{"hook_event_name":"Stop","session_id":"abc","stop_hook_active":false,"last_assistant_message":"## Done\n\n- **Tests green.** Nothing else changed."}'
+expect_soon "the stop is imported: the turn's text (not its heading), its tools and the block it hit" '"state":"done","turns":1,"tools":1,"blocked_s":[0-9]+,.*"text":"Tests green. Nothing else changed.","tools":."Bash":1.,"events":..*"kind":"blocked","text":"permission: Bash"' cat "$NT_LOG"
+expect "the start, the block and the stop imported; the tool calls alone did not (three imports)" '^3$' "$(grep -c '"version":1' "$NT_LOG")"
 hook claude '{"hook_event_name":"Notification","session_id":"abc","notification_type":"agent_completed"}'
 wait_for 'done · 2' 3 || true
 snap=$(capture); echo "--- done ---"; printf '%s\n' "$snap" | grep -v '^ *$' | sed -n '4,6p'

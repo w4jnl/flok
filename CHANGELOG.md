@@ -4,6 +4,20 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
+## Unreleased
+
+- **Session reports into nt.** `[notes] command = "auto"` (off by default) makes flok the one
+  hook receiver for [nt](https://github.com/w4jnl/nt)'s agent reports: the hook keeps a
+  journal per session (the turns with the first line of the answer, the tools as names and
+  counts, permission blocks, questions, waits on background work, errors, compactions, the
+  totals) and hands it to `nt agent import` at the start, on a block, a wait, a Stop, an error
+  and the end, after its own work, so the sidebar never waits on nt. nt writes the report into
+  the notes repository and compiles the digests as before, and installs no hooks of its own
+  (needs nt 0.7.0 or newer). A full-mode host's agents are reported too: its serve streams
+  the journals to the flok that claims them (one machine per host, `flok host notes <name>
+  off|on --take`); nothing on the host needs nt. `flok doctor` shows the nt it found and the
+  last import. [docs/notes.md](docs/notes.md)
+
 ## 0.11.1 (2026-10-28)
 
 - **Fixed: a watch kept an agent paused.** Claude Code lists the comment watch on an artifact

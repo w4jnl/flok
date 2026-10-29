@@ -441,6 +441,27 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
   (`.privacySensitive`) on the Live Activity's names, places and labels and the card's screen
   lines; `LiveActivities.repaint` re-sends the running activities their content when it
   changes.
+- Session reports into nt (`internal/notes`, docs/notes.md): the hook's last step
+  (`notes.Observe`) feeds every event into a journal per agent session
+  (`$FLOK_STATE/sessions/<session id>.json`: `Record`, the contract nt imports, plus the open
+  block/wait and the import state), always, and on a start, block, wait, Stop, error or end
+  (`Apply` says when) spawns the detached worker `flok _notes-import <session> <nt>`
+  (`notes.Spawn`/`Finish`): it reads the git state (branch and head once, the head again at
+  the end; the hook's round trip carries no git) and, with nt resolved by the hook
+  (`notes.Resolve`: off | auto = nt on PATH | a path; "" when the state dir is served or
+  `[notes]` is off), execs `nt agent import` with the whole record, 2 s timeout, a failure
+  logged once per session; `Prune` sweeps ended journals after 14 days. The record carries nt's agent slugs (`claude-code`, `copilot-cli`),
+  the Stop's `last_assistant_message` first line (`Event.Message`, `Model` too), tool counts
+  (never arguments), and whole-session totals; nt owns the file format, the lock, the digests
+  and `nt agent write`. Remote hosts: a served host's hook journals and never imports; the
+  local side claims the host after the hello (`notes` frame: `Deps.NotesName` = the instance
+  name, `hosts.Host.Notes` "" on | off | take, the cursor from `hosts/<name>/notes-cursor`);
+  serve answers with the holder (`notes.Claim`, `notes-importer.json`, 7-day TTL) and, when
+  granted, sends `report` frames (`FeatureNotes`) every 2 s for journals changed since the
+  cursor; `ui.importReport` runs the import off the UI goroutine with the alias as `Host`,
+  `onNotesImported` moves the cursor or logs to events.log once; a refused claim is a footer
+  warning. m2 (a fake `nt` on PATH) and m10 (the claim, the report frame, the sidebar's import)
+  cover it.
 - `internal/ui/model.go` drives three independent poll cadences from config (`poll_ms` for the
   tmux snapshot, `registry_poll_ms`, `screen_poll_ms`) plus an fsnotify watch on the store so
   hook writes re-render immediately. CPU rules that are easy to undo by accident: an unchanged

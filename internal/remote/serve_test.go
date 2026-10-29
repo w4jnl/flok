@@ -13,6 +13,7 @@ import (
 	"github.com/w4jnl/flok/internal/answer"
 	"github.com/w4jnl/flok/internal/config"
 	"github.com/w4jnl/flok/internal/merge"
+	"github.com/w4jnl/flok/internal/notes"
 	"github.com/w4jnl/flok/internal/poller"
 	"github.com/w4jnl/flok/internal/remote/proto"
 	"github.com/w4jnl/flok/internal/state"
@@ -175,5 +176,114 @@ func TestTypeAnswerFilesAndLongText(t *testing.T) {
 	}
 	if c := ft.Calls[len(ft.Calls)-1]; c[0] != "set-buffer" || c[4] != "a\nb" || c[6] != "paste-buffer" {
 		t.Fatalf("long text: %q", c)
+	}
+}
+
+// The notes claim: a claimed serve streams the sessions' records (new and changed), refuses a
+// second importer while the first is fresh, and yields to --take.
+func TestServeNotes(t *testing.T) {
+	dir := t.TempDir()
+	st := state.New(dir)
+	cfg := config.Default()
+	cfg.Sounds.Enabled = false
+	cfg.Sidebar.PollMs = 200
+	ft := &tmuxtest.Fake{Screens: map[string]string{}}
+	inR, inW := io.Pipe()
+	outR, outW := io.Pipe()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- Serve(ctx, ServeDeps{
+			Hello: proto.Hello{Proto: proto.Version, Hostname: "beta", Features: proto.ServeFeatures},
+			NewPoller: func(s func(pane, kind string), onStore, onRestart func()) *poller.Poller {
+				return poller.New(poller.Deps{Cfg: cfg, Tmux: ft, Store: st, Sound: s, OnStoreEvent: onStore, OnServerRestart: onRestart})
+			},
+			Inner: ft, Store: st, In: inR, Out: outW, Heartbeat: time.Minute,
+		})
+	}()
+	frames := make(chan proto.Frame, 64)
+	go func() {
+		rd := proto.NewReader(outR)
+		for {
+			f, err := rd.Next()
+			if err != nil {
+				return
+			}
+			frames <- f
+		}
+	}()
+	next := func(typ string) proto.Frame {
+		t.Helper()
+		deadline := time.After(5 * time.Second)
+		for {
+			select {
+			case f := <-frames:
+				if f.Type == typ {
+					return f
+				}
+			case <-deadline:
+				t.Fatalf("no %s frame", typ)
+			}
+		}
+	}
+	now := time.Now()
+	write := func(session string, at time.Time) {
+		t.Helper()
+		if _, err := notes.Update(dir, session, func(j *notes.Journal) bool {
+			j.Record.Version, j.Record.Agent, j.Record.Session, j.Record.Created, j.Record.Updated = notes.Version, "claude-code", session, at, at
+			return true
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("s1", now.Add(-time.Hour))
+	write("s2", now)
+	next(proto.TypeHello)
+	// a claim with a cursor: only what changed after it comes, and the claim is answered
+	_ = proto.Write(inW, proto.Frame{Type: proto.TypeNotes, Name: "jaromac", On: true, Since: now.Add(-time.Minute)})
+	if f := next(proto.TypeNotes); !f.On || f.Name != "jaromac" {
+		t.Fatalf("claim answer %+v", f)
+	}
+	if f := next(proto.TypeReport); f.Report.Session != "s2" {
+		t.Fatalf("first report %+v", f.Report)
+	}
+	select {
+	case f := <-frames:
+		if f.Type == proto.TypeReport {
+			t.Fatalf("a record older than the cursor was sent: %+v", f.Report)
+		}
+	case <-time.After(300 * time.Millisecond):
+	}
+	// a change is sent by the ticker; the same record is not sent twice
+	write("s1", now.Add(time.Second))
+	if f := next(proto.TypeReport); f.Report.Session != "s1" {
+		t.Fatalf("changed report %+v", f.Report)
+	}
+	// another machine: refused while the claim is fresh, granted with take
+	_ = proto.Write(inW, proto.Frame{Type: proto.TypeNotes, Name: "work", On: true})
+	if f := next(proto.TypeNotes); f.On || f.Name != "jaromac" {
+		t.Fatalf("second importer must be refused: %+v", f)
+	}
+	_ = proto.Write(inW, proto.Frame{Type: proto.TypeNotes, Name: "work", On: true, Take: true})
+	if f := next(proto.TypeNotes); !f.On || f.Name != "work" {
+		t.Fatalf("take must be granted: %+v", f)
+	}
+	if h := notes.Holder(dir, time.Now()); h != "work" {
+		t.Fatalf("holder %q", h)
+	}
+	// the importer lets go: the claim is free again, and a stale name releases nothing
+	_ = proto.Write(inW, proto.Frame{Type: proto.TypeNotes, Name: "jaromac", On: false})
+	_ = proto.Write(inW, proto.Frame{Type: proto.TypeNotes, Name: "work", On: false})
+	_ = proto.Write(inW, proto.Frame{Type: proto.TypePing})
+	next(proto.TypePong)
+	if h := notes.Holder(dir, time.Now()); h != "" {
+		t.Fatalf("released, holder %q", h)
+	}
+	_ = inW.Close()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("serve must end on EOF")
 	}
 }

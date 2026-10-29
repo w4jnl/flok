@@ -6,9 +6,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/w4jnl/flok/internal/config"
 	"github.com/w4jnl/flok/internal/launcher"
+	"github.com/w4jnl/flok/internal/notes"
 )
 
 // Version is stamped at build time: -ldflags "-X github.com/w4jnl/flok/internal/cli.Version=v0.1.0".
@@ -136,6 +138,11 @@ func Main(args []string) int {
 			return report(launcher.AttachLoopHost(cfg, args[2]))
 		}
 		return report(launcher.AttachLoop(cfg))
+	case "_notes-import": // the hook's detached worker: git state, then nt agent import (notes.Finish); the hook chose the nt ("" = none here)
+		if len(args) == 3 {
+			notes.Finish(config.StateDir(), args[1], args[2], time.Now(), hookLog)
+		}
+		return 0
 	case "_focus":
 		return report(launcher.SetTerminalFocus(len(args) > 1 && args[1] == "1"))
 	case "completion":

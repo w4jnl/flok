@@ -144,6 +144,13 @@ const Template = `# flok configuration - https://github.com/w4jnl/flok
                               # agent, pane, kind, reason, at}
 # events = ["blocked", "done", "error"]
 
+[notes]                       # session reports into nt (github.com/w4jnl/nt): the hook keeps a journal
+                              # per agent session (turns, tools as names and counts, blocks, questions,
+                              # waits, errors) and hands it to nt agent import, which writes the session's
+                              # report into your notes; remote hosts' agents too (flok host notes <name> off
+                              # leaves one out). docs/notes.md
+# command = "off"             # off | auto: the nt on PATH | a path to nt
+
 [link]                        # flok on your phone: this flok's name, and the relay it dials out to
 # name = ""                   # "" = the machine's short hostname (home, office, …)
 # url = ""                    # your flok-relay: wss://flok.example.net/link (or https://flok.example.net);

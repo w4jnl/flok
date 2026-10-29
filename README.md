@@ -127,6 +127,11 @@ you already have, and reuses herdr's detection manifests and sounds under Apache
   honoured, TLS inside the link for a proxy that reads HTTPS; `prefix U` switches it off. A
   plain message through ntfy works too.
   [flok on your phone](docs/phone.md)
+- **Session reports into your notes** (opt-in): flok keeps a journal per agent session, the
+  turns with the tools, blocks, questions, waits and errors, and hands it to
+  [nt](https://github.com/w4jnl/nt), which writes the report into the notes repository and
+  compiles the daily and weekly digests; remote hosts' agents included, nt installs no hooks.
+  [Session reports](docs/notes.md)
 - **Zero footprint**: no plugin, no pane injected into your windows, no change to tmux.conf;
   the keys flok binds for the session are removed when it ends.
 - **tmux-resurrect** (opt-in): a restore resumes the same conversations.
@@ -180,6 +185,7 @@ back across servers: [Keys](docs/keys.md).
   keys inside a remote session, security
 - [flok on your phone](docs/phone.md): setting it up, what the app shows, the relay's API,
   switching the link off, proxies that read HTTPS, ntfy
+- [Session reports into nt](docs/notes.md): what a report gets, remote hosts, the record nt takes
 - [The menu bar and keep awake](docs/macos.md) (macOS)
 - [Keys](docs/keys.md): how they are bound, inside the sidebar, going back, the help popup
 - [Reference](docs/reference.md): every command, every configuration key, the files flok keeps

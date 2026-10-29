@@ -50,6 +50,7 @@ type Host struct {
 	Flok          string    `json:"flok,omitempty"`    // absolute path of the remote flok; "" = [hosts] serve_command
 	Session       string    `json:"session,omitempty"` // session the work pane attaches to or creates; "" = the most recent
 	Term          string    `json:"term,omitempty"`    // TERM for the attach when the host lacks tmux-256color
+	Notes         string    `json:"notes,omitempty"`   // session reports into nt from this host: "" = on (with [notes]), off, take (claim it from another machine)
 	AddedAt       time.Time `json:"added_at"`
 	LastConnected time.Time `json:"last_connected,omitzero"`
 }
@@ -163,6 +164,11 @@ func Validate(h Host) error {
 	if h.Term != "" && !termRe.MatchString(h.Term) {
 		return fmt.Errorf("term %q: a terminfo name", h.Term)
 	}
+	switch h.Notes {
+	case "", "off", "take":
+	default:
+		return fmt.Errorf("notes %q: on, off or take", h.Notes)
+	}
 	return nil
 }
 
@@ -231,7 +237,7 @@ func (s *Set) Set(name string, fn func(*Host)) error {
 // ConnChanged says whether the connection to the host must be rebuilt for the change from a to
 // b (target, mode, socket or the flok binary); the manager and the sidebar use the same rule.
 func ConnChanged(a, b Host) bool {
-	return a.Target != b.Target || a.Mode != b.Mode || a.Socket != b.Socket || a.Flok != b.Flok
+	return a.Target != b.Target || a.Mode != b.Mode || a.Socket != b.Socket || a.Flok != b.Flok || a.Notes != b.Notes
 }
 
 // AttachChanged says whether the work pane's ssh must be rebuilt for the change from a to b.

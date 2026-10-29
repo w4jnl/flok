@@ -17,6 +17,7 @@ import (
 	"github.com/w4jnl/flok/internal/hosts"
 	"github.com/w4jnl/flok/internal/merge"
 	"github.com/w4jnl/flok/internal/nav"
+	"github.com/w4jnl/flok/internal/notes"
 	"github.com/w4jnl/flok/internal/poller"
 	"github.com/w4jnl/flok/internal/remote/proto"
 	"github.com/w4jnl/flok/internal/rules"
@@ -36,6 +37,8 @@ type Msg struct {
 	Event   *proto.Event    // a sound to play here
 	Request string          // a flok key pressed inside the host's tmux: toggle, hide, jump, …
 	Screen  *proto.Screen   // a captured pane's screen (Capture), for the phone
+	Report  *notes.Record   // a session's record from the host, for nt (Host left "" by the host; the sink sets the alias)
+	Notes   *proto.Frame    // the host's answer to the notes claim: Name holds it, On = this flok
 	// Gen is the generation of the connection that sent the message: it grows at every
 	// (re)start of a host, and a consumer drops a message older than the last one it applied,
 	// so a replaced connection's last words never overwrite its successor's.
@@ -78,6 +81,9 @@ type Deps struct {
 	LocalPrefix string
 	// ExtraKeys are the mapped keys ([keys] map) a host's tmux binds next to flok's own.
 	ExtraKeys []KeyCommand
+	// NotesName is this flok's name as the importer of the hosts' session reports ([notes]
+	// on: the instance name); "" claims nothing.
+	NotesName string
 	// StopTimeout bounds how long a replacement waits for the connection it replaces to tear
 	// down, and how long Close waits for all of them; 0 = 5 s.
 	StopTimeout time.Duration
@@ -691,6 +697,14 @@ func (c *conn) attemptFull(ctx context.Context) (State, string) {
 		}
 		_ = send(f)
 	}
+	if n := c.m.d.NotesName; n != "" && hello.Has(proto.FeatureNotes) {
+		if c.host.Notes == "off" { // lets go of a claim this flok may hold, so another machine can take the host
+			_ = send(proto.Frame{Type: proto.TypeNotes, Name: n, On: false})
+		} else {
+			_ = send(proto.Frame{Type: proto.TypeNotes, Name: n, On: true, Take: c.host.Notes == "take",
+				Since: notes.Cursor(hosts.Dir(c.m.d.StateDir, c.host.Name))})
+		}
+	}
 	ping := time.NewTicker(pingEvery)
 	defer ping.Stop()
 	lastFrame := time.Now()
@@ -727,6 +741,17 @@ func (c *conn) attemptFull(ctx context.Context) (State, string) {
 				if f.Screen != nil {
 					c.emit(actx, Msg{Host: c.host.Name, State: Connected, Screen: f.Screen})
 				}
+			case proto.TypeReport:
+				if f.Report != nil {
+					c.emit(actx, Msg{Host: c.host.Name, State: Connected, Report: f.Report})
+				}
+			case proto.TypeNotes: // who imports this host's reports after our claim
+				if f.On && c.host.Notes == "take" { // taken: from now on an ordinary claim
+					c.persist(func(h *hosts.Host) { h.Notes = "" })
+					c.host.Notes, c.configured.Notes = "", ""
+				}
+				ans := f
+				c.emit(actx, Msg{Host: c.host.Name, State: Connected, Notes: &ans})
 			case proto.TypeAck:
 				c.mu.Lock()
 				ch := c.pending[f.ID]

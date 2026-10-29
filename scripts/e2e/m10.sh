@@ -2,6 +2,10 @@
 # M10: remote hosts, part 1 — the host registry, `flok serve --stdio` over a pipe, and `flok host
 # status`, through a fake ssh that runs the "remote" command locally against the isolated servers
 # e2e-beta (mode full) and e2e-gamma (mode plain). The sidebar's own use of hosts comes with part 2.
+NT_DIR=$(mktemp -d); NT_LOG=$NT_DIR/imports.log
+printf '#!/bin/sh\n[ "$1" = agent ] && [ "$2" = import ] || exit 3\n[ "$3" = --probe ] && { echo 1; exit 0; }\ncat >> "%s"; echo >> "%s"\n' "$NT_LOG" "$NT_LOG" > "$NT_DIR/nt"
+chmod +x "$NT_DIR/nt"
+E2E_EXTRA_CONFIG=$(printf '[notes]\ncommand = "%s"\n[link]\nname = "e2e-sidebar"\n' "$NT_DIR/nt"); export E2E_EXTRA_CONFIG
 E2E_INNER_PREFIX=C-a   # the local prefix; the fake hosts run stock tmux (C-b) and take it while connected
 source "$(dirname "$0")/lib.sh"
 fake_ssh_setup
@@ -34,7 +38,7 @@ json=$(cli host list --json)
 expect "list --json carries the version" '"version": 1' "$json"
 expect "gamma is plain with its socket" '"socket": "agents"' "$json"
 expect "hosts.json lives in the state dir" '"name": "beta"' "$(cat "$CLI_STATE/hosts.json")"
-expect "list shows enabled hosts never connected" '^beta +beta +full +yes +never' "$(cli host list)"
+expect "list shows enabled hosts never connected" '^beta +beta +full +yes +on +never' "$(cli host list)"
 expect "set changes a host in place" '^gamma: gamma, full$' "$(cli host set gamma --mode full --socket "")"
 expect "set validates" 'mode "ssh"' "$(cli host set gamma --mode ssh 2>&1 || true)"
 expect "set keeps the registry order" '^beta gamma$' "$(cli host list --names | tr '\n' ' ' | sed 's/ $//')"
@@ -54,6 +58,11 @@ expect "served record names the ssh client" '"ssh_client": "127.0.0.1' "$(cat "$
 printf '{"type":"ping"}\n' >&7
 wait_file "$SERVE_OUT" '"type":"pong"' 3 || true
 expect "ping is answered" '"type":"pong"' "$(cat "$SERVE_OUT")"
+expect "serve advertises the notes feature" '"features":\[[^]]*"notes"' "$(head -1 "$SERVE_OUT")"
+printf '{"type":"notes","name":"e2e-cli","on":true}\n' >&7   # claim the host's session reports
+wait_file "$SERVE_OUT" '"type":"notes"' 3 || true
+expect "the claim is granted to the first importer" '"type":"notes","on":true,"name":"e2e-cli"' "$(cat "$SERVE_OUT")"
+expect "the host records its importer" '"name":"e2e-cli"' "$(cat "$T/hosts/beta/state/notes-importer.json" 2>/dev/null)"
 printf '{"type":"visible","on":false}\n' >&7
 sleep 0.5
 expect "visible=false lands in the host's terminal-focus marker" '^0$' "$(cat "$T/hosts/beta/state/terminal-focus" 2>/dev/null)"
@@ -66,9 +75,15 @@ expect "the hook state arrives as a snap update" '"type":"snap".*"state":"blocke
 wait_file "$SERVE_OUT" '"type":"event"' 5 || true
 expect "the unsounded notification arrives as an event" '"type":"event","event":."pane":"%[0-9]+","kind":"blocked"' "$(cat "$SERVE_OUT")"
 expect "the host's hook played nothing while served" '^missing$' "$([ -e "$T/hosts/beta/played" ] && echo played || echo missing)"
+wait_file "$SERVE_OUT" '"type":"report".*"session":"r1"' 5 || true
+expect "the session's record travels as a report frame (the host journals, never imports)" '"type":"report","report":."version":1,"agent":"claude-code","session":"r1","host":"".*"state":"blocked"' "$(grep '"type":"report"' "$SERVE_OUT" | tail -1)"
+expect "nothing was imported on the host" '^missing$' "$([ -e "$T/hosts/beta/state/sessions/r1.json" ] && python3 -c "import json;print('imported' if json.load(open('$T/hosts/beta/state/sessions/r1.json')).get('imported_at') else 'missing')" || echo none)"
 printf '{"type":"goto","goto":{"session":"$999"}}\n' >&7   # the sidebar's parked pane is beta's client by now: aim at a session that is not there
 wait_file "$SERVE_OUT" '"type":"error"' 3 || true
 expect "a goto that fails on the host is an error frame, not a crash" '"error":"goto: ' "$(cat "$SERVE_OUT")"
+printf '{"type":"notes","name":"e2e-cli","on":false}\n' >&7   # the importer lets go: the host is free for another machine
+for _ in $(seq 1 30); do [ -e "$T/hosts/beta/state/notes-importer.json" ] || break; sleep 0.1; done
+expect "letting go drops the host's importer record" '^missing$' "$([ -e "$T/hosts/beta/state/notes-importer.json" ] && echo present || echo missing)"
 exec 7>&-   # the local side goes away
 for _ in $(seq 1 30); do kill -0 "$SERVE_PID" 2>/dev/null || break; sleep 0.1; done
 expect "serve exits on EOF" '^gone$' "$(kill -0 "$SERVE_PID" 2>/dev/null && echo alive || echo gone)"
@@ -158,6 +173,10 @@ expect "the sessions header names the front host" '^sessions · local' "$snap"
 wait_hosts "beta=connected gamma=connected" 25 || true   # beta may sit out a busy retry after part 1's serves
 expect "snapshot.json reports both hosts connected" '^beta=connected gamma=connected$' "$(snap_hosts)"
 wait_for ' beta +full +1' 10 || true
+# the sidebar claims beta's session reports: the r1 journal (changed since no cursor) comes as a
+# report frame and goes to nt here with the host's alias
+expect_soon "beta's session report is written through this machine's nt, host = the alias" '"session":"r1","host":"beta"' cat "$NT_LOG"
+expect_soon "the import moves the host's cursor" '^20' cat "$T/state/hosts/beta/notes-cursor"
 wait_for ' gamma +plain +1' 15 || true   # plain mode polls over the fake ssh with a 1 s floor: slower on a loaded runner; the count follows the first poll
 snap=$(capture)
 expect "beta's row names its mode and counts its agent" ' beta +full +1' "$snap"
