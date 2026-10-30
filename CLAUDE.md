@@ -465,7 +465,8 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
   the end; the hook's round trip carries no git) and, with nt resolved by the hook
   (`notes.Resolve`: off | auto = nt on PATH | a path; "" when the state dir is served or
   `[notes]` is off), execs `nt agent import` with the whole record, 2 s timeout, a failure
-  logged once per session; `Prune` sweeps ended journals after 14 days. The record carries nt's agent slugs (`claude-code`, `copilot-cli`),
+  logged once per session; a SessionStart after the end (a resume) clears `ended` again, so the
+  resumed part ends on its own; `Prune` sweeps ended journals after 14 days. The record carries nt's agent slugs (`claude-code`, `copilot-cli`),
   the Stop's `last_assistant_message` first line (`Event.Message`, `Model` too), tool counts
   (never arguments), and whole-session totals; nt owns the file format, the lock, the digests
   and `nt agent write`. Remote hosts: a served host's hook journals and never imports; the

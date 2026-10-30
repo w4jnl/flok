@@ -144,6 +144,9 @@ func Apply(j *Journal, ev agent.Event, now time.Time) (changed, imp bool) {
 	}
 	switch ev.Kind {
 	case agent.EvSessionStart:
+		if !r.Ended.IsZero() { // a resume after the end: the session goes on, its end is not final
+			r.Ended, r.EndReason, j.HeadAtEnd, j.LastError = time.Time{}, "", false, false
+		}
 		r.State, changed, imp = "idle", true, true
 	case agent.EvSessionRefresh:
 		switch ev.Name {
@@ -232,7 +235,8 @@ func Apply(j *Journal, ev agent.Event, now time.Time) (changed, imp bool) {
 	return changed, imp
 }
 
-// end closes the session: an open turn ends without a text, the git head is read again.
+// end closes the session: an open turn ends without a text, the git head is read again. A
+// SessionStart after it (a resume) reopens the record, so nt sees the resumed part end too.
 func end(j *Journal, reason string, now time.Time) {
 	r := &j.Record
 	if !r.Ended.IsZero() {
