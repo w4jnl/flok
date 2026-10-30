@@ -182,7 +182,7 @@ fields it does not know; a `version` above what it accepts is refused with exit 
 | `host` | `""`: this machine, nt uses its configured host; else flok's alias for the remote host the agent runs on, used as given |
 | `cwd`, `branch`, `head` | the directory the session started in and its git state; `head` is taken again at the end |
 | `model` | when the agent names it |
-| `created`, `updated`, `ended` | RFC 3339 with offset; `ended` is absent while the session runs; `created`'s day is the report's folder |
+| `created`, `updated`, `ended` | RFC 3339 with offset; `ended` is absent while the session runs, and is cleared again when the session is resumed after it (a SessionStart after the end); `created`'s day is the first report's folder |
 | `end_reason` | with `ended`: `error` (the last turn failed), `clear`, `logout`, `exit`, `other` |
 | `state` | live: `working`, `blocked`, `waiting`, `idle`, `done` |
 | `turns`, `tools`, `blocked_s`, `waited_s` | totals over the session; `turns` counts every turn opened, the open one and those dropped from `log` included |
@@ -201,7 +201,10 @@ shows at its start, without text, when it has events, so a live block is visible
 Stop; a turn without text is its time alone), with indented sub-bullets for the tools and the
 events, every line at most 200 characters, no HTML. Log lines older than the record's first
 turn are kept, so the record may drop old turns (flok keeps 200) while `turns`, `tools`,
-`blocked_s` and `waited_s` stay whole-session totals. The report's folder is the date of
-`created` in the offset it carries. nt's sessions map records the report
-as flok's, so `nt agent write` finds it as before and nt's own `agent start|turn|end` yield
-for it during the migration. A `cwd` in a temporary directory is skipped with exit 0.
+`blocked_s` and `waited_s` stay whole-session totals. A report holds one day of a session: the
+first sits in the folder of `created`'s date, in the offset it carries; a session that goes on
+on a later day, or after its end, gets a new report in that day's folder, linked to the earlier
+one with `continues` (nt newer than 0.8.0 does the split; older ones keep one file). nt's sessions
+map records the report as flok's, so `nt agent write` finds it as before and nt's own `agent
+start|turn|end` yield for it during the migration. A `cwd` in a temporary directory is skipped
+with exit 0.

@@ -126,3 +126,30 @@ func TestBounds(t *testing.T) {
 		t.Fatalf("log %d turns %d", len(j.Record.Log), j.Record.Turns)
 	}
 }
+
+func TestApplyResumeReopensTheSession(t *testing.T) {
+	now := time.Now()
+	var j Journal
+	ev := func(kind agent.EventKind, name, reason string) agent.Event {
+		return agent.Event{Kind: kind, Name: name, Reason: reason, Agent: "claude", AgentSessionID: "s1", Cwd: "/x"}
+	}
+	Apply(&j, ev(agent.EvSessionStart, "SessionStart", ""), now)
+	Apply(&j, ev(agent.EvPrompt, "", ""), now.Add(time.Second))
+	Apply(&j, ev(agent.EvStop, "", "error"), now.Add(2*time.Second))
+	Apply(&j, ev(agent.EvSessionEnd, "SessionEnd", "prompt_input_exit"), now.Add(3*time.Second))
+	j.HeadAtEnd = true // the worker read the head at the end
+	if j.Record.Ended.IsZero() || j.Record.EndReason != "error" {
+		t.Fatalf("end: %+v", j.Record)
+	}
+	changed, imp := Apply(&j, ev(agent.EvSessionStart, "SessionStart", ""), now.Add(time.Hour))
+	r := j.Record
+	if !changed || !imp || !r.Ended.IsZero() || r.EndReason != "" || r.State != "idle" || j.HeadAtEnd || j.LastError || r.Turns != 1 {
+		t.Fatalf("resume: %+v head_at_end=%v last_error=%v", r, j.HeadAtEnd, j.LastError)
+	}
+	Apply(&j, ev(agent.EvPrompt, "", ""), now.Add(time.Hour+time.Second))
+	Apply(&j, ev(agent.EvStop, "", ""), now.Add(time.Hour+2*time.Second))
+	Apply(&j, ev(agent.EvSessionEnd, "SessionEnd", "prompt_input_exit"), now.Add(time.Hour+3*time.Second))
+	if r = j.Record; r.Ended != now.Add(time.Hour+3*time.Second) || r.EndReason != "exit" || r.Turns != 2 {
+		t.Fatalf("second end: %+v", r)
+	}
+}

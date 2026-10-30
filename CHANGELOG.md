@@ -4,6 +4,14 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
+## Unreleased
+
+- **Fixed: a resumed session's end reached nt once.** flok's journal kept the first end of an
+  agent session, so a session resumed after an exit never reported the end of its resumed part,
+  and nt could not tell a same-day resume from a late hook. A SessionStart after the end now
+  reopens the journal; with an nt newer than 0.8.0 the resumed part gets its own report in the folder of the day
+  it went on in.
+
 ## 0.13.0 (2026-10-30)
 
 - **The agent's feed on the phone.** An agent now opens on a readable view of its session:
