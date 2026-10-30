@@ -54,7 +54,7 @@ func (Claude) MapHook(raw map[string]any) (Event, bool) {
 		return Event{}, false
 	}
 	name := str(raw, "hook_event_name")
-	ev := Event{Name: name, AgentSessionID: str(raw, "session_id"), Cwd: str(raw, "cwd"), ToolUseID: str(raw, "tool_use_id"), Model: str(raw, "model")}
+	ev := Event{Name: name, AgentSessionID: str(raw, "session_id"), Cwd: str(raw, "cwd"), ToolUseID: str(raw, "tool_use_id"), Model: str(raw, "model"), Transcript: str(raw, "transcript_path")}
 	switch name {
 	case "SessionStart":
 		ev.Kind = EvSessionStart

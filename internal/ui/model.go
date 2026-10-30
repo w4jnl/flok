@@ -78,15 +78,16 @@ type Model struct {
 	pushPrev      map[string]agent.State
 	pushLast      map[string]time.Time
 	pushPrimed    bool
-	linker        *link.Client      // [link] url: the WebSocket to the relay (flok on the phone); nil = off
-	linkStatus    link.Status       // its last reported state
-	linkSubs      map[string]bool   // pane refs whose screen the phone is looking at
-	linkTicking   bool              // a 1 s capture tick for them is scheduled
-	linkWarned    bool              // the footer already says the link is down
-	confirmRemove string            // host `x` asked to remove; the next key answers (y removes)
-	notesFailed   map[string]bool   // host/session whose import into nt failed and was logged
-	names         map[string]string // row names chosen with n, by pane ref (state.NamesFile)
-	renaming      bool              // the "name:" prompt is open for renameKey
+	linker        *link.Client        // [link] url: the WebSocket to the relay (flok on the phone); nil = off
+	linkStatus    link.Status         // its last reported state
+	linkSubs      map[string]bool     // pane refs whose screen the phone is looking at
+	linkTicking   bool                // a 1 s capture tick for them is scheduled
+	feedTails     map[string]*feedSub // pane ref → the transcript Tail its feed is read from, or the note sent instead
+	linkWarned    bool                // the footer already says the link is down
+	confirmRemove string              // host `x` asked to remove; the next key answers (y removes)
+	notesFailed   map[string]bool     // host/session whose import into nt failed and was logged
+	names         map[string]string   // row names chosen with n, by pane ref (state.NamesFile)
+	renaming      bool                // the "name:" prompt is open for renameKey
 	renameKey     string
 	renameText    string
 	clientTTY     string
@@ -625,10 +626,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.linkTicking = false
 			return m, nil
 		}
-		return m, tea.Batch(m.captureSubs(), m.linkTick())
+		return m, tea.Batch(m.captureSubs(), m.feedSubs(), m.linkTick())
 	case linkScreensMsg:
 		for ref, text := range msg.screens {
 			m.linker.Screen(ref, text)
+		}
+		return m, nil
+	case linkFeedsMsg:
+		if m.linker != nil {
+			for _, pf := range msg.feeds {
+				m.linker.Feed(pf.ref, pf.feed)
+			}
 		}
 		return m, nil
 	case hostPanesMsg, hostToggleMsg:

@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/w4jnl/flok/internal/feed"
 	"net/http"
 	"net/url"
 	"strings"
@@ -353,6 +354,21 @@ func (c *Client) Screen(pane, text string) {
 		return
 	}
 	c.screens[pane] = text
+	c.mu.Unlock()
+	c.kick()
+}
+
+// Feed queues a subscribed pane's feed: a Reset, or what was added since the last one. It
+// goes in order with the events and acks; nothing is deduplicated, a Reset says it all.
+func (c *Client) Feed(pane string, f feed.Feed) {
+	f.Pane = pane
+	c.mu.Lock()
+	if c.off {
+		c.mu.Unlock()
+		return
+	}
+	c.queue = append(c.queue, wire.Frame{Type: wire.TypeFeed, Feed: &f})
+	c.trim()
 	c.mu.Unlock()
 	c.kick()
 }

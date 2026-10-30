@@ -15,6 +15,8 @@ final class Settings {
     var deviceToken: String { didSet { Keychain.set(deviceToken, for: "deviceToken") } }
     var fontSize: Double { didSet { defaults.set(fontSize, forKey: "fontSize") } }
     var wrapLines: Bool { didSet { defaults.set(wrapLines, forKey: "wrapLines") } }
+    /// An agent opens on its screen rather than its feed (the feed when it has one, else the screen).
+    var openOnScreen: Bool { didSet { defaults.set(openOnScreen, forKey: "openOnScreen") } }
     /// Voice: tidy the dictated text with the on-device model, send it as soon as the button
     /// is released, and the language ("" = the phone's).
     var voiceCleanup: Bool { didSet { defaults.set(voiceCleanup, forKey: "voiceCleanup") } }
@@ -49,6 +51,7 @@ final class Settings {
         deviceToken = launched ?? Keychain.get("deviceToken") ?? defaults.string(forKey: "deviceToken") ?? ""
         fontSize = defaults.object(forKey: "fontSize") as? Double ?? 11
         wrapLines = defaults.object(forKey: "wrapLines") as? Bool ?? true   // wrap until the user says otherwise
+        openOnScreen = defaults.bool(forKey: "openOnScreen")
         voiceCleanup = defaults.object(forKey: "voiceCleanup") as? Bool ?? true
         voiceSendOnRelease = defaults.bool(forKey: "voiceSendOnRelease")
         voiceLocale = defaults.string(forKey: "voiceLocale") ?? ""

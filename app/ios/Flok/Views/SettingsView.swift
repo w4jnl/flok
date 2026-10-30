@@ -81,12 +81,13 @@ struct SettingsView: View {
                 Text("Pushes come through the relay's APNs key. This phone tells the relay which Apple service its token belongs to (a build from Xcode: sandbox).")
             }
             Section {
+                Toggle("Open agents on the screen", isOn: $settings.openOnScreen)
                 Stepper("Font size \(Int(settings.fontSize))", value: $settings.fontSize, in: 5...24)
                 Toggle("Wrap long lines", isOn: $settings.wrapLines)
             } header: {
-                Text("Screen")
+                Text("Agent")
             } footer: {
-                Text("On the agent's screen a pinch zooms the text and a double tap fits the widest line; the Aa menu has the same.")
+                Text("An agent opens on its feed: what you asked, what it wrote, and one line per tool it ran, with nothing of the tools' output; the switch at the top shows the terminal instead, and this setting starts there. The font size and the wrapping are the screen's; a pinch zooms it and a double tap fits the widest line.")
             }
             Section {
                 LabeledContent("Recognition", value: Voice.engineName)

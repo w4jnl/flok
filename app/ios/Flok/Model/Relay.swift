@@ -12,6 +12,27 @@ struct Target: Hashable, Sendable {
     var pane: String // pane ref: %12, beta:%12
 }
 
+/// What the app holds of one agent's feed: the items in order (at most `keep`), and the
+/// instance's word on why there are none, when there are none to come.
+struct FeedState: Sendable, Equatable {
+    static let keep = 300
+
+    var items: [FeedItem] = []
+    var note: String?
+
+    /// Takes a frame: its items after the ones held (one sent twice counts once), its note.
+    mutating func take(_ f: Feed) {
+        if let note = f.note { self.note = note }
+        for it in f.items ?? [] where !items.contains(where: { $0.id == it.id }) {
+            items.append(it)
+        }
+        if items.count > Self.keep { items.removeFirst(items.count - Self.keep) }
+    }
+
+    /// Nothing to read here, and the instance said so: the screen is the view.
+    var empty: Bool { items.isEmpty && note != nil }
+}
+
 struct EventRecord: Identifiable, Sendable {
     var instance: String
     var event: AgentEvent
@@ -46,6 +67,8 @@ final class Relay {
     private(set) var instances: [InstanceState] = []
     private(set) var events: [EventRecord] = []
     private(set) var screens: [Target: String] = [:]
+    /// Each watched agent's feed: nil until the instance said anything about it.
+    private(set) var feeds: [Target: FeedState] = [:]
     /// Set by a notification tap: the view navigates there and clears it.
     var pendingOpen: Target?
     /// The last failure to hand the notification settings to the relay; nil once they got there.
@@ -191,6 +214,12 @@ final class Relay {
         case "screen":
             guard let sc = f.screen, let name = f.instance else { return }
             screens[Target(instance: name, pane: sc.pane)] = sc.text
+        case "feed":
+            guard let fd = f.feed, let name = f.instance else { return }
+            let t = Target(instance: name, pane: fd.pane)
+            var state = fd.reset == true ? FeedState() : (feeds[t] ?? FeedState())
+            state.take(fd)
+            feeds[t] = state
         default:
             break
         }
@@ -245,6 +274,7 @@ final class Relay {
     func unsubscribe(_ t: Target) {
         subscriptions.remove(t)
         screens[t] = nil
+        feeds[t] = nil
         if state == .connected { send(SubscribeFrame(instance: t.instance, pane: t.pane, on: false)) }
     }
 

@@ -56,6 +56,13 @@ func TestClaudeMapHook(t *testing.T) {
 	}
 }
 
+func TestClaudeMapHookTranscript(t *testing.T) {
+	ev, ok := Claude{}.MapHook(raw(t, `{"hook_event_name":"SessionStart","source":"startup","session_id":"s1","transcript_path":"/u/.claude/projects/p/s1.jsonl"}`))
+	if !ok || ev.Transcript != "/u/.claude/projects/p/s1.jsonl" {
+		t.Fatalf("the transcript path is kept: %+v", ev)
+	}
+}
+
 func TestCopilotMapHook(t *testing.T) {
 	ev, ok := MapHook("copilot", raw(t, `{"hook_event_name":"preToolUse","sessionId":"c1","toolName":"bash","toolArgs":{"command":"go test"}}`))
 	if !ok || ev.Kind != EvToolStart || ev.Tool != "bash" || ev.AgentSessionID != "c1" {

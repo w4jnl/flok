@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/w4jnl/flok/internal/feed"
 	"net/http"
 	"sort"
 	"strings"
@@ -126,6 +127,7 @@ type instance struct {
 	snap    *snapshot.Snapshot
 	subs    map[string]int         // pane → how many apps look at it
 	screens map[string]wire.Screen // pane → its last screen, while someone looks at it
+	feeds   map[string]*feed.Feed  // pane → its feed so far (a Reset for the next app that looks), while someone looks at it
 	waiting map[string]bool        // pane refs that wait on the user (unseen or blocked), as of the last snapshot
 	out     chan wire.Frame
 	pending map[string]chan string // answer / seen id → outcome ("" = ok)
@@ -517,6 +519,10 @@ func (s *Server) serveLink(ctx context.Context, conn frameConn, remote, how stri
 			if f.Screen != nil {
 				s.screen(in, gen, *f.Screen)
 			}
+		case wire.TypeFeed:
+			if f.Feed != nil {
+				s.feed(in, gen, *f.Feed)
+			}
 		case wire.TypeAck:
 			s.ack(in, f.ID, f.Error)
 		case wire.TypePhone:
@@ -845,6 +851,43 @@ func (s *Server) screen(in *instance, gen uint64, sc wire.Screen) {
 	for a := range s.apps {
 		if a.tenant == in.tenant && a.subs[key] {
 			a.send(wire.Frame{Type: wire.TypeScreen, Instance: in.name, Screen: &sc})
+		}
+	}
+}
+
+// feed forwards a pane's feed frame to the apps that look at the pane and keeps the feed so
+// far (a Reset replaces it, items are added up to feed.MaxItems), so the next app that looks
+// gets it at once as a Reset.
+func (s *Server) feed(in *instance, gen uint64, f feed.Feed) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if in.gen != gen {
+		return
+	}
+	if in.subs[f.Pane] > 0 {
+		if in.feeds == nil {
+			in.feeds = map[string]*feed.Feed{}
+		}
+		kept := in.feeds[f.Pane]
+		if f.Reset || kept == nil {
+			c := f
+			c.Reset = true
+			c.Items = append([]feed.Item(nil), f.Items...)
+			in.feeds[f.Pane] = &c
+		} else {
+			kept.Items = append(kept.Items, f.Items...)
+			if n := len(kept.Items) - feed.MaxItems; n > 0 {
+				kept.Items = append([]feed.Item(nil), kept.Items[n:]...)
+			}
+			if f.Note != "" {
+				kept.Note = f.Note
+			}
+		}
+	}
+	key := [2]string{in.name, f.Pane}
+	for a := range s.apps {
+		if a.tenant == in.tenant && a.subs[key] {
+			a.send(wire.Frame{Type: wire.TypeFeed, Instance: in.name, Feed: &f})
 		}
 	}
 }
@@ -1179,6 +1222,11 @@ func (s *Server) handleAppWS(w http.ResponseWriter, r *http.Request) {
 				if sc, ok := a.tenant.instances[f.Instance].screens[f.Pane]; ok { // someone else looks already
 					a.send(wire.Frame{Type: wire.TypeScreen, Instance: f.Instance, Screen: &sc})
 				}
+				if fd, ok := a.tenant.instances[f.Instance].feeds[f.Pane]; ok {
+					c := *fd
+					c.Items = append([]feed.Item(nil), fd.Items...)
+					a.send(wire.Frame{Type: wire.TypeFeed, Instance: f.Instance, Feed: &c})
+				}
 			case !f.On && a.subs[key]:
 				delete(a.subs, key)
 				s.unsubscribeLocked(a.tenant, f.Instance, f.Pane)
@@ -1241,6 +1289,7 @@ func (s *Server) unsubscribeLocked(t *tenant, name, pane string) {
 	if in.subs[pane] == 0 {
 		delete(in.subs, pane)
 		delete(in.screens, pane)
+		delete(in.feeds, pane)
 		if in.online {
 			select {
 			case in.out <- wire.Frame{Type: wire.TypeSubscribe, Pane: pane, On: false}:

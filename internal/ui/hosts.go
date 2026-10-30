@@ -325,6 +325,12 @@ func (m *Model) onRemote(msg remote.Msg) tea.Cmd {
 		}
 		return nil
 	}
+	if msg.Feed != nil {
+		if m.linker != nil {
+			m.linker.Feed(agent.PaneRef{Host: msg.Host, ID: msg.Feed.Pane}.String(), *msg.Feed)
+		}
+		return nil
+	}
 	if msg.Report != nil { // a session's record from the host: nt here writes its report
 		m.remotes[msg.Host] = v
 		return m.importReport(msg.Host, *msg.Report)

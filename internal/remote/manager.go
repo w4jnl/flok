@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/w4jnl/flok/internal/feed"
 	"io"
 	"strings"
 	"sync"
@@ -37,6 +38,7 @@ type Msg struct {
 	Event   *proto.Event    // a sound to play here
 	Request string          // a flok key pressed inside the host's tmux: toggle, hide, jump, …
 	Screen  *proto.Screen   // a captured pane's screen (Capture), for the phone
+	Feed    *feed.Feed      // a captured pane's feed, for the phone
 	Report  *notes.Record   // a session's record from the host, for nt (Host left "" by the host; the sink sets the alias)
 	Notes   *proto.Frame    // the host's answer to the notes claim: Name holds it, On = this flok
 	// Gen is the generation of the connection that sent the message: it grows at every
@@ -740,6 +742,10 @@ func (c *conn) attemptFull(ctx context.Context) (State, string) {
 			case proto.TypeScreen:
 				if f.Screen != nil {
 					c.emit(actx, Msg{Host: c.host.Name, State: Connected, Screen: f.Screen})
+				}
+			case proto.TypeFeed:
+				if f.Feed != nil {
+					c.emit(actx, Msg{Host: c.host.Name, State: Connected, Feed: f.Feed})
 				}
 			case proto.TypeReport:
 				if f.Report != nil {

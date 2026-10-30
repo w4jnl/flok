@@ -24,10 +24,11 @@ every session also leaves a report in your notes. The sidebar is modelled on
 **On the Mac**, the menu bar companion (opt-in, `[bar] enabled = true`): a badge for the agents
 waiting on you, a spinner while any works, the agents in a dropdown; a click brings the terminal
 to the front on that pane. **On the iPhone**, the app, through a relay you run: every flok in one
-list, an agent's live screen with keys to answer, a reply typed or dictated (hold the
-microphone), Claude's question forms filled in as forms, a screenshot or a photo sent to the
-agent, a push with Approve, Deny and Reply when one needs you (a long press shows its screen),
-and a Live Activity while agents work. **In your notes** (opt-in, with nt): a report per
+list, an agent's session as a readable feed (what you asked, what it wrote, one line per tool
+it ran) or its live screen, keys to answer, a reply typed or dictated (hold the microphone),
+Claude's question forms filled in as forms, a screenshot or a photo sent to the agent, a push
+with Approve, Deny and Reply when one needs you (a long press shows its screen), and a Live
+Activity while agents work. **In your notes** (opt-in, with nt): a report per
 session, the turns with their tools, blocks, questions and waits, kept with nt's daily and
 weekly digests; flok is the one hook receiver, nt the one writer of the notes.
 

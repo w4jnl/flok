@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/w4jnl/flok/internal/feed"
 	"io"
 	"path/filepath"
 	"sync"
@@ -135,6 +136,51 @@ func Serve(ctx context.Context, d ServeDeps) error {
 	// poller's goroutine (one tmux call), sent when the text changed; lastScreen lives there too
 	captured := map[string]bool{}
 	lastScreen := map[string]string{}
+	// the feed of a captured pane: its transcript's Tail, made from the hook record's path (the
+	// store's), or the note sent instead until a hook names one (looked for every tick). On the
+	// poller's goroutine like lastScreen.
+	type feedSub struct {
+		tail *feed.Tail
+		note string
+	}
+	tails := map[string]*feedSub{}
+	feedFor := func(pane string, records func() map[string]agent.Agent) {
+		sub := tails[pane]
+		if sub == nil {
+			sub = &feedSub{}
+			tails[pane] = sub
+		}
+		if sub.tail == nil {
+			a, ok := records()[pane]
+			note := ""
+			switch {
+			case ok && a.Transcript != "":
+				sub.tail = feed.NewTail(a.Transcript)
+			case ok && a.Kind == "copilot":
+				note = "Copilot CLI keeps no transcript flok can read: the screen is below"
+			case !ok:
+				note = "no feed without hooks (flok install): the screen is below"
+			default:
+				note = "no transcript named yet: the agent's next event names it; the screen is below"
+			}
+			if sub.tail == nil {
+				if note != sub.note {
+					sub.note = note
+					_ = write(proto.Frame{Type: proto.TypeFeed, Feed: &feed.Feed{Pane: pane, Reset: true, Note: note}})
+				}
+				return
+			}
+		}
+		f, err := sub.tail.Next()
+		if err != nil {
+			debugf("feed %s: %v", pane, err)
+			return
+		}
+		if f != nil {
+			f.Pane = pane
+			_ = write(proto.Frame{Type: proto.TypeFeed, Feed: f})
+		}
+	}
 	capTick := time.NewTicker(time.Second)
 	defer capTick.Stop()
 	// the sessions' records for the flok that claimed them (notes frame): every 2 s the
@@ -195,6 +241,19 @@ func Serve(ctx context.Context, d ServeDeps) error {
 					}
 					lastScreen[pane] = text
 					_ = write(proto.Frame{Type: proto.TypeScreen, Screen: &proto.Screen{Pane: pane, Text: text}})
+				}
+				if d.Store == nil {
+					return
+				}
+				var recs map[string]agent.Agent // the hook records, read once per tick and only when a pane needs them
+				records := func() map[string]agent.Agent {
+					if recs == nil {
+						recs = d.Store.LoadAgents()
+					}
+					return recs
+				}
+				for _, pane := range panes {
+					feedFor(pane, records)
 				}
 			})
 		case <-notesTick.C:
@@ -294,7 +353,7 @@ func Serve(ctx context.Context, d ServeDeps) error {
 					captured[pane] = true
 				} else {
 					delete(captured, pane)
-					enqueue(func() { delete(lastScreen, pane) }) // a later subscription gets the screen again
+					enqueue(func() { delete(lastScreen, pane); delete(tails, pane) }) // a later subscription gets the screen and a Reset again
 				}
 			case proto.TypeGoto:
 				if f.Goto == nil {

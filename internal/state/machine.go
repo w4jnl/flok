@@ -29,6 +29,9 @@ func Apply(a *agent.Agent, ev agent.Event, focused func() bool, now time.Time) E
 	if ev.Cwd != "" && (a.Cwd == "" || ev.Kind == agent.EvSessionStart || (ev.AgentSessionID != "" && ev.AgentSessionID != prevSession)) {
 		a.Cwd = ev.Cwd
 	}
+	if ev.Transcript != "" {
+		a.Transcript = ev.Transcript
+	}
 	a.LastEvent, a.LastEventAt, a.HasHooks, a.Source = ev.Name, now, true, "hook"
 	set := func(s agent.State) {
 		if a.State != s {

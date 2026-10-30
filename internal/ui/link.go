@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"github.com/w4jnl/flok/internal/feed"
 	"os"
 	"time"
 
@@ -33,12 +34,26 @@ type (
 	}
 	linkScreenTickMsg struct{}
 	linkScreensMsg    struct{ screens map[string]string } // pane ref → text
+	linkFeedsMsg      struct{ feeds []paneFeed }          // what the local tails read this tick
 	linkAnswerMsg     struct {
 		id, ref string
 		ans     answer.Answer
 		err     error
 	}
 )
+
+// paneFeed is one pane's feed frame, keyed by its pane ref.
+type paneFeed struct {
+	ref  string
+	feed feed.Feed
+}
+
+// feedSub is a subscribed pane's feed source: the Tail of its transcript once one is named, until
+// then the note the phone was given (sent once per wording; a hook may name the transcript later).
+type feedSub struct {
+	tail *feed.Tail
+	note string
+}
 
 // linkWarnAfter is how long the relay may be out of reach before the footer mentions it.
 const linkWarnAfter = 30 * time.Second
@@ -73,6 +88,7 @@ func (m *Model) relink() tea.Cmd {
 		m.setCapture(ref, false)
 	}
 	m.linkSubs = map[string]bool{}
+	m.feedTails = nil
 	m.linker = m.newLinker()
 	m.linkStatus, m.linkWarned = link.Status{}, false
 	if m.linker != nil {
@@ -181,6 +197,7 @@ func (m *Model) linkCommand(c link.Command) tea.Cmd {
 			m.setCapture(ref, false)
 		}
 		m.linkSubs = map[string]bool{}
+		m.feedTails = nil
 		return nil
 	case "subscribe":
 		a, ok := m.agentByRef(c.Pane)
@@ -190,6 +207,7 @@ func (m *Model) linkCommand(c link.Command) tea.Cmd {
 		}
 		if !c.On {
 			delete(m.linkSubs, ref)
+			delete(m.feedTails, ref)
 			m.setCapture(ref, false)
 			return nil
 		}
@@ -199,12 +217,13 @@ func (m *Model) linkCommand(c link.Command) tea.Cmd {
 		}
 		m.linkSubs[ref] = true
 		m.linker.Forget(ref)
+		delete(m.feedTails, ref) // a new subscription starts its feed with a Reset
 		m.setCapture(ref, true)
 		if m.linkTicking {
 			return nil
 		}
 		m.linkTicking = true
-		return batch(m.captureSubs(), m.linkTick())
+		return batch(m.captureSubs(), m.feedSubs(), m.linkTick())
 	case "seen":
 		a, ok := m.agentByRef(c.Pane)
 		if !ok {
@@ -305,8 +324,14 @@ func (m Model) setCapture(ref string, on bool) {
 		if notice := m.phoneUpgradeNotice(h.Name); notice != "" {
 			if on && m.linker != nil {
 				m.linker.Screen(ref, notice+"\n")
+				m.linker.Feed(ref, feed.Feed{Reset: true, Note: notice})
 			}
 			return
+		}
+		if on && m.linker != nil {
+			if v, ok := m.remotes[h.Name]; ok && v.hello != nil && !v.hello.Has(proto.FeatureFeed) {
+				m.linker.Feed(ref, feed.Feed{Reset: true, Note: "flok" + versionWord(v.hello.Version) + " on " + h.Name + " predates the feed: it needs an upgrade (flok host install " + h.Name + "); the screen is below"})
+			}
 		}
 		m.remote.Capture(h.Name, pr.ID, on)
 	}
@@ -420,6 +445,81 @@ func (m Model) captureSubs() tea.Cmd {
 			}
 		}
 		return linkScreensMsg{out}
+	}
+}
+
+// feedSubs reads the transcripts of the subscribed local panes off the loop (feedTails, one
+// Tail per pane, made here from the hook record's path) and hands what they add to the link.
+// A pane without a transcript gets a note instead, so the phone shows its screen: for good
+// (Copilot, a plain-mode host) or until a hook names one (no hooks yet, a record from before
+// this flok), which is looked for every tick. Full-mode hosts stream their own.
+func (m *Model) feedSubs() tea.Cmd {
+	type job struct {
+		ref  string
+		tail *feed.Tail
+	}
+	var jobs []job
+	var notes []paneFeed
+	for ref := range m.linkSubs {
+		pr, err := agent.ParsePaneRef(ref)
+		if err != nil {
+			continue
+		}
+		if m.feedTails == nil {
+			m.feedTails = map[string]*feedSub{}
+		}
+		sub := m.feedTails[ref]
+		if sub == nil {
+			sub = &feedSub{}
+			m.feedTails[ref] = sub
+		}
+		if sub.tail != nil {
+			jobs = append(jobs, job{ref, sub.tail})
+			continue
+		}
+		note := ""
+		a, found := m.agentByRef(ref)
+		switch {
+		case pr.Host != "":
+			if h, ok := m.hostSet.Get(pr.Host); !ok || h.Mode != hosts.ModePlain {
+				continue // a full-mode host's serve sends the feed; an unknown host nothing
+			}
+			note = "no feed from a plain-mode host: the screen is below"
+		case !found:
+			continue
+		case a.Transcript != "":
+			sub.tail = feed.NewTail(a.Transcript)
+			jobs = append(jobs, job{ref, sub.tail})
+			continue
+		case a.Kind == "copilot":
+			note = "Copilot CLI keeps no transcript flok can read: the screen is below"
+		case !a.HasHooks:
+			note = "no feed without hooks (flok install): the screen is below"
+		default:
+			note = "no transcript named yet: the agent's next event names it; the screen is below"
+		}
+		if note != sub.note {
+			sub.note = note
+			notes = append(notes, paneFeed{ref, feed.Feed{Reset: true, Note: note}})
+		}
+	}
+	if len(jobs) == 0 && len(notes) == 0 {
+		return nil
+	}
+	debugf := m.debugf
+	return func() tea.Msg {
+		out := notes
+		for _, j := range jobs {
+			f, err := j.tail.Next()
+			if err != nil {
+				debugf("link: feed %s: %v", j.ref, err)
+				continue
+			}
+			if f != nil {
+				out = append(out, paneFeed{j.ref, *f})
+			}
+		}
+		return linkFeedsMsg{out}
 	}
 }
 

@@ -101,8 +101,22 @@ Relay → app:
 {"type":"instance","instance":"home","inst":Instance} one changed: online/offline, a new snapshot
 {"type":"event","instance":"home","event":{"pane","host"?,"agent","kind","reason"?,"at"}}
 {"type":"screen","instance":"home","screen":{"pane","text"}}   while subscribed, when it changed
+{"type":"feed","instance":"home","feed":{"pane","reset"?,"note"?,"items"?:[Item…]}}   while subscribed: the agent's feed (below)
 {"type":"ack","id","instance","error"?}             the outcome of an answer / seen sent on the socket
 ```
+
+The **feed** is the readable view of an agent's session, read from its transcript on the
+instance: `items` are `{"id","kind","at"?,"text","tool"?}` in order, `kind` one of `prompt`
+(what the user typed), `text` (what the agent wrote, markdown), `tool` (a tool call as one
+line, `Ran Run the tests`, `Read notes.go`; `tool` is its name, for an icon) or `note` (a word
+about the session, `Context compacted`). Nothing of a tool's input or output is carried. A
+frame with `reset` carries the items so far (at most 80) and replaces what the app holds: the
+first after a subscription, again when the transcript was replaced; a frame without it adds
+to them (an item sent twice counts once, by `id`). `note` without items says why there is no
+feed for this agent (no transcript to read: Copilot, a pane without hooks, a plain-mode host;
+a host whose flok is older) and the app should show the screen. The relay keeps a watched
+pane's feed and sends it as a `reset` to the next app that subscribes. An instance without
+`feed` among its features sends none.
 
 App → relay:
 
@@ -125,8 +139,10 @@ sides; additions keep the protocol compatible.
 or its tenant removed): drop it from the list, its events with it.
 
 `features` is what the instance's link can do: `answer`, `screen`, `long-text` (an answer's
-text may be long and multi-line), `files` (an answer may carry files); absent for an older
-flok, which takes a one-line text of at most 200 characters and no files.
+text may be long and multi-line), `files` (an answer may carry files), `form` (a question
+form may be answered as choices), `feed` (a subscription brings the agent's feed besides its
+screen); absent for an older flok, which takes a one-line text of at most 200 characters and
+no files.
 
 `off` (with `online` false) means the instance's link was switched off there (`flok link off`),
 on purpose: show it as *off*, quietly, not as *offline* (out of reach), and expect it back only

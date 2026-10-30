@@ -48,6 +48,7 @@ type Agent struct {
 	Notifications  []Notification `json:"notifications,omitempty"`
 	Unseen         int            `json:"unseen"`
 	Cwd            string         `json:"cwd,omitempty"`
+	Transcript     string         `json:"transcript,omitempty"` // the agent's transcript file on its machine (hook records): the phone's feed is read from it
 	Branch         string         `json:"branch,omitempty"`
 	Source         string         `json:"source,omitempty"` // hook | registry | title | screen
 	HasHooks       bool           `json:"has_hooks"`

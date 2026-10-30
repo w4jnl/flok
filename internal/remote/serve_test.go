@@ -2,6 +2,7 @@ package remote
 
 import (
 	"context"
+	"github.com/w4jnl/flok/internal/feed"
 	"io"
 	"os"
 	"path/filepath"
@@ -285,5 +286,114 @@ func TestServeNotes(t *testing.T) {
 	case <-done:
 	case <-time.After(3 * time.Second):
 		t.Fatal("serve must end on EOF")
+	}
+}
+
+func TestServeFeed(t *testing.T) {
+	dir := t.TempDir()
+	st := state.New(dir)
+	cfg := config.Default()
+	cfg.Sounds.Enabled = false
+	cfg.Sidebar.PollMs = 200
+	ft := &tmuxtest.Fake{Screens: map[string]string{"%1": "hello\n"}}
+	inR, inW := io.Pipe()
+	outR, outW := io.Pipe()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- Serve(ctx, ServeDeps{
+			Hello: proto.Hello{Proto: proto.Version, Hostname: "beta", Features: proto.ServeFeatures},
+			NewPoller: func(s func(pane, kind string), onStore, onRestart func()) *poller.Poller {
+				return poller.New(poller.Deps{Cfg: cfg, Tmux: ft, Store: st, Sound: s, OnStoreEvent: onStore, OnServerRestart: onRestart})
+			},
+			Inner: ft, Store: st, In: inR, Out: outW, Heartbeat: time.Minute, Debugf: func(string, ...any) {},
+		})
+	}()
+	frames := make(chan proto.Frame, 64)
+	go func() {
+		rd := proto.NewReader(outR)
+		for {
+			f, err := rd.Next()
+			if err != nil {
+				return
+			}
+			frames <- f
+		}
+	}()
+	next := func(typ string) proto.Frame {
+		t.Helper()
+		deadline := time.After(5 * time.Second)
+		for {
+			select {
+			case f := <-frames:
+				if f.Type == typ {
+					return f
+				}
+			case <-deadline:
+				t.Fatalf("no %s frame", typ)
+			}
+		}
+	}
+	// %1 is a Claude pane whose hook named its transcript; %2 a Copilot pane
+	transcript := filepath.Join(dir, "s1.jsonl")
+	line := func(id, text string) string {
+		return `{"type":"assistant","uuid":"` + id + `","message":{"role":"assistant","content":[{"type":"text","text":"` + text + `"}]}}` + "\n"
+	}
+	if err := os.WriteFile(transcript, []byte(line("a1", "first")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	if _, _, err := st.Update("%1", func(a *agent.Agent) state.Effects {
+		a.Kind, a.AgentSessionID, a.State, a.StateSince, a.HasHooks, a.Transcript = "claude", "s1", agent.Working, now, true, transcript
+		return state.Effects{}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := st.Update("%2", func(a *agent.Agent) state.Effects {
+		a.Kind, a.AgentSessionID, a.State, a.StateSince, a.HasHooks = "copilot", "c1", agent.Working, now, true
+		return state.Effects{}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	next(proto.TypeHello)
+	_ = proto.Write(inW, proto.Frame{Type: proto.TypeCapture, Pane: "%1", On: true})
+	_ = proto.Write(inW, proto.Frame{Type: proto.TypeCapture, Pane: "%2", On: true})
+	got := map[string]*feed.Feed{}
+	for len(got) < 2 {
+		f := next(proto.TypeFeed)
+		got[f.Feed.Pane] = f.Feed
+	}
+	if f := got["%1"]; !f.Reset || len(f.Items) != 1 || f.Items[0].Text != "first" {
+		t.Fatalf("the Claude pane's feed starts with a Reset of what the transcript holds: %+v", f)
+	}
+	if f := got["%2"]; !f.Reset || f.Note == "" || len(f.Items) != 0 {
+		t.Fatalf("the Copilot pane gets a note: %+v", f)
+	}
+	fh, _ := os.OpenFile(transcript, os.O_APPEND|os.O_WRONLY, 0o644)
+	fh.WriteString(line("a2", "second"))
+	fh.Close()
+	if f := next(proto.TypeFeed); f.Feed.Pane != "%1" || f.Feed.Reset || len(f.Feed.Items) != 1 || f.Feed.Items[0].ID != "a2" {
+		t.Fatalf("what was added comes alone: %+v", f.Feed)
+	}
+	// let go and look again: a Reset with both
+	_ = proto.Write(inW, proto.Frame{Type: proto.TypeCapture, Pane: "%1", On: false})
+	time.Sleep(50 * time.Millisecond)
+	_ = proto.Write(inW, proto.Frame{Type: proto.TypeCapture, Pane: "%1", On: true})
+	for {
+		f := next(proto.TypeFeed)
+		if f.Feed.Pane != "%1" {
+			continue
+		}
+		if !f.Feed.Reset || len(f.Feed.Items) != 2 {
+			t.Fatalf("a new capture starts over: %+v", f.Feed)
+		}
+		break
+	}
+	inW.Close()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("serve did not end on EOF")
 	}
 }

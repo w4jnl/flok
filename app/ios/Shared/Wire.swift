@@ -50,6 +50,7 @@ struct Frame: Decodable, Sendable {
     var tenantInfo: TenantInfo?
     var event: AgentEvent?
     var screen: Screen?
+    var feed: Feed?
     var error: String?
 }
 
@@ -84,11 +85,14 @@ struct InstanceState: Decodable, Sendable, Identifiable {
     var takesFiles: Bool { features?.contains(Feature.files) ?? false }
     /// Whether a question form may be answered as choices there (else with keys on the screen).
     var takesForms: Bool { features?.contains(Feature.form) ?? false }
+    /// Whether a subscription brings an agent's feed besides its screen.
+    var sendsFeed: Bool { features?.contains(Feature.feed) ?? false }
 
     enum Feature {
         static let longText = "long-text"
         static let files = "files"
         static let form = "form"
+        static let feed = "feed"
     }
 }
 
@@ -215,6 +219,34 @@ struct AgentEvent: Decodable, Sendable, Identifiable {
 struct Screen: Decodable, Sendable {
     var pane: String
     var text: String
+}
+
+/// One entry of an agent's feed: what the user typed (`prompt`), what the agent wrote (`text`,
+/// markdown), a tool call in a line (`tool`, with the tool's name), or a word about the session
+/// (`note`). Nothing of a tool's input or output.
+struct FeedItem: Decodable, Sendable, Identifiable, Equatable {
+    var id: String
+    var kind: String
+    var at: Date?
+    var text: String
+    var tool: String?
+
+    enum Kind {
+        static let prompt = "prompt"
+        static let text = "text"
+        static let tool = "tool"
+        static let note = "note"
+    }
+}
+
+/// A pane's feed as it travels: a `reset` carries the items so far and replaces what the app
+/// has, a frame without it adds to them; `note` says why there is none (an agent without a
+/// transcript, a host whose flok is older).
+struct Feed: Decodable, Sendable {
+    var pane: String
+    var reset: Bool?
+    var note: String?
+    var items: [FeedItem]?
 }
 
 enum PaneRef {

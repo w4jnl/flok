@@ -14,14 +14,15 @@ or nginx; see [`deploy/relay`](../deploy/relay)). Every flok instance you want o
 out to it over a WebSocket with `[link] url` and `token`, so a Mac behind the office firewall
 or a home NAT needs nothing opened: outbound HTTPS is enough, and `HTTPS_PROXY` is honoured.
 The instance streams what the sidebar publishes anyway (the same view the menu bar reads,
-remote hosts included), the user-facing transitions, and the screen of a pane while the phone
-looks at it. Back come three things, nothing else: an **answer** (text, a few named keys and
+remote hosts included), the user-facing transitions, and, while the phone looks at a pane,
+its screen and its feed (the session read from the agent's transcript: prompts, answers and
+one line per tool, never a tool's input or output). Back come three things, nothing else: an **answer** (text, a few named keys and
 perhaps some files for an agent pane: a short line is typed with `send-keys`, a long or
 multi-line text pasted through a tmux buffer as one bracketed paste, files saved under the
 state dir in `attach/` and typed as their paths, which the agent reads; the keys are an
 allowlist, text is at most 8000 printable characters, at most six files of 4 MB, images or
 PDFs, only agent panes qualify, every command lands in `events.log` by size and file name,
-never the text), a **seen** mark, and a **subscription** to a pane's screen. Agents on the
+never the text), a **seen** mark, and a **subscription** to a pane (its screen and feed). Agents on the
 instance's remote hosts are answered the same way, through the main instance (full mode: the
 host's `flok serve` types it, with its own check, and keeps the files in its own state dir;
 plain mode: `send-keys` over ssh, the files streamed into `~/.local/state/flok/attach` there).
@@ -79,7 +80,16 @@ plain mode: `send-keys` over ssh, the files streamed into `~/.local/state/flok/a
   their host, the ones that need you counted; the filter in the corner narrows the list to
   *Needs you* (waiting or finished unseen), *Active* (working, waiting or paused) or both at
   once, in attention order, and remembers the choice.
-- **An agent**: its live screen (the pane's text, refreshed while you look; a pinch zooms it,
+- **An agent** opens on its **feed**: what you asked, what it wrote, as it wrote it (lists,
+  headings, code and tables rendered), and one quiet line per tool it ran, `Ran Run the
+  tests`, `Read notes.go`, `Edited model.go`, with nothing of the tools' input or output. It
+  is the session as the claude.ai app would show it: readable on a phone, reflowed to its
+  width, scrolling back through the whole session, following the end while you are there.
+  flok reads it from Claude Code's own transcript file on the Mac the agent runs on (the hook
+  names it), so nothing is guessed from the terminal. A Copilot agent, a pane without hooks
+  and a plain-mode host have no feed, and the app says so and shows the screen. The switch at
+  the top (⁝≡ / >_) shows the **screen** instead, and Settings › Agent can start there.
+- **The screen**: its live terminal (the pane's text, refreshed while you look; a pinch zooms it,
   long lines wrap: prose at words, a divider cut to the width rather than folded, a table kept
   whole in a strip that scrolls sideways, the right edge of a box wider than the phone left
   out rather than dropped on a row of its own; the *Aa* menu or Settings switches to scrolling
