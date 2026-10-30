@@ -4,6 +4,20 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
+## Unreleased
+
+- **The agent's feed on the phone.** An agent now opens on a readable view of its session:
+  what you asked, what it wrote (as markdown: lists, headings, code), and one line per tool it
+  ran, `Ran Run the tests`, `Read notes.go`, `Edited model.go`, with nothing of a tool's input
+  or output; a switch at the top shows the terminal as before, and Settings can start there.
+  It is read from Claude Code's transcript file (named in every hook payload) on the Mac the
+  agent runs on, by the sidebar for its own panes and by `flok serve` for a full-mode host's;
+  a Copilot agent, a hook-less pane and a plain-mode host keep the screen alone, and the app
+  says so. The feed reflows to the phone and scrolls back through the session, where the
+  screen is cut at the Mac's terminal width and holds the last rows only. The relay keeps a
+  watched pane's feed for the next viewer, as it keeps its screen; an older flok or relay
+  simply shows the screen (`feed` in the instance's features).
+
 ## 0.12.0 (2026-10-29)
 
 - **Session reports into nt.** `[notes] command = "auto"` (off by default) makes flok the one

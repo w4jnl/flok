@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/w4jnl/flok/internal/feed"
 	"io"
 	"time"
 
@@ -44,6 +45,7 @@ const (
 	TypeAnswer  = "answer"  // local to remote: type into an agent pane (an answer from the phone)
 	TypeCapture = "capture" // local to remote: stream a pane's visible screen (On), or stop (the phone looks at it)
 	TypeScreen  = "screen"  // remote to local: a captured pane's screen, whenever it changed
+	TypeFeed    = "feed"    // remote to local: a captured pane's feed (feed.Feed), a Reset first, then what was added
 	TypeAck     = "ack"     // remote to local: the outcome of an answer (ID, Error)
 	TypeNotes   = "notes"   // local to remote: claim this host's session reports (Name, On, Take, Since); remote to local: who holds the claim (Name, On = granted)
 	TypeReport  = "report"  // remote to local: a session's record for nt (notes.Record), whenever it changed
@@ -68,6 +70,7 @@ type Frame struct {
 	ID     string         `json:"id,omitempty"`
 	Answer *answer.Answer `json:"answer,omitempty"`
 	Screen *Screen        `json:"screen,omitempty"`
+	Feed   *feed.Feed     `json:"feed,omitempty"`
 	// notes: the importer's name, whether it claims (On) or lets go, whether it takes the claim
 	// from another (Take), and the cursor the host resends from (Since); report: the record
 	Name   string        `json:"name,omitempty"`
@@ -116,10 +119,12 @@ const (
 	FeatureForm     = "form"
 	// FeatureNotes: streams the sessions' records (report frames) to the flok that claims them.
 	FeatureNotes = "notes"
+	// FeatureFeed: streams a captured pane's feed (feed frames) besides its screen.
+	FeatureFeed = "feed"
 )
 
 // ServeFeatures is what this flok's serve advertises.
-var ServeFeatures = []string{FeatureKeys, FeaturePrefix, FeatureNotify, FeatureKeyMap, FeatureAnswer, FeatureLongText, FeatureFiles, FeatureForm, FeatureNotes}
+var ServeFeatures = []string{FeatureKeys, FeaturePrefix, FeatureNotify, FeatureKeyMap, FeatureAnswer, FeatureLongText, FeatureFiles, FeatureForm, FeatureNotes, FeatureFeed}
 
 // Has says whether the hello advertised a feature.
 func (h *Hello) Has(feature string) bool {

@@ -273,6 +273,21 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
   `/link` and `/api/ws` (coder/websocket `CompressionContextTakeover`, both ends; the read
   limits count inflated bytes), `flok-link/2` inside the tunnel, `link.Status.Compressed` →
   `snapshot.json` `link.compressed`, the relay logs `, compressed`).
+  The feed (`internal/feed`): the readable view of an agent's session for the phone, read from
+  Claude Code's transcript file (`transcript_path` in every hook payload → `agent.Event.Transcript`
+  → `Agent.Transcript` on the hook record): `feed.Parse` keeps the user's prompts, the
+  assistant's text blocks and each tool call as one line (`feed.Line`: `Ran <Bash description>`,
+  `Read <file>`; never input or output), skips thinking, tool results, side chains and the
+  tagged text Claude Code puts into user turns; `feed.Tail` follows one file and hands out a
+  `Reset` (the last `MaxItems`) then deltas. A subscription (the same `subscribe` as screens)
+  brings `feed` frames besides `screen` ones: the sidebar tails its own panes on the link tick
+  (`feedSubs`, `Model.feedTails`; a pane without a transcript, Copilot or hook-less or on a
+  plain-mode host, gets one `Note` so the app shows the screen), serve tails a full-mode host's
+  on its capture tick (`proto.TypeFeed`, `FeatureFeed`; an older serve earns a Note from the
+  sidebar), the relay forwards and keeps the feed per watched pane (a Reset for the next
+  viewer), and the app (`FeedView`, `FeedMarkdown` pure, `FeedState` in `Relay`) shows it or
+  the screen behind a switch (`AgentPane`; Settings › Agent "Open agents on the screen").
+  `wire.FeatureFeed` in the instance's features; m11 covers the local and the beta pane.
   `ui/link.go` feeds it from `publish` and `notePush`, acts on commands (`agentByRef` against
   `m.fed`, local answers through `remote.TypeAnswer` on the inner server, remote ones through
   `Manager.Answer`: an `answer` frame and its `ack` in full mode, `send-keys` over ssh in plain

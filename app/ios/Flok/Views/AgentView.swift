@@ -23,6 +23,7 @@ struct AgentView: View {
     @State private var voiceBase = "" // what the field held before the microphone was pressed
     @State private var pressStarted: Date?
     @State private var showForm = false // the agent's question form, filled in natively
+    @State private var paneChoice: AgentPane? // the user's feed/screen switch; nil = the default below
     @FocusState private var typing: Bool
 
     private var found: (InstanceState, Agent)? { relay.agent(target) }
@@ -30,6 +31,15 @@ struct AgentView: View {
     private var compact: Bool { vClass == .compact }
     private var inputShown: Bool { inputChoice ?? !compact }
     private var takesFiles: Bool { found?.0.takesFiles ?? false }
+    /// Whether the instance sends a feed at all; without it there is nothing to switch.
+    private var hasFeed: Bool { found?.0.sendsFeed ?? false }
+    /// What fills the middle: the user's switch, else the feed, unless the setting says the
+    /// screen, the instance sends no feed, or it said this agent has none (the note).
+    private var shownPane: AgentPane {
+        if let paneChoice { return paneChoice }
+        if settings.openOnScreen || !hasFeed || relay.feeds[target]?.empty == true { return .screen }
+        return .feed
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -43,8 +53,13 @@ struct AgentView: View {
                 formBanner(inst, a)
                 Divider()
             }
-            ScreenView(text: relay.screens[target], fontSize: settings.fontSize, wrap: settings.wrapLines, onZoom: { settings.fontSize = $0 })
-                .onTapGesture { typing = false } // a tap on the screen puts the keyboard away
+            switch shownPane {
+            case .feed:
+                FeedView(state: relay.feeds[target]) { typing = false } // a tap puts the keyboard away
+            case .screen:
+                ScreenView(text: relay.screens[target], fontSize: settings.fontSize, wrap: settings.wrapLines, onZoom: { settings.fontSize = $0 })
+                    .onTapGesture { typing = false }
+            }
             Divider()
             if inputShown {
                 // The keys get the whole row and the controls sit in the reply row, each in its
@@ -177,6 +192,7 @@ struct AgentView: View {
                 if !inst.online {
                     OfflineLabel(instance: inst).font(.caption)
                 }
+                if hasFeed { paneSwitch }
             }
             .padding(.horizontal, 12).padding(.vertical, 8)
         } else {
@@ -224,12 +240,23 @@ struct AgentView: View {
                 Text(target.pane).foregroundStyle(.secondary)
             }
             Spacer()
+            if hasFeed { paneSwitch }
             textMenu
             actionMenu
         }
         .font(.footnote)
         .lineLimit(1)
         .padding(.horizontal, 12).padding(.vertical, 5)
+    }
+
+    /// Feed or screen. The default follows the setting and what the instance sends.
+    private var paneSwitch: some View {
+        Picker("View", selection: Binding(get: { shownPane }, set: { paneChoice = $0 })) {
+            Image(systemName: "text.alignleft").tag(AgentPane.feed).accessibilityLabel("Feed")
+            Image(systemName: "terminal").tag(AgentPane.screen).accessibilityLabel("Screen")
+        }
+        .pickerStyle(.segmented)
+        .frame(width: 92)
     }
 
     private var textMenu: some View {
@@ -600,7 +627,7 @@ struct ScreenView: View {
 /// view's own geometry (iOS 18). Before it the follower hears nothing and the screen follows the
 /// bottom as it always did: a GeometryReader in the content, reporting its frame in the scroll
 /// view's coordinate space through a preference, gave one empty frame and never spoke again.
-private struct FollowWatch: ViewModifier {
+struct FollowWatch: ViewModifier {
     let follow: BottomFollower
 
     struct Place: Equatable {
@@ -620,6 +647,9 @@ private struct FollowWatch: ViewModifier {
         }
     }
 }
+
+/// The two views of an agent: its feed (what was said and done) and its screen (the terminal).
+enum AgentPane: Hashable { case feed, screen }
 
 struct KeyBar: View {
     struct Key: Identifiable {

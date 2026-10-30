@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/w4jnl/flok/internal/feed"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -188,6 +189,10 @@ func TestLinkSession(t *testing.T) {
 	c.Screen("%1", "hello\n") // same text: once
 	if f := r.next(t, wire.TypeScreen); f.Screen.Text != "hello\n" {
 		t.Fatalf("screen: %+v", f.Screen)
+	}
+	c.Feed("%1", feed.Feed{Reset: true, Items: []feed.Item{{ID: "a1", Kind: feed.KindText, Text: "hi"}}})
+	if f := r.next(t, wire.TypeFeed); f.Feed == nil || f.Feed.Pane != "%1" || !f.Feed.Reset || len(f.Feed.Items) != 1 {
+		t.Fatalf("feed: %+v", f.Feed)
 	}
 	select {
 	case f := <-r.got:

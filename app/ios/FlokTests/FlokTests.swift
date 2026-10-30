@@ -48,6 +48,49 @@ struct WireTests {
         #expect(sc.screen?.pane == "beta:%1" && sc.screen?.text == "hello\n")
     }
 
+    @Test func decodesAndKeepsTheFeed() throws {
+        let reset = try Wire.decoder.decode(Frame.self, from: Data(#"{"type":"feed","instance":"Home","feed":{"pane":"%1","reset":true,"items":[{"id":"u1","kind":"prompt","at":"2026-10-30T07:00:00Z","text":"fix it"},{"id":"a1","kind":"tool","text":"Ran go test","tool":"Bash"}]}}"#.utf8))
+        #expect(reset.feed?.pane == "%1" && reset.feed?.reset == true && reset.feed?.items?.count == 2)
+        #expect(reset.feed?.items?[1].tool == "Bash")
+        var state = FeedState()
+        state.take(reset.feed!)
+        let more = try Wire.decoder.decode(Frame.self, from: Data(#"{"type":"feed","instance":"Home","feed":{"pane":"%1","items":[{"id":"a1","kind":"tool","text":"Ran go test","tool":"Bash"},{"id":"a2","kind":"text","text":"Done."}]}}"#.utf8))
+        state.take(more.feed!)
+        #expect(state.items.map(\.id) == ["u1", "a1", "a2"], "an item sent twice counts once")
+        #expect(!state.empty)
+        var none = FeedState()
+        none.take(try Wire.decoder.decode(Frame.self, from: Data(#"{"type":"feed","instance":"Home","feed":{"pane":"%2","reset":true,"note":"Copilot CLI keeps no transcript flok can read: the screen is below"}}"#.utf8)).feed!)
+        #expect(none.empty && none.note?.hasPrefix("Copilot") == true)
+    }
+
+    @Test func splitsMarkdownIntoBlocks() {
+        let text = """
+        # Plan
+        First the **tests**, then the code.
+        A second line of the same paragraph.
+
+        - one
+          - nested
+        1. first
+        2) second
+
+        ```sh
+        go test ./...
+        ```
+        > a quote
+        ---
+        | a | b |
+        |---|---|
+        """
+        let kinds = FeedMarkdown.blocks(of: text).map(\.kind)
+        #expect(kinds == [.heading(1), .paragraph, .bullet(indent: 0), .bullet(indent: 1), .numbered(indent: 0, label: "1."), .numbered(indent: 0, label: "2)"), .code(lang: "sh"), .quote, .rule, .table])
+        let blocks = FeedMarkdown.blocks(of: text)
+        #expect(blocks[1].text == "First the **tests**, then the code. A second line of the same paragraph.")
+        #expect(blocks[6].text == "go test ./...")
+        #expect(blocks[9].lines.count == 2)
+        #expect(String(FeedMarkdown.inline("a **b** `c`").characters) == "a b c")
+    }
+
     @Test func encodesBodiesInSnakeCase() throws {
         let data = try Wire.encoder.encode(AnswerBody(instance: "Home", pane: "beta:%1", text: "y", keys: ["Enter"]))
         let s = String(decoding: data, as: UTF8.self)

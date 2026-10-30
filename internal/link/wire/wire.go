@@ -6,6 +6,7 @@
 package wire
 
 import (
+	"github.com/w4jnl/flok/internal/feed"
 	"time"
 
 	"github.com/w4jnl/flok/internal/answer"
@@ -26,6 +27,7 @@ const (
 	TypeSnap      = "snap"
 	TypeEvent     = "event"
 	TypeScreen    = "screen"
+	TypeFeed      = "feed" // instance to relay to app: a subscribed pane's feed (feed.Feed): a Reset with the items so far, then what was added
 	TypeAck       = "ack"
 	TypeBye       = "bye" // instance to relay, before it closes on purpose: Reason says why ("off")
 	TypeAnswer    = "answer"
@@ -48,6 +50,7 @@ type Frame struct {
 	Snap     *snapshot.Snapshot `json:"snap,omitempty"`
 	Event    *Event             `json:"event,omitempty"`
 	Screen   *Screen            `json:"screen,omitempty"`
+	Feed     *feed.Feed         `json:"feed,omitempty"`
 	Answer   *answer.Answer     `json:"answer,omitempty"`
 	Pane     string             `json:"pane,omitempty"` // seen / subscribe: a pane ref (%12, beta:%12)
 	On       bool               `json:"on,omitempty"`   // subscribe: start (true) or stop streaming the pane's screen
@@ -211,10 +214,11 @@ const (
 	FeaturePhone    = "phone"     // sends phone frames (flok phone pair | list | forget) and takes the replies
 	FeatureEnroll   = "enroll"    // sends enroll and tenant frames (flok link approve | list | forget, flok tenant) and takes the replies
 	FeatureForm     = "form"      // an answer may fill a question form (answer.Answer.Form): the instance types the choices into the agent's form
+	FeatureFeed     = "feed"      // streams a subscribed pane's feed (feed frames) besides its screen
 )
 
 // InstanceFeatures is what this flok's link advertises.
-var InstanceFeatures = []string{FeatureAnswer, FeatureScreen, FeatureLongText, FeatureFiles, FeaturePhone, FeatureEnroll, FeatureForm}
+var InstanceFeatures = []string{FeatureAnswer, FeatureScreen, FeatureLongText, FeatureFiles, FeaturePhone, FeatureEnroll, FeatureForm, FeatureFeed}
 
 // MaxFrame bounds one frame from an instance (a snapshot of a busy site is a few hundred KB).
 const MaxFrame = 8 << 20

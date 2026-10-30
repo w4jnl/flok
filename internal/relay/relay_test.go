@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/w4jnl/flok/internal/feed"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -284,11 +285,23 @@ func TestRelayEndToEnd(t *testing.T) {
 	if f := app.next(t, func(f wire.Frame) bool { return f.Type == wire.TypeScreen }); f.Screen.Text != "Allow Bash? [y/n]\n" || f.Instance != "home" {
 		t.Fatalf("screen: %+v", f)
 	}
+	// the feed: a Reset, then what was added; both reach the app as they are
+	cl.Feed("%1", feed.Feed{Reset: true, Items: []feed.Item{{ID: "u1", Kind: feed.KindPrompt, Text: "fix it"}, {ID: "a1", Kind: feed.KindTool, Tool: "Bash", Text: "Ran go test"}}})
+	if f := app.next(t, func(f wire.Frame) bool { return f.Type == wire.TypeFeed }); f.Instance != "home" || f.Feed == nil || !f.Feed.Reset || len(f.Feed.Items) != 2 {
+		t.Fatalf("feed reset: %+v", f)
+	}
+	cl.Feed("%1", feed.Feed{Items: []feed.Item{{ID: "a2", Kind: feed.KindText, Text: "Done."}}})
+	if f := app.next(t, func(f wire.Frame) bool { return f.Type == wire.TypeFeed }); f.Feed.Reset || len(f.Feed.Items) != 1 || f.Feed.Items[0].ID != "a2" {
+		t.Fatalf("feed delta: %+v", f)
+	}
 	app2 := dialApp(t, srv, "dev-tok")
 	app2.next(t, func(f wire.Frame) bool { return f.Type == wire.TypeInstances })
 	app2.send(t, wire.Frame{Type: wire.TypeSubscribe, Instance: "home", Pane: "%1", On: true}) // a second viewer: no second subscribe to the instance …
 	if f := app2.next(t, func(f wire.Frame) bool { return f.Type == wire.TypeScreen }); f.Screen.Text != "Allow Bash? [y/n]\n" {
 		t.Fatalf("… but the screen the first one has, at once: %+v", f) // the instance resends only a changed screen
+	}
+	if f := app2.next(t, func(f wire.Frame) bool { return f.Type == wire.TypeFeed }); !f.Feed.Reset || len(f.Feed.Items) != 3 || f.Feed.Items[2].ID != "a2" {
+		t.Fatalf("… and the feed so far, as one Reset: %+v", f.Feed)
 	}
 	app2.conn.Close(websocket.StatusNormalClosure, "bye")
 	// one look without a stream (the notification's expanded view) takes the held screen too

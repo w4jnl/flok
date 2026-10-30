@@ -150,13 +150,21 @@ expect "a relay refuses to start when nothing could link in" 'nothing could link
 "$RELAY" tail -url "http://127.0.0.1:$RELAY_PORT" -token "$DEV_TOK" -subscribe "e2e:$AGENT" > "$T/tail.out" 2>&1 &
 TAIL_PID=$!
 expect_soon "the app's WebSocket opens with the instances" '"type":"instances".*"name":"e2e"' cat "$T/tail.out"
-hook claude '{"hook_event_name":"SessionStart","source":"startup","session_id":"ph1","cwd":"'"$R"'"}'
+# the agent's transcript (Claude Code's JSON lines, named in every hook payload): the phone's feed is read from it
+transcript_line() { printf '{"type":"%s","uuid":"%s","isSidechain":false,"timestamp":"2026-10-30T07:00:0%s.000Z","message":{"role":"%s","content":[%s]}}\n' "$1" "$2" "$3" "$1" "$4"; }
+{ transcript_line user u1 0 '{"type":"text","text":"run the tests please"}'
+  transcript_line assistant a1 1 '{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"npm test","description":"Run the tests"}}'; } > "$T/ph1.jsonl"
+hook claude '{"hook_event_name":"SessionStart","source":"startup","session_id":"ph1","cwd":"'"$R"'","transcript_path":"'"$T"'/ph1.jsonl"}'
 hook claude '{"hook_event_name":"UserPromptSubmit","session_id":"ph1"}'
 hook claude '{"hook_event_name":"PermissionRequest","session_id":"ph1","tool_name":"Bash","tool_input":{"command":"npm test"},"tool_use_id":"t1"}'
 expect_soon "the permission request reaches the app as an event" '"type":"event","instance":"e2e","event":."pane":"'"$AGENT"'".*"kind":"blocked"' cat "$T/tail.out"
 expect_soon "… and the phone as a time-sensitive push with the permission category and flok's sound" '^/3/device/e2edevicetoken0001[|]e2e:'"$AGENT"'[|]'"$PROJ"'[|]● needs you: perm:Bash[|]FLOK_PERMISSION[|]1[|]e2e · [^|]+[|]flok-request.caf[|]time-sensitive[|]alert$' cat "$APNS_LOG"
 expect_soon "the subscription streams the agent's screen" '"type":"screen","instance":"e2e","screen":."pane":"'"$AGENT"'"' cat "$T/tail.out"
 expect "one look at the screen (the notification's expanded view)" '"pane":"'"$AGENT"'","text":"' "$(GET "/api/screen?instance=e2e&pane=$(printf %s "$AGENT" | sed 's/%/%25/')")"
+expect_soon "… and the agent's feed, read from its transcript: a reset with the prompt and the tool as one line" '"type":"feed","instance":"e2e","feed":."pane":"'"$AGENT"'","reset":true,"items":\[."id":"u1","kind":"prompt",[^]]*"text":"run the tests please"\},\{"id":"a1","kind":"tool",[^]]*"text":"Ran Run the tests","tool":"Bash"' cat "$T/tail.out"
+transcript_line assistant a2 2 '{"type":"text","text":"All green."}' >> "$T/ph1.jsonl"
+expect_soon "what the transcript adds follows on its own, without a reset" '"type":"feed","instance":"e2e","feed":."pane":"'"$AGENT"'","items":\[."id":"a2","kind":"text",[^]]*"text":"All green."' cat "$T/tail.out"
+expect "the feed carries no tool input" '^0$' "$(grep -c '"npm test"' "$T/tail.out" || true)"
 
 # --- the phone answers -------------------------------------------------------------------------
 expect "an answer is typed into the agent pane" '"ok":true' "$(POST /api/answer '{"instance":"e2e","pane":"'"$AGENT"'","text":"y","keys":["enter"]}')"
@@ -166,7 +174,7 @@ expect "the log holds no typed text" '^0$' "$(grep -c '"y"' "$T/state/events.log
 # a long reply with newlines is pasted through a tmux buffer; a file is saved under the state
 # dir and typed as its path (what an image for Claude Code looks like); the relay tells the app
 # what the instance takes, and refuses what it does not
-expect "the relay lists what the instance takes" '"features":\["answer","screen","long-text","files","phone","enroll","form"\]' "$(GET /api/instances)"
+expect "the relay lists what the instance takes" '"features":\["answer","screen","long-text","files","phone","enroll","form","feed"\]' "$(GET /api/instances)"
 expect "a long reply with newlines is taken" '"ok":true' "$(POST /api/answer '{"instance":"e2e","pane":"'"$AGENT"'","text":"first long line\nsecond long line","keys":["Enter"]}')"
 expect_soon "the pane shows both lines" '^first long line *$' IN capture-pane -p -J -t "$AGENT"
 expect "… the second as well" '^second long line *$' "$(IN capture-pane -p -J -t "$AGENT")"
@@ -214,7 +222,8 @@ expect_soon "beta's pane shows what was typed" '^n$' tmux -L e2e-beta capture-pa
 expect "a screenshot for beta's agent goes through its serve" '"ok":true' "$(POST /api/answer '{"instance":"e2e","pane":"beta:'"$BPANE"'","text":"on beta","file":{"name":"beta.png","data":"'"$PNG"'"}}')"
 expect_soon "… saved in beta's own state dir" '[0-9]{8}-[0-9]{6}-beta\.png' ls "$T/hosts/beta/state/attach"
 expect_soon "… and typed into beta's pane with its path there" "^on beta $T/hosts/beta/state/attach/[0-9-]+-beta\.png *\$" tmux -L e2e-beta capture-pane -p -J -t "$BPANE"
-rhook beta claude '{"hook_event_name":"SessionStart","source":"startup","session_id":"rb1","cwd":"'"$R"'"}'
+transcript_line assistant rb1a 5 '{"type":"text","text":"On beta."}' > "$T/rb1.jsonl"
+rhook beta claude '{"hook_event_name":"SessionStart","source":"startup","session_id":"rb1","cwd":"'"$R"'","transcript_path":"'"$T"'/rb1.jsonl"}'
 rhook beta claude '{"hook_event_name":"UserPromptSubmit","session_id":"rb1"}'
 rhook beta claude '{"hook_event_name":"PermissionRequest","session_id":"rb1","tool_name":"Bash","tool_input":{"command":"ls"},"tool_use_id":"rt1"}'
 expect_soon "a push for the remote agent names the host" '[|]'"$PROJ"'[|]● needs you: perm:Bash[|]FLOK_PERMISSION[|][0-9]*[|]e2e / beta( · [^|]*)?[|]' cat "$APNS_LOG"
@@ -222,6 +231,7 @@ kill "$TAIL_PID" 2>/dev/null || true
 "$RELAY" tail -url "http://127.0.0.1:$RELAY_PORT" -token "$DEV_TOK" -subscribe "e2e:beta:$BPANE" > "$T/tail.out" 2>&1 &
 TAIL_PID=$!
 expect_soon -t 10 "beta's screen streams through serve, the sidebar and the relay" '"type":"screen","instance":"e2e","screen":."pane":"beta:'"$BPANE"'","text":".*\\nn *\\n' cat "$T/tail.out"   # 3.2a pads captured lines with blanks
+expect_soon -t 10 "beta's feed comes the same way, read by its serve" '"type":"feed","instance":"e2e","feed":."pane":"beta:'"$BPANE"'","reset":true,"items":\[."id":"rb1a","kind":"text",[^]]*"text":"On beta."' cat "$T/tail.out"
 kill "$TAIL_PID" 2>/dev/null || true
 
 # --- the relay goes away and comes back --------------------------------------------------------

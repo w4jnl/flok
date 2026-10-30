@@ -37,8 +37,9 @@ type Event struct {
 	Reason         string    `json:"reason,omitempty"` // permission | question | elicitation | error
 	Form           *Form     `json:"form,omitempty"`   // question: the form the agent put up, when the hook saw it
 	ToolUseID      string    `json:"tool_use_id,omitempty"`
-	Message        string    `json:"message,omitempty"` // Stop: the agent's last message (for the session report)
-	Model          string    `json:"model,omitempty"`   // when the payload names it
+	Message        string    `json:"message,omitempty"`    // Stop: the agent's last message (for the session report)
+	Model          string    `json:"model,omitempty"`      // when the payload names it
+	Transcript     string    `json:"transcript,omitempty"` // the agent's transcript file, when the payload names it (the phone's feed reads it)
 	At             time.Time `json:"at"`
 }
 

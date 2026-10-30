@@ -181,6 +181,20 @@ func TestWaitingForBackgroundTasks(t *testing.T) {
 
 // The row is named after the directory the session started in: a cd Claude keeps between Bash
 // calls (reported as cwd on later hooks) must not rename it; a new session names it anew.
+func TestTranscriptKept(t *testing.T) {
+	now := time.Now()
+	a := &agent.Agent{}
+	Apply(a, agent.Event{Kind: agent.EvSessionStart, Agent: "claude", Name: "SessionStart", AgentSessionID: "s1", Transcript: "/t/s1.jsonl"}, nil, now)
+	Apply(a, agent.Event{Kind: agent.EvToolStart, Agent: "claude", Name: "PreToolUse", AgentSessionID: "s1", Tool: "Bash"}, nil, now)
+	if a.Transcript != "/t/s1.jsonl" {
+		t.Fatalf("a payload without the path keeps it: %q", a.Transcript)
+	}
+	Apply(a, agent.Event{Kind: agent.EvSessionStart, Agent: "claude", Name: "SessionStart", AgentSessionID: "s2", Transcript: "/t/s2.jsonl"}, nil, now)
+	if a.Transcript != "/t/s2.jsonl" {
+		t.Fatalf("a new session names its own: %q", a.Transcript)
+	}
+}
+
 func TestCwdPinnedToTheSessionStart(t *testing.T) {
 	now := time.Now()
 	a := &agent.Agent{}
