@@ -4,7 +4,7 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
-## Unreleased
+## 0.13.1 (2026-10-30)
 
 - **Fixed: a resumed session's end reached nt once.** flok's journal kept the first end of an
   agent session, so a session resumed after an exit never reported the end of its resumed part,
