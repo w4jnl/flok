@@ -359,7 +359,10 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
   worded like the sidebar (title agent, subtitle instance / host · session, flok's sounds
   `flok-request.caf`/`flok-done.caf`), a silent sync push when an agent stops waiting, and Live
   Activities (`relay/live.go`: the overview over all instances, started by push-to-start on an
-  idle → busy edge, updated on state changes, ended after a quiet; followed agents; tokens via
+  idle → busy edge, updated on state changes, ended after a quiet: the end at priority 10,
+  resent every `EndRetry` while the phone still lists the activity (`liveEnding`), given up
+  after `EndGiveUp`, closed by the phone's report without it or the service's 410, and the app
+  ends a quiet overview itself within 15 s of coming to the front; followed agents; tokens via
   `PUT /api/devices/{token}/activity`; while a phone runs the overview, done/error go as its
   update's `alert` instead of a notification (`liveAlert`, `Prefs.finishedInIsland`, a
   badge-only push for the badge, the notification as fallback; `finished_as_notification`

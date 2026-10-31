@@ -647,7 +647,7 @@ func TestOverviewCountsAndRanks(t *testing.T) {
 func TestLiveActivities(t *testing.T) {
 	push := &fakePush{}
 	s, err := New(Config{InstanceTokens: []string{"i"}, DeviceTokens: []string{"d"}, Push: push, LiveDelay: 10 * time.Millisecond,
-		QuietEnd: 150 * time.Millisecond, AgentLinger: time.Minute, SyncDelay: time.Hour, Logf: t.Logf})
+		QuietEnd: 150 * time.Millisecond, AgentLinger: time.Minute, EndRetry: 400 * time.Millisecond, EndGiveUp: 10 * time.Second, SyncDelay: time.Hour, Logf: t.Logf})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -725,11 +725,28 @@ func TestLiveActivities(t *testing.T) {
 	}
 	s.setSnap(in, 1, snap(idle)) // quiet: an update now, the end after QuietEnd
 	got = waitFor(5, "quiet: the update, then the end")
-	if got[3].Live.Event != "update" || got[4].Live.Event != "end" || got[4].Live.Dismissal.IsZero() {
-		t.Fatalf("end: %+v %+v", got[3].Live, got[4].Live)
+	if got[3].Live.Event != "update" || got[4].Live.Event != "end" || got[4].Live.Dismissal.IsZero() || !got[4].Live.Urgent {
+		t.Fatalf("end, urgent: %+v %+v", got[3].Live, got[4].Live)
 	}
-	if acts := s.devices.list()[0].Activities; len(acts) != 0 {
-		t.Fatalf("an ended activity is forgotten: %+v", acts)
+	// the end is not taken as delivered: the activity stays listed and the end goes again after
+	// EndRetry, the same dismissal date, until the phone reports the activity gone
+	if acts := s.devices.list()[0].Activities; len(acts) != 1 {
+		t.Fatalf("an ending activity stays until the phone reports it gone: %+v", acts)
+	}
+	got = waitFor(6, "the end is resent while the phone still lists the activity")
+	if got[5].Live.Event != "end" || !got[5].Live.Dismissal.Equal(got[4].Live.Dismissal) || !got[5].Live.Urgent {
+		t.Fatalf("resent end: %+v", got[5].Live)
+	}
+	if code, _ := api(t, srv, "d", "PUT", "/api/devices/phonetoken01/activity", map[string]any{"start_token": "starttoken01", "activities": []any{}}); code != 200 {
+		t.Fatal("report gone")
+	}
+	time.Sleep(600 * time.Millisecond)
+	waitFor(6, "the phone's report closes the end: no more resends")
+	s.mu.Lock()
+	ending := len(s.liveEnding)
+	s.mu.Unlock()
+	if ending != 0 {
+		t.Fatalf("ending still remembered: %d", ending)
 	}
 
 	// a followed agent: updates while it works, ends with a linger once it finished
@@ -737,7 +754,11 @@ func TestLiveActivities(t *testing.T) {
 		"activities": []any{map[string]any{"id": "F1", "token": "followtoken1", "kind": "agent", "instance": "home", "pane": "%1"}}}); code != 200 {
 		t.Fatal("report follow")
 	}
-	waitFor(6, "an idle followed agent ends at once") // idle → end
+	waitFor(7, "an idle followed agent ends at once") // idle → end
+	if code, _ := api(t, srv, "d", "PUT", "/api/devices/phonetoken01/activity", map[string]any{"start_token": "starttoken01", "activities": []any{}}); code != 200 {
+		t.Fatal("report follow gone")
+	}
+	time.Sleep(30 * time.Millisecond)
 	if acts := s.devices.list()[0].Activities; len(acts) != 0 {
 		t.Fatalf("ended: %+v", acts)
 	}
@@ -750,25 +771,31 @@ func TestLiveActivities(t *testing.T) {
 		"activities": []any{map[string]any{"id": "F2", "token": "followtoken2", "kind": "agent", "instance": "home", "pane": "%1"}}}); code != 200 {
 		t.Fatal("report follow 2")
 	}
-	got = waitFor(7, "the followed agent's state")
-	if l := got[6].Live; l.Event != "update" || l.ContentState.(LiveState).Rows[0].State != "working" {
+	got = waitFor(8, "the followed agent's state")
+	if l := got[7].Live; l.Event != "update" || l.ContentState.(LiveState).Rows[0].State != "working" {
 		t.Fatalf("follow update: %+v", l)
 	}
 	s.setSnap(in, 1, snap(snapshot.Agent{PaneID: "%1", Name: "api", State: agent.Done, Unseen: 1}))
-	got = waitFor(8, "finished: the end")
-	if l := got[7].Live; l.Event != "end" || l.ContentState.(LiveState).Rows[0].State != "done" || time.Until(l.Dismissal) < 30*time.Second {
+	got = waitFor(9, "finished: the end")
+	if l := got[8].Live; l.Event != "end" || l.ContentState.(LiveState).Rows[0].State != "done" || time.Until(l.Dismissal) < 30*time.Second {
 		t.Fatalf("follow end lingers: %+v", l)
 	}
-
-	// a refused activity token: only that token goes, the phone stays
+	// the service's 410 for the resent end closes it as well: the phone had let the activity go
 	push.mu.Lock()
 	push.fail = apns.ErrUnregistered
 	push.mu.Unlock()
+	waitFor(10, "the resent end meets the gone token")
+	time.Sleep(30 * time.Millisecond)
+	if acts := s.devices.list()[0].Activities; len(acts) != 0 {
+		t.Fatalf("a 410 for the end drops the activity: %+v", acts)
+	}
+
+	// a refused activity token: only that token goes, the phone stays
 	if code, _ := api(t, srv, "d", "PUT", "/api/devices/phonetoken01/activity", map[string]any{
 		"activities": []any{map[string]any{"id": "A2", "token": "overviewtok2", "kind": "overview"}}}); code != 200 {
 		t.Fatal("report 3")
 	}
-	waitFor(9, "the push to the stale token")
+	waitFor(11, "the push to the stale token")
 	time.Sleep(30 * time.Millisecond)
 	if list := s.devices.list(); len(list) != 1 || len(list[0].Activities) != 0 {
 		t.Fatalf("the phone stays, the token goes: %+v", list)
@@ -924,5 +951,59 @@ func TestRelayKeepsKnownFeatures(t *testing.T) {
 	})
 	if got := strings.Join(inst.Features, " "); got != wire.FeatureAnswer+" "+wire.FeatureFeed {
 		t.Fatalf("features through the relay: %q", got)
+	}
+}
+
+// An end the phone never answers is given up after EndGiveUp: resent meanwhile, then the
+// activity is dropped so an idle → busy edge can start a new overview.
+func TestLiveEndGivesUp(t *testing.T) {
+	push := &fakePush{}
+	s, err := New(Config{InstanceTokens: []string{"i"}, DeviceTokens: []string{"d"}, Push: push, LiveDelay: 10 * time.Millisecond,
+		QuietEnd: 50 * time.Millisecond, EndRetry: 60 * time.Millisecond, EndGiveUp: 250 * time.Millisecond, SyncDelay: time.Hour, Logf: t.Logf})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(s.Handler())
+	defer srv.Close()
+	_ = s.devices.add(device{Token: "phonetoken01", Name: "phone", Added: time.Now()})
+	in := place(s, &instance{name: "home", subs: map[string]int{}, gen: 1, online: true})
+	if code, _ := api(t, srv, "d", "PUT", "/api/devices/phonetoken01/activity", map[string]any{"start_token": "starttoken01",
+		"activities": []any{map[string]any{"id": "A1", "token": "overviewtok1", "kind": "overview"}}}); code != 200 {
+		t.Fatal("report")
+	}
+	s.setSnap(in, 1, &snapshot.Snapshot{Agents: []snapshot.Agent{{PaneID: "%1", Name: "api", State: agent.Working, StateSince: time.Now()}}})
+	s.setSnap(in, 1, &snapshot.Snapshot{Agents: []snapshot.Agent{{PaneID: "%1", Name: "api", State: agent.Idle}}})
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if list := s.devices.list(); len(list[0].Activities) == 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if list := s.devices.list(); len(list[0].Activities) != 0 {
+		t.Fatalf("given up: %+v", list[0].Activities)
+	}
+	push.mu.Lock()
+	defer push.mu.Unlock()
+	ends := 0
+	var dismissal time.Time
+	for _, n := range push.sent {
+		if n.Live != nil && n.Live.Event == "end" {
+			ends++
+			if dismissal.IsZero() {
+				dismissal = n.Live.Dismissal
+			} else if !n.Live.Dismissal.Equal(dismissal) {
+				t.Fatalf("the dismissal date moved: %v then %v", dismissal, n.Live.Dismissal)
+			}
+		}
+	}
+	if ends < 2 {
+		t.Fatalf("the end was sent %d times before giving up", ends)
+	}
+	s.mu.Lock()
+	ending := len(s.liveEnding)
+	s.mu.Unlock()
+	if ending != 0 {
+		t.Fatalf("still ending: %d", ending)
 	}
 }

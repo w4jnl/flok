@@ -241,8 +241,11 @@ finished newest first, working longest first; a working row has no tool, so a to
 not a push). The relay starts it by push-to-start on an idle → busy edge (once until the device
 reports it), updates it on every change (priority 10 when `waiting` grows, else 5), and ends it
 after two quiet minutes (nothing working, waiting or unseen). An **agent** activity, started by
-the app, follows that agent's row and ends when it is gone, or ten minutes after it finished. A
-refused activity token is dropped alone.
+the app, follows that agent's row and ends when it is gone, or ten minutes after it finished.
+An end goes at priority 10 and again every two minutes while the device still reports the
+activity, for ten minutes at most, so one lost push does not leave a stale activity on the
+phone; the device's next report without the activity (the app sees it end), or the service's
+410 for its token, closes it. A refused activity token is dropped alone.
 A mute matches the event's instance, host and agent name (a pane id changes when the agent
 restarts, its name does not); without `until` it lasts until removed, expired ones are
 dropped. The relay logs a push it did not send and why.

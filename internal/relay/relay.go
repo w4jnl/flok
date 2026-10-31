@@ -60,6 +60,9 @@ type Config struct {
 	QuietEnd time.Duration
 	// AgentLinger keeps a followed agent's finished activity on the Lock Screen; 0 = 10 min.
 	AgentLinger time.Duration
+	// EndRetry resends an activity's end while the phone still lists the activity; 0 = 2 min.
+	// EndGiveUp drops the activity when the phone has not reported it gone by then; 0 = 10 min.
+	EndRetry, EndGiveUp time.Duration
 	// LinkKey is the relay's own key for the encrypted link (/link/tls, tunnel.LoadOrCreate);
 	// nil = no encrypted link. TunnelOnly refuses the plain /link.
 	LinkKey    *tls.Certificate
@@ -87,6 +90,7 @@ type Server struct {
 	liveSent    map[string]string       // activity token → the content last sent
 	liveWaiting map[string]int          // activity token → its waiting count last sent (a rise is urgent)
 	liveStarted map[string]time.Time    // device token → a start push the phone has not answered yet
+	liveEnding  map[string]liveEnd      // activity token → its end on its way (resent until the phone reports it gone)
 	liveAlert   map[string]pendingAlert // device token → a finished agent's push for its overview's next update
 }
 
@@ -174,6 +178,12 @@ func New(cfg Config) (*Server, error) {
 	if cfg.AgentLinger <= 0 {
 		cfg.AgentLinger = 10 * time.Minute
 	}
+	if cfg.EndRetry <= 0 {
+		cfg.EndRetry = 2 * time.Minute
+	}
+	if cfg.EndGiveUp <= 0 {
+		cfg.EndGiveUp = 10 * time.Minute
+	}
 	if cfg.PairTTL <= 0 {
 		cfg.PairTTL = 5 * time.Minute
 	}
@@ -198,7 +208,7 @@ func New(cfg Config) (*Server, error) {
 	}
 	s := &Server{cfg: cfg, tenants: map[string]*tenant{}, apps: map[*app]struct{}{}, devices: ds, phones: ps, tstore: ts, istore: is, started: time.Now(),
 		pending: map[string]*joining{}, pairLimit: newIPLimiter(5, 30*time.Second, 15*time.Minute), codeLimit: newIPLimiter(5, 30*time.Second, 15*time.Minute),
-		liveSent: map[string]string{}, liveWaiting: map[string]int{}, liveStarted: map[string]time.Time{}, liveAlert: map[string]pendingAlert{}}
+		liveSent: map[string]string{}, liveWaiting: map[string]int{}, liveStarted: map[string]time.Time{}, liveAlert: map[string]pendingAlert{}, liveEnding: map[string]liveEnd{}}
 	for _, t := range ts.list() { // every tenant is live from the start, so its lists and badge exist before a member links
 		s.tenantLocked(t.ID)
 	}

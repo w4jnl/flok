@@ -188,7 +188,19 @@ func (s *Server) liveSoonLocked(t *tenant) {
 	t.liveDue = time.AfterFunc(s.cfg.LiveDelay, func() { s.live(t) })
 }
 
+// liveEnd is an activity's end on its way. One end push at priority 5, forgotten once the
+// service took it, left the island showing a stale overview for hours when that push was
+// lost: the end now goes at priority 10 and again every EndRetry while the phone still lists
+// the activity, up to EndGiveUp. The phone's report without the activity (the app sees it end
+// and reports), or the service's 410 for its token, closes it.
+type liveEnd struct {
+	dev         string    // the device's token: pruned by that phone's report
+	first, last time.Time // the first end sent, the last
+	dismissal   time.Time // the end's dismissal date, the same on every resend
+}
+
 type liveJob struct {
+	t      *tenant
 	dev    device
 	act    *Activity // nil: a start to dev.ActivityStart
 	n      apns.Notification
@@ -216,8 +228,33 @@ func (s *Server) live(t *tenant) {
 		})
 	}
 	endOverview := ov.quiet() && now.Sub(t.liveQuietSince) >= s.cfg.QuietEnd
+	devs := s.devices.listTenant(t.id)
+	s.pruneEndingLocked(devs, now)
 	var jobs []liveJob
-	for _, d := range s.devices.listTenant(t.id) {
+	var drops [][2]string // device token, activity token: ends given up on
+	retry := false
+	// end is an activity's end job: the first time, or again once EndRetry passed since the last;
+	// nil while the last is fresh, and nil for good (the activity dropped) after EndGiveUp
+	end := func(d device, a Activity, st LiveState, dismissal time.Time) *liveJob {
+		e, ok := s.liveEnding[a.Token]
+		switch {
+		case !ok:
+			e = liveEnd{dev: d.Token, first: now, last: now, dismissal: dismissal}
+		case now.Sub(e.first) >= s.cfg.EndGiveUp:
+			s.cfg.Logf("live: end %s → %s: not reported gone in %s, forgotten", a.Kind, d.label(), s.cfg.EndGiveUp.Round(time.Second))
+			s.endDoneLocked(a.Token)
+			drops = append(drops, [2]string{d.Token, a.Token})
+			return nil
+		case now.Sub(e.last) < s.cfg.EndRetry:
+			return nil
+		default:
+			e.last = now
+		}
+		s.liveEnding[a.Token] = e
+		retry = true
+		return &liveJob{t: t, dev: d, act: &a, ending: true, n: apns.Notification{Live: &apns.Live{Event: "end", ContentState: st, Dismissal: e.dismissal, Urgent: true}}}
+	}
+	for _, d := range devs {
 		off := d.Prefs != nil && d.Prefs.NoActivity
 		alert, alerting := s.liveAlert[d.Token]
 		delete(s.liveAlert, d.Token)
@@ -228,13 +265,15 @@ func (s *Server) live(t *tenant) {
 			case liveOverview:
 				hasOverview = true
 				if off || endOverview {
-					jobs = append(jobs, liveJob{dev: d, act: &a, ending: true, n: apns.Notification{
-						Live: &apns.Live{Event: "end", ContentState: ov, Dismissal: now}}})
+					if j := end(d, a, ov, now); j != nil {
+						jobs = append(jobs, *j)
+					}
 					continue
 				}
+				delete(s.liveEnding, a.Token) // busy again before the phone reported the end: the activity goes on, if it is still there
 				if key := ov.json(); s.liveSent[a.Token] != key || alerting {
 					urgent := ov.Waiting > s.liveWaiting[a.Token]
-					j := liveJob{dev: d, act: &a, key: key, n: apns.Notification{Live: &apns.Live{Event: "update", ContentState: ov, Urgent: urgent}}}
+					j := liveJob{t: t, dev: d, act: &a, key: key, n: apns.Notification{Live: &apns.Live{Event: "update", ContentState: ov, Urgent: urgent}}}
 					if alerting { // the finished agent lights the overview up, with its sound, at once
 						j.n.Title, j.n.Body, j.n.Sound, j.n.Live.Urgent = alert.n.Title, liveAlertBody(alert.n), alert.n.Sound, true
 						j.alert, alerting = &alert, false
@@ -245,14 +284,17 @@ func (s *Server) live(t *tenant) {
 				st := s.agentStateLocked(t, a.Instance, a.Pane)
 				switch st.Rows[0].State {
 				case "gone":
-					jobs = append(jobs, liveJob{dev: d, act: &a, ending: true, n: apns.Notification{
-						Live: &apns.Live{Event: "end", ContentState: st, Dismissal: now}}})
+					if j := end(d, a, st, now); j != nil {
+						jobs = append(jobs, *j)
+					}
 				case "done", "idle": // finished: shown a little longer on the Lock Screen, then gone
-					jobs = append(jobs, liveJob{dev: d, act: &a, ending: true, n: apns.Notification{
-						Live: &apns.Live{Event: "end", ContentState: st, Dismissal: now.Add(s.cfg.AgentLinger)}}})
+					if j := end(d, a, st, now.Add(s.cfg.AgentLinger)); j != nil {
+						jobs = append(jobs, *j)
+					}
 				default:
+					delete(s.liveEnding, a.Token)
 					if key := st.json(); s.liveSent[a.Token] != key {
-						jobs = append(jobs, liveJob{dev: d, act: &a, key: key, n: apns.Notification{
+						jobs = append(jobs, liveJob{t: t, dev: d, act: &a, key: key, n: apns.Notification{
 							Live: &apns.Live{Event: "update", ContentState: st, Urgent: st.Waiting > s.liveWaiting[a.Token]}}})
 					}
 				}
@@ -263,7 +305,7 @@ func (s *Server) live(t *tenant) {
 		}
 		pending := !s.liveStarted[d.Token].IsZero() && now.Sub(s.liveStarted[d.Token]) < 8*time.Hour
 		if edge && !off && !hasOverview && !pending && d.ActivityStart != "" {
-			jobs = append(jobs, liveJob{dev: d, n: apns.Notification{Title: "flok", Body: overviewWords(ov), Live: &apns.Live{
+			jobs = append(jobs, liveJob{t: t, dev: d, n: apns.Notification{Title: "flok", Body: overviewWords(ov), Live: &apns.Live{
 				Event: "start", ContentState: ov, AttributesType: attributeType, Attributes: LiveAttributes{Kind: liveOverview}}}})
 			s.liveStarted[d.Token] = now // until the phone reports the activity (or 8 h, its longest life)
 		}
@@ -276,10 +318,45 @@ func (s *Server) live(t *tenant) {
 			}
 		}
 	}
+	if retry { // look again when the next resend is due (nothing else may move while all is quiet)
+		time.AfterFunc(s.cfg.EndRetry+50*time.Millisecond, func() {
+			s.mu.Lock()
+			s.liveSoonLocked(t)
+			s.mu.Unlock()
+		})
+	}
 	s.mu.Unlock()
+	for _, dt := range drops {
+		s.devices.dropActivity(dt[0], dt[1], "")
+	}
 	for _, j := range jobs {
 		go s.sendLive(j)
 	}
+}
+
+// pruneEndingLocked closes the ends of activities their phones no longer list (the app saw
+// them end and reported), and of phones that are gone: an end older than EndGiveUp belongs to
+// a device no round lists any more. The caller holds s.mu.
+func (s *Server) pruneEndingLocked(devs []device, now time.Time) {
+	mine, listed := map[string]bool{}, map[string]bool{}
+	for _, d := range devs {
+		mine[d.Token] = true
+		for _, a := range d.Activities {
+			listed[a.Token] = true
+		}
+	}
+	for tok, e := range s.liveEnding {
+		if mine[e.dev] && !listed[tok] || now.Sub(e.first) > s.cfg.EndGiveUp+time.Hour {
+			s.endDoneLocked(tok)
+		}
+	}
+}
+
+// endDoneLocked forgets an activity whose end is through (or given up on). The caller holds s.mu.
+func (s *Server) endDoneLocked(token string) {
+	delete(s.liveEnding, token)
+	delete(s.liveSent, token)
+	delete(s.liveWaiting, token)
 }
 
 func (s *Server) sendLive(j liveJob) {
@@ -299,6 +376,15 @@ func (s *Server) sendLive(j liveJob) {
 			s.devices.dropActivity(j.dev.Token, "", j.dev.ActivityStart)
 		}
 		s.forgetLive(j)
+		if j.act != nil {
+			s.mu.Lock()
+			s.endDoneLocked(j.act.Token)
+			if j.act.Kind == liveOverview && !j.ending && j.t != nil {
+				j.t.liveWasActive = false // the overview had ended on the phone while agents work: the next round may start one
+				s.liveSoonLocked(j.t)
+			}
+			s.mu.Unlock()
+		}
 		if j.alert != nil { // the overview is not there to light up: the notification after all
 			s.sendAlert(j.dev, j.alert.n, j.alert.what, j.alert.kind)
 		}
@@ -313,8 +399,7 @@ func (s *Server) sendLive(j liveJob) {
 		if j.alert != nil {
 			s.cfg.Logf("push: %s in the island (%s)", j.alert.what, j.alert.kind)
 		}
-		if j.ending {
-			s.devices.dropActivity(j.dev.Token, j.act.Token, "")
+		if j.ending { // the activity stays listed until the phone reports it gone (live resends the end meanwhile)
 			s.forgetLive(j)
 		}
 	}
