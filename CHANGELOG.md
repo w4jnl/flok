@@ -4,7 +4,7 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
-## Unreleased
+## 0.13.2 (2026-10-31)
 
 - **An older relay no longer promises the feed.** The relay passes on only the features it
   knows from an instance's hello, so a newer flok behind a relay that predates the feed shows
