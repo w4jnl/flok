@@ -28,6 +28,11 @@ final class LiveActivities {
     private var tokens: [String: String] = [:] // activity id → its update token
     private var watched: Set<String> = []
     private var reporting: Task<Void, Never>?
+    private var openedAt: ContinuousClock.Instant?
+
+    /// The app came to the front: the first picture of the agents that follows may end a quiet
+    /// overview (ensureOverview), because its end from the relay may not have reached the phone.
+    func opened() { openedAt = .now }
 
     var enabled: Bool { ActivityAuthorizationInfo().areActivitiesEnabled }
 
@@ -91,13 +96,21 @@ final class LiveActivities {
     }
 
     /// With the app open: starts the overview when something works or waits and none runs, or
-    /// ends it when the user switched it off.
+    /// ends it when the user switched it off. Right after the app was opened, an overview that
+    /// has nothing to show ends too: the relay ends it after a quiet spell and resends that end
+    /// for a while, but a push can still be lost, and a stale island is what the user opened the
+    /// app to check.
     func ensureOverview(_ instances: [InstanceState], allowed: Bool) {
         if !allowed {
             for id in overviews.map(\.id) { Task { await Self.end(id) } }
             return
         }
         let st = Self.overview(instances)
+        if let at = openedAt, at.duration(to: .now) < .seconds(15), st.working + st.waiting + st.done == 0, !overviews.isEmpty {
+            openedAt = nil
+            for id in overviews.map(\.id) { Task { await Self.end(id) } }
+            return
+        }
         guard enabled, overviews.isEmpty, st.working + st.waiting > 0 else { return }
         if let a = try? Activity<FlokActivityAttributes>.request(attributes: FlokActivityAttributes.overview, content: .init(state: st, staleDate: nil), pushType: .token) {
             watch(a)

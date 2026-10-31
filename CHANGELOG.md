@@ -4,6 +4,22 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
+## Unreleased
+
+- **An older relay no longer promises the feed.** The relay passes on only the features it
+  knows from an instance's hello, so a newer flok behind a relay that predates the feed shows
+  the app the screen instead of a feed that never comes (the phone said "waiting for the feed"
+  until the relay was updated).
+- **The island lets go.** The overview Live Activity sometimes stayed on the phone long after
+  every agent had gone quiet: its end was one low-priority push, taken as delivered the moment
+  APNs accepted it. The end now goes at high priority and again every two minutes while the
+  phone still reports the activity, for up to ten minutes; the app also ends a quiet overview
+  itself when you open it. While the overview waits out the two quiet minutes before its end,
+  the island shows the grey mark instead of "✓ 0".
+- **A `flok next` the sidebar missed is picked up within a second.** The sidebar reads its
+  request mailbox on every poll besides the file watch, so a one-shot command whose watcher
+  event was lost (seen once on CI) runs a moment later instead of never.
+
 ## 0.13.1 (2026-10-30)
 
 - **Fixed: a resumed session's end reached nt once.** flok's journal kept the first end of an

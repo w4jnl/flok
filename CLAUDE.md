@@ -170,7 +170,8 @@ One binary, several roles selected by subcommand (`internal/cli/root.go`):
   frame in full mode, `display-message` over ssh in plain mode). One-shot commands aimed at a remote host
   (`flok goto beta:%12`, `flok jump`/`next`/`prev` with hosts, `flok host front`) cannot open ssh
   themselves: they file a JSON request in `$FLOK_STATE/requests/` (`state.WriteRequest`), which
-  the store watcher delivers and `ui/requests.go` runs (older than 10 s are dropped). `flok doctor`
+  the store watcher delivers and `ui/requests.go` runs (older than 10 s are dropped; the poll
+  tick drains the mailbox too, the fallback for a watcher event that was lost). `flok doctor`
   probes every registered host with one fixed command (`internal/cli/doctor_hosts.go`). Without a
   host in `hosts.json` every one of these is a no-op and the single-host code paths, frames and
   JSON stay byte-identical.
@@ -358,7 +359,10 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
   worded like the sidebar (title agent, subtitle instance / host · session, flok's sounds
   `flok-request.caf`/`flok-done.caf`), a silent sync push when an agent stops waiting, and Live
   Activities (`relay/live.go`: the overview over all instances, started by push-to-start on an
-  idle → busy edge, updated on state changes, ended after a quiet; followed agents; tokens via
+  idle → busy edge, updated on state changes, ended after a quiet: the end at priority 10,
+  resent every `EndRetry` while the phone still lists the activity (`liveEnding`), given up
+  after `EndGiveUp`, closed by the phone's report without it or the service's 410, and the app
+  ends a quiet overview itself within 15 s of coming to the front; followed agents; tokens via
   `PUT /api/devices/{token}/activity`; while a phone runs the overview, done/error go as its
   update's `alert` instead of a notification (`liveAlert`, `Prefs.finishedInIsland`, a
   badge-only push for the badge, the notification as fallback; `finished_as_notification`

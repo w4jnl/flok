@@ -25,6 +25,12 @@ enum LiveStyle {
         }
     }
 
+    /// The mark's colour for a state as a whole: the dominant state's, grey when all is quiet
+    /// (the two minutes before the relay ends the overview, or an end that has not arrived).
+    static func markColor(_ state: FlokActivityAttributes.ContentState) -> Color {
+        state.dominant == "idle" ? Brand.idle : color(state.dominant)
+    }
+
     /// The flok mark (the menu bar's template icon), tinted.
     static func mark(_ color: Color, size: CGFloat) -> some View {
         Image(uiImage: UIImage(named: "flok-mark") ?? UIImage())
@@ -90,7 +96,7 @@ struct LiveLockScreen: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                LiveStyle.mark(LiveStyle.color(state.dominant == "idle" ? "working" : state.dominant), size: 18)
+                LiveStyle.mark(LiveStyle.markColor(state), size: 18)
                 Brand.wordmark(13)
                 Spacer()
                 if attributes.kind == "overview" { LiveCounts(state: state) }
@@ -111,7 +117,7 @@ struct LiveLockScreen: View {
 
 struct LiveCompactLeading: View {
     let state: FlokActivityAttributes.ContentState
-    var body: some View { LiveStyle.mark(LiveStyle.color(state.dominant == "idle" ? "working" : state.dominant), size: 18) }
+    var body: some View { LiveStyle.mark(LiveStyle.markColor(state), size: 18) }
 }
 
 struct LiveCompactTrailing: View {
@@ -130,8 +136,10 @@ struct LiveCompactTrailing: View {
             Text("● \(state.waiting)").font(Brand.mono(13, bold: true)).foregroundStyle(Brand.blocked)
         } else if state.working > 0 {
             Text("◐ \(state.working)").font(Brand.mono(13, bold: true)).foregroundStyle(Brand.working)
-        } else {
+        } else if state.done > 0 {
             Text("✓ \(state.done)").font(Brand.mono(13, bold: true)).foregroundStyle(Brand.done)
+        } else { // all quiet: the grey mark on the left says it, "✓ 0" would not
+            Text("○").font(Brand.mono(13, bold: true)).foregroundStyle(Brand.idle)
         }
     }
 }

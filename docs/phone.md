@@ -127,8 +127,10 @@ plain mode: `send-keys` over ssh, the files streamed into `~/.local/state/flok/a
   on the Mac or on the phone, comes off the Lock Screen by itself.
 - **A Live Activity** while agents work: the overview in the Dynamic Island and on the Lock
   Screen (how many work, wait and finished unseen, the most urgent first), ended after a quiet
-  spell; an agent's screen can follow that one agent there as well. A finished agent lights up
-  the overview, with its sound, rather than adding a notification beside it.
+  spell (the end is sent again until the phone confirms it, and the app ends a quiet overview
+  itself when you open it, so a lost push never leaves a stale island); an agent's screen can
+  follow that one agent there as well. A finished agent lights up the overview, with its sound,
+  rather than adding a notification beside it.
 - **Settings → Notifications**: per kind (permission, question, finished, failed) whether it
   pushes, its sound and whether it breaks through Focus, and the muted agents (an hour, until
   tomorrow morning, always). The relay holds these settings per phone and decides before every
