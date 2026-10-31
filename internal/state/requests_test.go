@@ -31,3 +31,29 @@ func TestRequestsRoundTrip(t *testing.T) {
 		t.Fatal("empty after a drain")
 	}
 }
+
+// Two drains at once (the store watcher's and the poll tick's) hand out every request once.
+func TestDrainRequestsOnce(t *testing.T) {
+	s := New(t.TempDir())
+	now := time.Now()
+	const n = 40
+	for i := 0; i < n; i++ {
+		if err := s.WriteRequest(Request{Cmd: "front", Host: "h", At: now.Add(time.Duration(i) * time.Microsecond)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	results := make(chan int, 8)
+	for d := 0; d < 8; d++ {
+		go func() { results <- len(s.DrainRequests(now, time.Minute)) }()
+	}
+	total := 0
+	for d := 0; d < 8; d++ {
+		total += <-results
+	}
+	if total != n {
+		t.Fatalf("%d requests drained by 8 drains at once, want %d", total, n)
+	}
+	if files, _ := filepath.Glob(filepath.Join(s.Dir, RequestsDir, "*")); len(files) != 0 {
+		t.Fatalf("left behind: %v", files)
+	}
+}

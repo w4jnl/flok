@@ -44,14 +44,20 @@ func (s *Store) WriteRequest(r Request) error {
 
 // DrainRequests removes and returns the pending requests in the order they were filed; one
 // older than maxAge is dropped (the sidebar was not running when it was filed, acting on it
-// now would surprise).
+// now would surprise). A request is claimed by a rename before it is read, so two drains at
+// once (the store watcher's and the poll tick's) never both run it: a `flok link approve` run
+// twice answered "approved already" to the one that asked.
 func (s *Store) DrainRequests(now time.Time, maxAge time.Duration) []Request {
 	files, _ := filepath.Glob(filepath.Join(s.Dir, RequestsDir, "*.json"))
 	sort.Strings(files)
 	var out []Request
 	for _, f := range files {
-		data, err := os.ReadFile(f)
-		_ = os.Remove(f)
+		claimed := f + ".taken"
+		if os.Rename(f, claimed) != nil {
+			continue // another drain has it
+		}
+		data, err := os.ReadFile(claimed)
+		_ = os.Remove(claimed)
 		if err != nil {
 			continue
 		}
