@@ -889,3 +889,40 @@ func TestRelayLongTextAndFiles(t *testing.T) {
 		t.Fatalf("ws ack: %+v", f)
 	}
 }
+
+func TestRelayKeepsKnownFeatures(t *testing.T) {
+	s, _ := New(Config{InstanceTokens: []string{"inst-tok"}, DeviceTokens: []string{"dev-tok"}})
+	srv := httptest.NewServer(s.Handler())
+	defer srv.Close()
+	u := "ws" + strings.TrimPrefix(srv.URL, "http") + "/link"
+	conn, _, err := websocket.Dial(context.Background(), u, &websocket.DialOptions{HTTPHeader: http.Header{"Authorization": {"Bearer inst-tok"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.CloseNow()
+	// a flok from the future: one feature this relay has never heard of
+	hello, _ := json.Marshal(wire.Frame{Type: wire.TypeHello, Hello: &wire.Hello{Proto: wire.Proto, Name: "new", Version: "9.9.9", Features: []string{wire.FeatureAnswer, "teleport", wire.FeatureFeed}}})
+	if err := conn.Write(context.Background(), websocket.MessageText, hello); err != nil {
+		t.Fatal(err)
+	}
+	app := dialApp(t, srv, "dev-tok")
+	var inst *wire.Instance
+	app.next(t, func(f wire.Frame) bool {
+		switch f.Type {
+		case wire.TypeInstance:
+			if f.Inst != nil && f.Inst.Name == "new" {
+				inst = f.Inst
+			}
+		case wire.TypeInstances:
+			for i := range f.Instances {
+				if f.Instances[i].Name == "new" {
+					inst = &f.Instances[i]
+				}
+			}
+		}
+		return inst != nil
+	})
+	if got := strings.Join(inst.Features, " "); got != wire.FeatureAnswer+" "+wire.FeatureFeed {
+		t.Fatalf("features through the relay: %q", got)
+	}
+}

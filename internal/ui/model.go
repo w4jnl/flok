@@ -469,7 +469,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.refederate()
 			m.publish()
 		}
-		return m, tea.Batch(m.poll(), m.tick())
+		// the request mailbox is read here too: the store watcher delivers a request at once,
+		// this is the fallback for an event it lost, so a `flok next` costs a poll at worst
+		return m, tea.Batch(m.poll(), m.tick(), m.drainRequests())
 	case registryTickMsg:
 		return m, tea.Batch(m.pollRegistryIfDue(), m.registryTick())
 	case screenTickMsg:

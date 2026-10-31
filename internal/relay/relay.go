@@ -630,6 +630,7 @@ func (s *Server) register(who linkIdentity, h wire.Hello, conn frameConn, from s
 	}
 	in.gen++
 	in.conn = conn
+	h.Features = knownFeatures(h.Features) // never promise the app what this relay cannot forward
 	in.hello, in.online, in.since = h, true, time.Now()
 	in.bye, in.off = false, false
 	in.out = make(chan wire.Frame, 256)
@@ -724,6 +725,20 @@ func (s *Server) tooOldFor(t *tenant, instance string, a answer.Answer) string {
 }
 
 // hasFeature reports whether a hello's features name one.
+// knownFeatures keeps the features of an instance's hello this relay knows (wire.InstanceFeatures
+// of its own build). A newer flok behind an older relay then shows the app what works through
+// it: the feed of an instance advertised through a relay that drops feed frames left the app
+// waiting for one.
+func knownFeatures(features []string) []string {
+	var out []string
+	for _, f := range features {
+		if hasFeature(wire.InstanceFeatures, f) {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
 func hasFeature(features []string, want string) bool {
 	for _, f := range features {
 		if f == want {

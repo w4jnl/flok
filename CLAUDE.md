@@ -170,7 +170,8 @@ One binary, several roles selected by subcommand (`internal/cli/root.go`):
   frame in full mode, `display-message` over ssh in plain mode). One-shot commands aimed at a remote host
   (`flok goto beta:%12`, `flok jump`/`next`/`prev` with hosts, `flok host front`) cannot open ssh
   themselves: they file a JSON request in `$FLOK_STATE/requests/` (`state.WriteRequest`), which
-  the store watcher delivers and `ui/requests.go` runs (older than 10 s are dropped). `flok doctor`
+  the store watcher delivers and `ui/requests.go` runs (older than 10 s are dropped; the poll
+  tick drains the mailbox too, the fallback for a watcher event that was lost). `flok doctor`
   probes every registered host with one fixed command (`internal/cli/doctor_hosts.go`). Without a
   host in `hosts.json` every one of these is a no-op and the single-host code paths, frames and
   JSON stay byte-identical.

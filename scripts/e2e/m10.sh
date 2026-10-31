@@ -75,7 +75,7 @@ expect "the hook state arrives as a snap update" '"type":"snap".*"state":"blocke
 wait_file "$SERVE_OUT" '"type":"event"' 5 || true
 expect "the unsounded notification arrives as an event" '"type":"event","event":."pane":"%[0-9]+","kind":"blocked"' "$(cat "$SERVE_OUT")"
 expect "the host's hook played nothing while served" '^missing$' "$([ -e "$T/hosts/beta/played" ] && echo played || echo missing)"
-wait_file "$SERVE_OUT" '"type":"report".*"session":"r1"' 5 || true
+wait_file "$SERVE_OUT" '"type":"report".*"session":"r1".*"state":"blocked"' 5 || true   # the first report frames carry the start and the prompt; the block's comes 2 s later
 expect "the session's record travels as a report frame (the host journals, never imports)" '"type":"report","report":."version":1,"agent":"claude-code","session":"r1","host":"".*"state":"blocked"' "$(grep '"type":"report"' "$SERVE_OUT" | tail -1)"
 expect "nothing was imported on the host" '^missing$' "$([ -e "$T/hosts/beta/state/sessions/r1.json" ] && python3 -c "import json;print('imported' if json.load(open('$T/hosts/beta/state/sessions/r1.json')).get('imported_at') else 'missing')" || echo none)"
 printf '{"type":"goto","goto":{"session":"$999"}}\n' >&7   # the sidebar's parked pane is beta's client by now: aim at a session that is not there
@@ -308,7 +308,7 @@ expect "front_host is published for the menu bar" '"front_host": "beta"' "$(cat 
 "$BIN" host front local >/dev/null
 for _ in $(seq 1 50); do [ "$(rt "r.get('front_host','')")" = "" ] && break; sleep 0.1; done
 OUT select-pane -t "$SIDEBAR"
-wait_for '⇥ 1-9|c d r m x i' 3 || true   # the footer shows a key hint once the sidebar knows it has the keyboard
+wait_for '⇥ 1-9|c d r m x i' 8 || true   # the footer shows a key hint once the sidebar knows it has the keyboard: a focus event at once, else the pane_active check every 5th poll
 # servers_panel: Tab until the footer shows the servers keys (the panel state is not observable otherwise)
 servers_panel() { local i; for i in 1 2 3 4 5 6; do capture | grep -q 'c d r m x i' && return 0; OUT send-keys -t "$SIDEBAR" Tab; sleep 0.4; done; capture | grep -q 'c d r m x i'; }
 servers_panel || true
@@ -397,22 +397,26 @@ after=$(serve_pid beta)
 expect "r reconnects the host (a new serve session)" '^changed$' "$([ -n "$after" ] && [ "$before" != "$after" ] && echo changed || echo "same: $before / $after")"
 expect "... and it is connected again" '^beta=connected gamma=connected$' "$(snap_hosts)"
 
-# rotate the front from the shell (prefix N / P / O / S and Alt-1..9 run these)
+# rotate the front from the shell (prefix N / P / O / S and Alt-1..9 run these). front_after runs
+# the command and waits for runtime.json to name the front it should bring; a failure quotes what
+# the command said (one lost `host next` on CI left the whole chain one step behind, in silence)
 front_is() { local i; for i in $(seq 1 50); do [ "$(rt "r.get('front_host','')")" = "$1" ] && return 0; sleep 0.1; done; return 1; }
-"$BIN" host front local >/dev/null; front_is "" || true
-"$BIN" host next >/dev/null;  front_is beta || true;  expect "host next: local -> beta" '^beta$' "$(rt "r.get('front_host','')")"
-"$BIN" host next >/dev/null;  front_is gamma || true; expect "host next: beta -> gamma" '^gamma$' "$(rt "r.get('front_host','')")"
-"$BIN" host next >/dev/null;  front_is "" || true;    expect "host next wraps to local" '^$' "$(rt "r.get('front_host','')")"
-"$BIN" host prev >/dev/null;  front_is gamma || true; expect "host prev: local -> gamma" '^gamma$' "$(rt "r.get('front_host','')")"
-"$BIN" host last >/dev/null;  front_is "" || true;    expect "host last goes back" '^$' "$(rt "r.get('front_host','')")"
+front_after() { local name=$1 want=$2 said; shift 2
+  said=$("$@" 2>&1 | tr '\n' ' ') || said="rc=$? $said"
+  expect_soon "$name ($*: ${said:-no output})" "$want" rt "r.get('front_host','')"; }
+front_after "host front local brings local back" '^$' "$BIN" host front local
+front_after "host next: local -> beta" '^beta$' "$BIN" host next
+front_after "host next: beta -> gamma" '^gamma$' "$BIN" host next
+front_after "host next wraps to local" '^$' "$BIN" host next
+front_after "host prev: local -> gamma" '^gamma$' "$BIN" host prev
+front_after "host last goes back" '^$' "$BIN" host last
 expect "runtime.json remembers the previous front" '^gamma$' "$(rt "r.get('previous_front','')")"
-"$BIN" host front 2 >/dev/null; front_is beta || true; expect "host front 2 is the first host" '^beta$' "$(rt "r.get('front_host','')")"
+front_after "host front 2 is the first host" '^beta$' "$BIN" host front 2
 # last server / last session walk the focus history across servers: the front follows
-"$BIN" last server >/dev/null; front_is "" || true;   expect "last server goes back to local" '^$' "$(rt "r.get('front_host','')")"
-"$BIN" last server >/dev/null; front_is beta || true; expect "... and forth to beta" '^beta$' "$(rt "r.get('front_host','')")"
-"$BIN" last session >/dev/null; front_is "" || true;  expect "last session crosses servers: back to the local session" '^$' "$(rt "r.get('front_host','')")"
-FLOK_STATE=$T/hosts/beta/state "$BIN" relay last session   # prefix Tab inside beta's session, relayed
-front_is beta || true; expect "prefix Tab inside a remote session relays last session (beta in front again)" '^beta$' "$(rt "r.get('front_host','')")"
+front_after "last server goes back to local" '^$' "$BIN" last server
+front_after "... and forth to beta" '^beta$' "$BIN" last server
+front_after "last session crosses servers: back to the local session" '^$' "$BIN" last session
+front_after "prefix Tab inside a remote session relays last session (beta in front again)" '^beta$' env FLOK_STATE="$T/hosts/beta/state" "$BIN" relay last session
 # the servers menu needs a client looking at the outer (the terminal, in real life): attach one from a
 # throwaway tmux server acting as the terminal, read the menu through it, close it again
 TTYS=e2e-tty-m10
