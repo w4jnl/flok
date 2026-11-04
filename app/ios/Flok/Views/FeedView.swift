@@ -23,9 +23,10 @@ struct FeedView: View {
             .background(Color(UIColor.systemBackground))
             .scrollDismissesKeyboard(.immediately)
             .onTapGesture { onTap() }
+            .modifier(BottomAnchor())
             .modifier(FollowWatch(follow: follow))
             .onChange(of: state?.items.last?.id) { _, _ in if follow.following { toBottom(proxy) } }
-            .onAppear { toBottom(proxy) }
+            .onChange(of: state?.items.count) { _, _ in if follow.following { toBottom(proxy) } } // a reset that ends on the same item
             .overlay(alignment: .bottomTrailing) {
                 if !follow.following, !(state?.items.isEmpty ?? true) {
                     Button {
@@ -77,6 +78,21 @@ struct FeedView: View {
     private func toBottom(_ proxy: ScrollViewProxy) {
         follow.settle()
         withAnimation(.linear(duration: 0.1)) { proxy.scrollTo("bottom", anchor: .bottom) }
+    }
+}
+
+/// The scroll view opens at its end and keeps the end in view while the content is still being
+/// measured: the rows of a LazyVStack take their real height as they come by, so a scrollTo on
+/// appear lands wherever the estimate put it, often far above the latest. From iOS 18 only the
+/// start and the size changes are anchored, so a feed shorter than the view still hangs from
+/// the top; iOS 17 has one anchor for all three, and such a feed sits at the bottom there.
+struct BottomAnchor: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 18, *) {
+            content.defaultScrollAnchor(.bottom, for: .initialOffset).defaultScrollAnchor(.bottom, for: .sizeChanges)
+        } else {
+            content.defaultScrollAnchor(.bottom)
+        }
     }
 }
 

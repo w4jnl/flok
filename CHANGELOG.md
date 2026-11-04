@@ -4,6 +4,14 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
+## Unreleased
+
+- **The feed opens on the latest line again.** Opening an agent a second time landed somewhere
+  in the middle of its feed, or near the top of a long one, and stayed there: the scroll to the
+  end ran before the rows had their real heights, and a feed that came back ending on the same
+  line never triggered another. The feed now opens at its end and keeps the end while it is
+  being measured; scrolling up still holds your place while new lines arrive.
+
 ## 0.13.2 (2026-10-31)
 
 - **An older relay no longer promises the feed.** The relay passes on only the features it
