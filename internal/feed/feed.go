@@ -143,7 +143,12 @@ type entry struct {
 	Timestamp   time.Time `json:"timestamp"`
 	IsSidechain bool      `json:"isSidechain"`
 	IsMeta      bool      `json:"isMeta"`
-	Message     *struct {
+	// The summary Claude Code writes itself after a compaction, as a user turn of thousands of
+	// characters (isCompactSummary; the boundary before it is the note the feed shows), and
+	// what it shows in the transcript alone.
+	IsCompactSummary bool `json:"isCompactSummary"`
+	TranscriptOnly   bool `json:"isVisibleInTranscriptOnly"`
+	Message          *struct {
 		Role    string          `json:"role"`
 		Content json.RawMessage `json:"content"`
 	} `json:"message"`
@@ -158,8 +163,9 @@ type block struct {
 
 // Parse reads one transcript line. Besides the user's prompts, the assistant's text and its
 // tool calls, everything is skipped: thinking, tool results, a subagent's side chain, the
-// session's bookkeeping, and the text Claude Code itself puts into a user turn (system
-// reminders, task notifications, slash-command output), which starts with a tag.
+// session's bookkeeping, the summary it writes into a user turn after a compaction (the
+// `Context compacted` note stands for it), and the text Claude Code itself puts into a user
+// turn (system reminders, task notifications, slash-command output), which starts with a tag.
 func Parse(line []byte) (Item, bool) {
 	var e entry
 	if json.Unmarshal(bytes.TrimSpace(line), &e) != nil || e.IsSidechain {
@@ -175,7 +181,7 @@ func Parse(line []byte) (Item, bool) {
 	default:
 		return Item{}, false
 	}
-	if e.Message == nil || e.IsMeta {
+	if e.Message == nil || e.IsMeta || e.IsCompactSummary || e.TranscriptOnly {
 		return Item{}, false
 	}
 	var blocks []block

@@ -10,6 +10,9 @@ import UserNotifications
 struct Target: Hashable, Sendable {
     var instance: String
     var pane: String // pane ref: %12, beta:%12
+
+    /// The agent's key in what the phone remembers about it (the feed/screen switch).
+    var key: String { instance + "|" + pane }
 }
 
 /// What the app holds of one agent's feed: the items in order (at most `keep`), and the

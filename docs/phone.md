@@ -82,13 +82,15 @@ plain mode: `send-keys` over ssh, the files streamed into `~/.local/state/flok/a
   once, in attention order, and remembers the choice.
 - **An agent** opens on its **feed**: what you asked, what it wrote, as it wrote it (lists,
   headings, code and tables rendered), and one quiet line per tool it ran, `Ran Run the
-  tests`, `Read notes.go`, `Edited model.go`, with nothing of the tools' input or output. It
+  tests`, `Read notes.go`, `Edited model.go`, with nothing of the tools' input or output (a compaction
+  is one line, `Context compacted`; the summary Claude writes itself stays out). It
   is the session as the claude.ai app would show it: readable on a phone, reflowed to its
   width, scrolling back through the whole session, following the end while you are there.
   flok reads it from Claude Code's own transcript file on the Mac the agent runs on (the hook
-  names it), so nothing is guessed from the terminal. A Copilot agent, a pane without hooks
-  and a plain-mode host have no feed, and the app says so and shows the screen. The switch at
-  the top (⁝≡ / >_) shows the **screen** instead, and Settings › Agent can start there.
+  names it), so nothing is guessed from the terminal. The switch at the top (⁝≡ / >_) shows
+  the **screen** instead, and the phone remembers the choice for that agent; Settings › Agent
+  makes the screen the default for the rest. A Copilot agent, a pane without
+  hooks and a plain-mode host have no feed: such an agent opens on its screen, without the switch.
 - **The screen**: its live terminal (the pane's text, refreshed while you look; a pinch zooms it,
   long lines wrap: prose at words, a divider cut to the width rather than folded, a table kept
   whole in a strip that scrolls sideways, the right edge of a box wider than the phone left
