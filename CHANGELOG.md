@@ -6,11 +6,24 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
-- **The feed opens on the latest line again.** Opening an agent a second time landed somewhere
-  in the middle of its feed, or near the top of a long one, and stayed there: the scroll to the
-  end ran before the rows had their real heights, and a feed that came back ending on the same
-  line never triggered another. The feed now opens at its end and keeps the end while it is
-  being measured; scrolling up still holds your place while new lines arrive.
+- **An agent opens at the bottom again, feed and screen.** Opening an agent a second time
+  landed somewhere in the middle of its feed, or near the top of a long one, and its screen at
+  the top, and stayed there: the feed's scroll to the end ran before the rows had their real
+  heights, a feed that came back ending on the same line never triggered another, and the
+  screen only scrolled when its text changed, which the text the app already held did not.
+  Both now open at their end and keep it while being measured; scrolling up still holds your
+  place while new lines arrive.
+- **A compaction's summary is no longer the feed's last word.** After Claude Code compacted
+  its context, the feed ended on the summary it writes for itself, thousands of characters
+  that read like the start of a document, so an idle agent seemed to open at the top. The
+  `Context compacted` line stands for it now, and the feed ends on what the agent last did.
+- **The feed/screen switch is remembered per agent.** An agent you switched to its screen
+  opens on the screen next time, and one you switched back to the feed on the feed; Settings ›
+  Agent's "Open agents on the screen" decides for the agents you never switched.
+- **An agent without a feed opens on its screen, without the switch.** A Copilot agent, a
+  pane without hooks or one on a plain-mode host has no feed to read; the feed side of the
+  switch used to show a note that pointed "below", where nothing was. The note now says the
+  screen is shown instead, for other apps that read it.
 
 ## 0.13.2 (2026-10-31)
 

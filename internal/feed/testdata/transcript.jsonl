@@ -8,6 +8,7 @@
 {"parentUuid":"a4","isSidechain":true,"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"a subagent's words"}]},"uuid":"side1","timestamp":"2026-10-30T07:00:06.000Z"}
 {"parentUuid":"a4","isSidechain":false,"type":"user","message":{"role":"user","content":"<task-notification>\n<task-id>abc</task-id>\n</task-notification>"},"uuid":"u3","timestamp":"2026-10-30T07:00:07.000Z"}
 {"parentUuid":"u3","isSidechain":false,"type":"system","subtype":"compact_boundary","isMeta":false,"uuid":"sys1","timestamp":"2026-10-30T07:00:08.000Z"}
+{"parentUuid":"sys1","isSidechain":false,"isVisibleInTranscriptOnly":true,"isCompactSummary":true,"type":"user","message":{"role":"user","content":"This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\n1. Primary Request and Intent: fix the failing test"},"uuid":"u3s","timestamp":"2026-10-30T07:00:08.100Z"}
 {"parentUuid":"sys1","isSidechain":false,"type":"system","subtype":"turn_duration","durationMs":12,"uuid":"sys2","timestamp":"2026-10-30T07:00:09.000Z"}
 {"parentUuid":"sys2","isSidechain":false,"type":"user","message":{"role":"user","content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"iVBOR"}},{"type":"text","text":"like this"}]},"uuid":"u4","timestamp":"2026-10-30T07:00:10.000Z"}
 {"type":"api-request-blob","sessionId":"s1","hash":"h","message":{"role":"assistant","content":[{"type":"text","text":"a cached request body, not the conversation"}]}}

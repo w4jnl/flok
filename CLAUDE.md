@@ -278,8 +278,9 @@ ui.Model renders it            ui persists NewlySeen via Store.MarkSeen
   Claude Code's transcript file (`transcript_path` in every hook payload → `agent.Event.Transcript`
   → `Agent.Transcript` on the hook record): `feed.Parse` keeps the user's prompts, the
   assistant's text blocks and each tool call as one line (`feed.Line`: `Ran <Bash description>`,
-  `Read <file>`; never input or output), skips thinking, tool results, side chains and the
-  tagged text Claude Code puts into user turns; `feed.Tail` follows one file and hands out a
+  `Read <file>`; never input or output), skips thinking, tool results, side chains, the
+  compaction summary (`isCompactSummary`; the `compact_boundary` system line is the note) and
+  the tagged text Claude Code puts into user turns; `feed.Tail` follows one file and hands out a
   `Reset` (the last `MaxItems`) then deltas. A subscription (the same `subscribe` as screens)
   brings `feed` frames besides `screen` ones: the sidebar tails its own panes on the link tick
   (`feedSubs`, `Model.feedTails`; a pane without a transcript, Copilot or hook-less or on a

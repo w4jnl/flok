@@ -330,7 +330,7 @@ func (m Model) setCapture(ref string, on bool) {
 		}
 		if on && m.linker != nil {
 			if v, ok := m.remotes[h.Name]; ok && v.hello != nil && !v.hello.Has(proto.FeatureFeed) {
-				m.linker.Feed(ref, feed.Feed{Reset: true, Note: "flok" + versionWord(v.hello.Version) + " on " + h.Name + " predates the feed: it needs an upgrade (flok host install " + h.Name + "); the screen is below"})
+				m.linker.Feed(ref, feed.Feed{Reset: true, Note: "flok" + versionWord(v.hello.Version) + " on " + h.Name + " predates the feed: it needs an upgrade (flok host install " + h.Name + "); the screen is shown instead"})
 			}
 		}
 		m.remote.Capture(h.Name, pr.ID, on)
@@ -484,7 +484,7 @@ func (m *Model) feedSubs() tea.Cmd {
 			if h, ok := m.hostSet.Get(pr.Host); !ok || h.Mode != hosts.ModePlain {
 				continue // a full-mode host's serve sends the feed; an unknown host nothing
 			}
-			note = "no feed from a plain-mode host: the screen is below"
+			note = "no feed from a plain-mode host; the screen is shown instead"
 		case !found:
 			continue
 		case a.Transcript != "":
@@ -492,11 +492,11 @@ func (m *Model) feedSubs() tea.Cmd {
 			jobs = append(jobs, job{ref, sub.tail})
 			continue
 		case a.Kind == "copilot":
-			note = "Copilot CLI keeps no transcript flok can read: the screen is below"
+			note = "Copilot CLI keeps no transcript flok can read; the screen is shown instead"
 		case !a.HasHooks:
-			note = "no feed without hooks (flok install): the screen is below"
+			note = "no feed without hooks (flok install); the screen is shown instead"
 		default:
-			note = "no transcript named yet: the agent's next event names it; the screen is below"
+			note = "no transcript named yet: the agent's next event names it; the screen is shown instead"
 		}
 		if note != sub.note {
 			sub.note = note

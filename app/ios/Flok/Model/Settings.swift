@@ -17,6 +17,10 @@ final class Settings {
     var wrapLines: Bool { didSet { defaults.set(wrapLines, forKey: "wrapLines") } }
     /// An agent opens on its screen rather than its feed (the feed when it has one, else the screen).
     var openOnScreen: Bool { didSet { defaults.set(openOnScreen, forKey: "openOnScreen") } }
+    /// The feed/screen switch as the user last set it, per agent (`Target.key` → "feed" |
+    /// "screen"), so an agent opens the way it was left; newest last, the last `keptPanes` kept.
+    private(set) var paneChoices: [PaneChoice] { didSet { defaults.set(try? JSONEncoder().encode(paneChoices), forKey: "paneChoices") } }
+    static let keptPanes = 200
     /// Voice: tidy the dictated text with the on-device model, send it as soon as the button
     /// is released, and the language ("" = the phone's).
     var voiceCleanup: Bool { didSet { defaults.set(voiceCleanup, forKey: "voiceCleanup") } }
@@ -52,6 +56,7 @@ final class Settings {
         fontSize = defaults.object(forKey: "fontSize") as? Double ?? 11
         wrapLines = defaults.object(forKey: "wrapLines") as? Bool ?? true   // wrap until the user says otherwise
         openOnScreen = defaults.bool(forKey: "openOnScreen")
+        paneChoices = defaults.data(forKey: "paneChoices").flatMap { try? JSONDecoder().decode([PaneChoice].self, from: $0) } ?? []
         voiceCleanup = defaults.object(forKey: "voiceCleanup") as? Bool ?? true
         voiceSendOnRelease = defaults.bool(forKey: "voiceSendOnRelease")
         voiceLocale = defaults.string(forKey: "voiceLocale") ?? ""
@@ -70,7 +75,24 @@ final class Settings {
         Keychain.set(relayURL, for: "relayURL")
     }
 
+    /// The switch as last set for this agent, nil when never touched.
+    func pane(for key: String) -> String? { paneChoices.last(where: { $0.key == key })?.pane }
+
+    /// Remembers the switch for this agent; nil forgets it.
+    func setPane(_ pane: String?, for key: String) {
+        var kept = paneChoices.filter { $0.key != key }
+        if let pane { kept.append(PaneChoice(key: key, pane: pane)) }
+        if kept.count > Self.keptPanes { kept.removeFirst(kept.count - Self.keptPanes) }
+        paneChoices = kept
+    }
+
     var isConfigured: Bool { baseURL != nil && !deviceToken.isEmpty }
     var baseURL: URL? { RelayURL.base(relayURL) }
     var lockGrace: LockGrace { LockGrace(seconds: lockGraceSeconds) }
+}
+
+/// One agent's remembered switch: which pane it opens on.
+struct PaneChoice: Codable, Equatable, Sendable {
+    var key: String  // Target.key: "<instance>|<pane ref>"
+    var pane: String // AgentPane's raw value: feed | screen
 }

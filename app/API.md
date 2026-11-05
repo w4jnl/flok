@@ -114,7 +114,7 @@ frame with `reset` carries the items so far (at most 80) and replaces what the a
 first after a subscription, again when the transcript was replaced; a frame without it adds
 to them (an item sent twice counts once, by `id`). `note` without items says why there is no
 feed for this agent (no transcript to read: Copilot, a pane without hooks, a plain-mode host;
-a host whose flok is older) and the app should show the screen. The relay keeps a watched
+a host whose flok is older) and the app should show the screen alone, without offering the feed. The relay keeps a watched
 pane's feed and sends it as a `reset` to the next app that subscribes. An instance without
 `feed` among its features sends none.
 

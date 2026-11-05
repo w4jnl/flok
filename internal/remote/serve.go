@@ -157,11 +157,11 @@ func Serve(ctx context.Context, d ServeDeps) error {
 			case ok && a.Transcript != "":
 				sub.tail = feed.NewTail(a.Transcript)
 			case ok && a.Kind == "copilot":
-				note = "Copilot CLI keeps no transcript flok can read: the screen is below"
+				note = "Copilot CLI keeps no transcript flok can read; the screen is shown instead"
 			case !ok:
-				note = "no feed without hooks (flok install): the screen is below"
+				note = "no feed without hooks (flok install); the screen is shown instead"
 			default:
-				note = "no transcript named yet: the agent's next event names it; the screen is below"
+				note = "no transcript named yet: the agent's next event names it; the screen is shown instead"
 			}
 			if sub.tail == nil {
 				if note != sub.note {

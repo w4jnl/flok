@@ -23,7 +23,8 @@ struct AgentView: View {
     @State private var voiceBase = "" // what the field held before the microphone was pressed
     @State private var pressStarted: Date?
     @State private var showForm = false // the agent's question form, filled in natively
-    @State private var paneChoice: AgentPane? // the user's feed/screen switch; nil = the default below
+    /// The user's feed/screen switch, remembered per agent (Settings); nil = the default below.
+    private var paneChoice: AgentPane? { settings.pane(for: target.key).flatMap(AgentPane.init(rawValue:)) }
     @FocusState private var typing: Bool
 
     private var found: (InstanceState, Agent)? { relay.agent(target) }
@@ -31,14 +32,16 @@ struct AgentView: View {
     private var compact: Bool { vClass == .compact }
     private var inputShown: Bool { inputChoice ?? !compact }
     private var takesFiles: Bool { found?.0.takesFiles ?? false }
-    /// Whether the instance sends a feed at all; without it there is nothing to switch.
-    private var hasFeed: Bool { found?.0.sendsFeed ?? false }
+    /// Whether there is a feed to switch to: the instance sends one, and it did not say this
+    /// agent has none (a note alone: Copilot, no hooks, a plain-mode host). Without one the
+    /// screen is all there is, and the switch stays out of the way.
+    private var hasFeed: Bool { (found?.0.sendsFeed ?? false) && relay.feeds[target]?.empty != true }
     /// What fills the middle: the user's switch, else the feed, unless the setting says the
-    /// screen, the instance sends no feed, or it said this agent has none (the note).
+    /// screen or there is no feed.
     private var shownPane: AgentPane {
+        if !hasFeed { return .screen }
         if let paneChoice { return paneChoice }
-        if settings.openOnScreen || !hasFeed || relay.feeds[target]?.empty == true { return .screen }
-        return .feed
+        return settings.openOnScreen ? .screen : .feed
     }
 
     var body: some View {
@@ -251,7 +254,7 @@ struct AgentView: View {
 
     /// Feed or screen. The default follows the setting and what the instance sends.
     private var paneSwitch: some View {
-        Picker("View", selection: Binding(get: { shownPane }, set: { paneChoice = $0 })) {
+        Picker("View", selection: Binding(get: { shownPane }, set: { settings.setPane($0.rawValue, for: target.key) })) {
             Image(systemName: "text.alignleft").tag(AgentPane.feed).accessibilityLabel("Feed")
             Image(systemName: "terminal").tag(AgentPane.screen).accessibilityLabel("Screen")
         }
@@ -528,6 +531,7 @@ struct ScreenView: View {
                         pinch = 1
                     })
                 .onTapGesture(count: 2) { onZoom(Self.fitting(trimmed, width: geo.size.width - 16)) }
+                .modifier(BottomAnchor(anchor: UnitPoint(x: 0, y: 1))) // opens at the bottom, a second visit too (the text it holds does not change)
                 .modifier(FollowWatch(follow: follow))
                 .onChange(of: text) { _, _ in if follow.following { toBottom(proxy) } }
                 .onChange(of: geo.size) { _, _ in if follow.following { toBottom(proxy) } } // the keyboard came up, the phone turned
@@ -649,7 +653,7 @@ struct FollowWatch: ViewModifier {
 }
 
 /// The two views of an agent: its feed (what was said and done) and its screen (the terminal).
-enum AgentPane: Hashable { case feed, screen }
+enum AgentPane: String, Hashable { case feed, screen }
 
 struct KeyBar: View {
     struct Key: Identifiable {

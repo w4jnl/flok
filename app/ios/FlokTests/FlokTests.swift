@@ -59,7 +59,7 @@ struct WireTests {
         #expect(state.items.map(\.id) == ["u1", "a1", "a2"], "an item sent twice counts once")
         #expect(!state.empty)
         var none = FeedState()
-        none.take(try Wire.decoder.decode(Frame.self, from: Data(#"{"type":"feed","instance":"Home","feed":{"pane":"%2","reset":true,"note":"Copilot CLI keeps no transcript flok can read: the screen is below"}}"#.utf8)).feed!)
+        none.take(try Wire.decoder.decode(Frame.self, from: Data(#"{"type":"feed","instance":"Home","feed":{"pane":"%2","reset":true,"note":"Copilot CLI keeps no transcript flok can read; the screen is shown instead"}}"#.utf8)).feed!)
         #expect(none.empty && none.note?.hasPrefix("Copilot") == true)
     }
 
@@ -341,6 +341,28 @@ struct SettingsTests {
         #expect(!Settings().wrapLines, "switched off, it stays off at the next start")
         s.wrapLines = true
         #expect(Settings().wrapLines)
+    }
+
+    @MainActor @Test func theSwitchIsKeptPerAgent() {
+        let d = UserDefaults.standard
+        let before = d.object(forKey: "paneChoices")
+        defer { if let before { d.set(before, forKey: "paneChoices") } else { d.removeObject(forKey: "paneChoices") } }
+        d.removeObject(forKey: "paneChoices")
+        let s = Settings()
+        #expect(s.pane(for: "home|%5") == nil, "never touched: the default decides")
+        s.setPane("screen", for: "home|%5")
+        s.setPane("feed", for: "home|%7")
+        #expect(Settings().pane(for: "home|%5") == "screen", "kept across starts")
+        #expect(Settings().pane(for: "home|%7") == "feed")
+        s.setPane("feed", for: "home|%5")
+        #expect(s.pane(for: "home|%5") == "feed", "the newest choice wins")
+        #expect(s.paneChoices.count == 2, "one record per agent")
+        s.setPane(nil, for: "home|%5")
+        #expect(s.pane(for: "home|%5") == nil)
+        for i in 0..<(Settings.keptPanes + 5) { s.setPane("screen", for: "home|%\(i + 100)") }
+        #expect(s.paneChoices.count == Settings.keptPanes, "bounded")
+        #expect(s.pane(for: "home|%7") == nil, "the oldest went first")
+        #expect(s.pane(for: "home|%\(Settings.keptPanes + 104)") == "screen")
     }
 }
 

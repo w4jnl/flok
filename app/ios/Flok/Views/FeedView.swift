@@ -11,7 +11,10 @@ struct FeedView: View {
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView(.vertical) {
-                LazyVStack(alignment: .leading, spacing: 10) {
+                // Not lazy: a lazy stack estimates the rows it has not laid out, and a scroll to
+                // the end on it lands wherever the estimate put it; the feed is at most
+                // FeedState.keep items, and SwiftUI skips the rows whose item did not change.
+                VStack(alignment: .leading, spacing: 10) {
                     ForEach(state?.items ?? []) { item in
                         FeedRow(item: item)
                     }
@@ -27,6 +30,7 @@ struct FeedView: View {
             .modifier(FollowWatch(follow: follow))
             .onChange(of: state?.items.last?.id) { _, _ in if follow.following { toBottom(proxy) } }
             .onChange(of: state?.items.count) { _, _ in if follow.following { toBottom(proxy) } } // a reset that ends on the same item
+            .onAppear { toBottom(proxy) } // a second visit opens on the items it holds; exact, the stack is not lazy
             .overlay(alignment: .bottomTrailing) {
                 if !follow.following, !(state?.items.isEmpty ?? true) {
                     Button {
@@ -83,15 +87,19 @@ struct FeedView: View {
 
 /// The scroll view opens at its end and keeps the end in view while the content is still being
 /// measured: the rows of a LazyVStack take their real height as they come by, so a scrollTo on
-/// appear lands wherever the estimate put it, often far above the latest. From iOS 18 only the
-/// start and the size changes are anchored, so a feed shorter than the view still hangs from
-/// the top; iOS 17 has one anchor for all three, and such a feed sits at the bottom there.
+/// appear lands wherever the estimate put it, often far above the latest; and a view that opens
+/// on content it already holds (a second visit) sees no change to scroll on. From iOS 18 only
+/// the start and the size changes are anchored, so content shorter than the view still hangs
+/// from the top; iOS 17 has one anchor for all three, and such content sits at the bottom there.
+/// A reader who scrolled away is left where they are when the content grows.
 struct BottomAnchor: ViewModifier {
+    var anchor: UnitPoint = .bottom // the screen keeps its left edge: UnitPoint(x: 0, y: 1)
+
     func body(content: Content) -> some View {
         if #available(iOS 18, *) {
-            content.defaultScrollAnchor(.bottom, for: .initialOffset).defaultScrollAnchor(.bottom, for: .sizeChanges)
+            content.defaultScrollAnchor(anchor, for: .initialOffset).defaultScrollAnchor(anchor, for: .sizeChanges)
         } else {
-            content.defaultScrollAnchor(.bottom)
+            content.defaultScrollAnchor(anchor)
         }
     }
 }
