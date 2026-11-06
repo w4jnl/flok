@@ -107,9 +107,10 @@ plain mode: `send-keys` over ssh, the files streamed into `~/.local/state/flok/a
   form on the screen does not follow (answered meanwhile, moved), the phone says what did not
   happen and the key bar, which under such a screen offers the form's keys (digits, Space, the
   arrows, Enter, Esc), finishes it. A Mac whose flok is older than the form keeps the keys
-  only, and the banner says so. Next to the field a paperclip attaches photos, screenshots or the
-  clipboard's picture, up to six (shrunk on the phone; the agent gets them as files and reads
-  them) and a
+  only, and the banner says so. Next to the field a paperclip attaches photos or screenshots, up to six
+  (shrunk on the phone; the agent gets them as files and reads them); while the clipboard
+  holds a picture, the system's paste button stands beside it and attaches that one without
+  iOS asking whether flok may paste; and a
   microphone: **hold it and talk**, let go and the words are in the field (or sent, if you
   say so in Settings). On iOS 26 the recogniser runs on the phone (Apple's
   `SpeechTranscriber`, nothing leaves it), with your agents' names and the identifiers on the

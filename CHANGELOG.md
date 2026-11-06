@@ -4,6 +4,13 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
+## Unreleased
+
+- **Pasting a picture no longer asks "flok would like to paste from…".** The paperclip's
+  *Paste Image* read the clipboard itself, which iOS guards with that question every time.
+  The clipboard's picture now goes through the system's own paste button, which appears next
+  to the paperclip while there is a picture to paste and needs no permission.
+
 ## 0.13.3 (2026-11-06)
 
 - **An agent opens at the bottom again, feed and screen.** Opening an agent a second time
