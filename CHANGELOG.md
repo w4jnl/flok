@@ -4,7 +4,7 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
-## Unreleased
+## 0.13.3 (2026-11-06)
 
 - **An agent opens at the bottom again, feed and screen.** Opening an agent a second time
   landed somewhere in the middle of its feed, or near the top of a long one, and its screen at
