@@ -2,6 +2,7 @@
 // (hold the microphone) or with a picture attached.
 import PhotosUI
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct AgentView: View {
     let target: Target
@@ -23,6 +24,7 @@ struct AgentView: View {
     @State private var voiceBase = "" // what the field held before the microphone was pressed
     @State private var pressStarted: Date?
     @State private var showForm = false // the agent's question form, filled in natively
+    @State private var clipboardHasImage = UIPasteboard.general.hasImages // shows the paste button
     /// The user's feed/screen switch, remembered per agent (Settings); nil = the default below.
     private var paneChoice: AgentPane? { settings.pane(for: target.key).flatMap(AgentPane.init(rawValue:)) }
     @FocusState private var typing: Bool
@@ -99,6 +101,7 @@ struct AgentView: View {
                             .buttonStyle(.bordered)
                             .accessibilityLabel("Hide the keyboard")
                     } else {
+                        if takesFiles, clipboardHasImage { pasteButton }
                         attachMenu
                         VoiceButton(voice: voice, onDown: voiceDown, onUp: voiceUp)
                     }
@@ -161,7 +164,15 @@ struct AgentView: View {
         // seen when it opens, when it finishes while open, and when the app comes back to it;
         // not while the app lock's cover is up, nobody saw it then.
         .onChange(of: found?.1.unseen ?? 0) { _, n in if n > 0 { Task { await seenIfUnseen() } } }
-        .onChange(of: phase) { _, p in if p == .active { Task { await seenIfUnseen() } } }
+        .onChange(of: phase) { _, p in
+            if p == .active {
+                clipboardHasImage = UIPasteboard.general.hasImages // copied in another app meanwhile
+                Task { await seenIfUnseen() }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIPasteboard.changedNotification)) { _ in
+            clipboardHasImage = UIPasteboard.general.hasImages
+        }
         .onChange(of: lock.locked) { _, l in if !l { Task { await seenIfUnseen() } } }
         .onChange(of: compact) { _, _ in inputChoice = nil } // a turn of the phone goes back to that orientation's default
         // the question was answered elsewhere (on the Mac, with the keys) or replaced by another:
@@ -285,17 +296,43 @@ struct AgentView: View {
         } label: { Image(systemName: "ellipsis.circle") }
     }
 
-    /// A picture for the agent: from the library, the camera or the clipboard. It is shrunk
-    /// here, saved next to the agent by the instance, and its path typed after the words.
+    /// The clipboard's picture, through the system's own paste button: an app that reads the
+    /// pasteboard itself earns iOS's "would like to paste from" question every time, the
+    /// system control does not. It stands next to the paperclip only while there is a
+    /// picture to paste (`hasImages` is one of the checks that asks nothing).
+    private var pasteButton: some View {
+        PasteButton(supportedContentTypes: [.image]) { providers in
+            guard let provider = providers.first else { return }
+            Task { @MainActor in
+                guard let data = await Self.imageData(provider), let image = UIImage(data: data) else {
+                    flash("that picture cannot be used")
+                    return
+                }
+                attach(image, name: "clipboard")
+            }
+        }
+        .labelStyle(.iconOnly)
+        .buttonBorderShape(.roundedRectangle(radius: 8))
+        .accessibilityLabel("Paste the clipboard's picture")
+    }
+
+    /// The picture's bytes from what the paste button hands over (the provider loads off the
+    /// main thread; UIImage is not Transferable, so the bytes travel and the image is made here).
+    private static func imageData(_ provider: NSItemProvider) async -> Data? {
+        await withCheckedContinuation { c in
+            _ = provider.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { data, _ in c.resume(returning: data) }
+        }
+    }
+
+    /// A picture for the agent: from the library or the camera (the clipboard has its own
+    /// button). It is shrunk here, saved next to the agent by the instance, and its path
+    /// typed after the words.
     private var attachMenu: some View {
         Menu {
             if takesFiles {
                 Button { showPhotos = true } label: { Label("Photo Library", systemImage: "photo.on.rectangle") }
                 if UIImagePickerController.isSourceTypeAvailable(.camera) {
                     Button { showCamera = true } label: { Label("Take Photo", systemImage: "camera") }
-                }
-                if UIPasteboard.general.hasImages {
-                    Button { pasteImage() } label: { Label("Paste Image", systemImage: "doc.on.clipboard") }
                 }
             } else {
                 Text(found == nil ? "no agent" : "flok on \(target.instance) is too old for files: update it there")
@@ -380,14 +417,6 @@ struct AgentView: View {
         }
         attachments.append(file)
         flash(attachments.count == 1 ? "attached \(file.name), \(file.sizeLabel)" : "\(attachments.count) files attached")
-    }
-
-    private func pasteImage() {
-        guard let image = UIPasteboard.general.image else {
-            flash("no picture on the clipboard")
-            return
-        }
-        attach(image, name: "clipboard")
     }
 
     // MARK: voice
