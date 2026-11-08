@@ -8,10 +8,9 @@ struct SettingsView: View {
     @State private var showPair = false
     @State private var showApprove = false
     @State private var notifications = Notifications.shared
-    @State private var voiceLocales: [Locale] = []
 
     private var voiceFooter: String {
-        var s = "Hold the microphone next to the reply field and talk; let go to stop, or tap it once to keep listening. The agent's names and the words on its screen are given to the recogniser, so file names come out as written."
+        var s = "Tap the microphone next to the reply field and talk, tap it again to stop; hold it to pick one of the languages. The agent's names and the words on its screen are given to the recogniser, so file names come out as written."
         if let why = Cleanup.unavailableReason {
             s += " The tidy-up (punctuation, filler words out, names spelled as code) is off here: \(why)."
         } else {
@@ -91,21 +90,19 @@ struct SettingsView: View {
             }
             Section {
                 LabeledContent("Recognition", value: Voice.engineName)
-                Picker("Language", selection: $settings.voiceLocale) {
-                    Text("the phone's").tag("")
-                    ForEach(voiceLocales, id: \.identifier) { l in
-                        Text(Locale.current.localizedString(forIdentifier: l.identifier) ?? l.identifier).tag(l.identifier)
-                    }
+                NavigationLink {
+                    VoiceLanguagesView()
+                } label: {
+                    LabeledContent("Languages", value: VoiceLanguages.offered(chosen: settings.voiceLanguages, current: settings.voiceLocale).map { VoiceLanguages.code($0) }.joined(separator: ", "))
                 }
                 Toggle("Tidy up with Apple Intelligence", isOn: $settings.voiceCleanup)
                     .disabled(!Cleanup.available)
-                Toggle("Send as soon as the button is released", isOn: $settings.voiceSendOnRelease)
+                Toggle("Send as soon as listening stops", isOn: $settings.voiceSendOnRelease)
             } header: {
                 Text("Voice")
             } footer: {
                 Text(voiceFooter)
             }
-            .task { voiceLocales = await Voice.supportedLocales() }
             Section("About") {
                 LabeledContent("Version", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")
                 LabeledContent("Instances", value: "\(relay.instances.count)")

@@ -127,9 +127,12 @@ keychain group the extensions already read, `Shared/Privacy.swift`). The lock is
 keeps working, and the notification card's keys and the share sheet stay behind the phone's own
 lock, since iOS gives extensions no Face ID. See [docs/phone.md](../../docs/phone.md#locking-the-app).
 
-Voice: hold the microphone next to the reply field and talk. On iOS 26 the recogniser is
-`SpeechTranscriber` (on the Neural Engine; nothing leaves the phone; the first use downloads
-the language's model), before that `SFSpeechRecognizer`. Both get the names the app holds and
+Voice: tap the microphone next to the reply field and talk, tap again to stop; hold it for the
+languages ticked in Settings › Voice › Languages (`Voice/Languages.swift`, `VoiceLanguagesView`).
+On iOS 26 the recogniser is `SpeechAnalyzer` with `SpeechTranscriber`, or the keyboard's
+`DictationTranscriber` for a language it lacks (Dutch, Slovak; on the Neural Engine; nothing
+leaves the phone; the first dictation in a language downloads its model, which the system
+keeps for every app), before that `SFSpeechRecognizer`. Both get the names the app holds and
 the identifiers on the agent's screen (`Voice/Vocabulary.swift`) as context, so `relay.go`
 comes out as written. With Apple Intelligence (iOS 26, iPhone 15 Pro or later) the text is
 tidied on the phone (`Voice/Cleanup.swift`: punctuation, filler words out, names spelled as

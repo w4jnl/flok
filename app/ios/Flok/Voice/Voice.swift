@@ -1,8 +1,9 @@
-// Hold to talk: the microphone into Apple's speech recognition on the phone, with the words the
+// Tap to talk: the microphone into Apple's speech recognition on the phone, with the words the
 // app knows (Vocabulary) as context, then the on-device clean-up (Cleanup). On iOS 26 the
-// engine is SpeechTranscriber (SpeechAnalyzer, on the Neural Engine, live words while you
-// speak); before that, SFSpeechRecognizer. The audio never goes further than Apple's
-// recogniser; with SpeechTranscriber it does not leave the phone.
+// engine is SpeechAnalyzer (on the Neural Engine, live words while you speak) with
+// SpeechTranscriber where it has the language and the keyboard's DictationTranscriber where it
+// does not (Dutch, Slovak); before that, SFSpeechRecognizer. The audio never goes further than
+// Apple's recogniser; with SpeechAnalyzer it does not leave the phone.
 import AVFoundation
 import Foundation
 import Observation
@@ -57,12 +58,35 @@ final class Voice {
         return "Apple speech recognition"
     }
 
-    /// The languages the recogniser knows.
+    /// The languages the recogniser knows: on iOS 26 SpeechTranscriber's and the keyboard's
+    /// dictation model's together, each language once.
     static func supportedLocales() async -> [Locale] {
         if #available(iOS 26.0, *), SpeechTranscriber.isAvailable {
-            return await SpeechTranscriber.supportedLocales.sorted { $0.identifier < $1.identifier }
+            let both = await SpeechTranscriber.supportedLocales + DictationTranscriber.supportedLocales
+            var seen = Set<String>()
+            return both.filter { seen.insert($0.identifier(.bcp47)).inserted }.sorted { $0.identifier < $1.identifier }
         }
         return SFSpeechRecognizer.supportedLocales().sorted { $0.identifier < $1.identifier }
+    }
+
+    /// Whether a language's model is on the phone (iOS 26; the first dictation in a language
+    /// downloads it once, the system keeps it for every app). nil where that cannot be known.
+    static func modelInstalled(_ locale: Locale) async -> Bool? {
+        if #available(iOS 26.0, *), SpeechTranscriber.isAvailable {
+            guard let module = await AnalyzerEngine.module(for: locale, exact: true) else { return nil }
+            return await AssetInventory.status(forModules: [module]) == .installed
+        }
+        return nil
+    }
+
+    /// A language left the user's list: flok's claim on its model goes (the system frees the
+    /// model when no app claims it; an app may claim only a few).
+    static func release(_ locale: Locale) async {
+        if #available(iOS 26.0, *), SpeechTranscriber.isAvailable {
+            for l in await AssetInventory.reservedLocales where l.identifier(.bcp47) == locale.identifier(.bcp47) {
+                _ = await AssetInventory.release(reservedLocale: l)
+            }
+        }
     }
 
     /// Starts listening; the live text shows up in finalText and volatileText.
@@ -155,42 +179,68 @@ final class AnalyzerEngine: SpeechEngine {
     private var reader: Task<String, Never>?
     private let audio = AudioCapture()
 
-    /// The locale the transcriber has a model for: the one asked for, else US English.
-    static func locale(for wanted: Locale) async -> Locale? {
-        if let l = await SpeechTranscriber.supportedLocale(equivalentTo: wanted) { return l }
-        return await SpeechTranscriber.supportedLocale(equivalentTo: Locale(identifier: "en_US"))
+    /// The locale among `have` for `wanted`: the same language and region, else the same
+    /// language with one of the phone's regions, else (unless `exact`) the same language anywhere.
+    static func pick(_ wanted: Locale, from have: [Locale], exact: Bool) -> Locale? {
+        let want = wanted.identifier(.bcp47)
+        if let l = have.first(where: { $0.identifier(.bcp47) == want }) { return l }
+        guard let lang = wanted.language.languageCode?.identifier else { return nil }
+        let same = have.filter { $0.language.languageCode?.identifier == lang }
+        let regions = Locale.preferredLanguages.compactMap { Locale(identifier: $0).region?.identifier }
+        if let l = same.first(where: { l in l.region.map { regions.contains($0.identifier) } ?? false }) { return l }
+        return exact ? nil : same.first
+    }
+
+    /// The model for a language: SpeechTranscriber where it has it, else the keyboard's
+    /// DictationTranscriber (Dutch, Slovak); nil where neither does.
+    static func module(for wanted: Locale, exact: Bool = false) async -> (any SpeechModule)? {
+        if let l = pick(wanted, from: await SpeechTranscriber.supportedLocales, exact: exact) {
+            return SpeechTranscriber(locale: l, transcriptionOptions: [], reportingOptions: [.volatileResults, .fastResults], attributeOptions: [])
+        }
+        if let l = pick(wanted, from: await DictationTranscriber.supportedLocales, exact: exact) {
+            return DictationTranscriber(locale: l, contentHints: [], transcriptionOptions: [.punctuation], reportingOptions: [.volatileResults, .frequentFinalization], attributeOptions: [])
+        }
+        return nil
     }
 
     func start(vocabulary: [String], locale: Locale, onUpdate: @escaping @MainActor (String, String) -> Void) async throws {
-        guard let loc = await Self.locale(for: locale) else { throw VoiceError.noLocale }
-        let transcriber = SpeechTranscriber(locale: loc, transcriptionOptions: [], reportingOptions: [.volatileResults, .fastResults], attributeOptions: [])
-        // the first use downloads the language's model (once, a few hundred MB)
-        if await AssetInventory.status(forModules: [transcriber]) != .installed,
-           let request = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
+        // the language asked for, else US English (a phone set to a language without a model)
+        var found = await Self.module(for: locale)
+        if found == nil { found = await Self.module(for: Locale(identifier: "en_US")) }
+        guard let module = found else { throw VoiceError.noLocale }
+        // the first use downloads the language's model (once; the system keeps it for every app)
+        if await AssetInventory.status(forModules: [module]) != .installed,
+           let request = try await AssetInventory.assetInstallationRequest(supporting: [module]) {
             try await request.downloadAndInstall()
         }
         let context = AnalysisContext()
         if !vocabulary.isEmpty {
             context.contextualStrings = [.general: vocabulary]
         }
-        guard let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber]) else { throw VoiceError.noEngine }
+        guard let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [module]) else { throw VoiceError.noEngine }
         let (stream, continuation) = AsyncStream.makeStream(of: AnalyzerInput.self)
-        let analyzer = SpeechAnalyzer(inputSequence: stream, modules: [transcriber], analysisContext: context) // starts analysing
+        let analyzer = SpeechAnalyzer(inputSequence: stream, modules: [module], analysisContext: context) // starts analysing
         self.analyzer = analyzer
         input = continuation
         reader = Task { @MainActor in
             var settled = ""
-            do {
-                for try await result in transcriber.results {
-                    let text = String(result.text.characters).trimmingCharacters(in: .whitespaces)
-                    if result.isFinal {
-                        if !text.isEmpty {
-                            settled += (settled.isEmpty ? "" : " ") + text
-                        }
-                        onUpdate(settled, "")
-                    } else {
-                        onUpdate(settled, text)
+            // a result: settled text joins what was said, a volatile one shows beside it
+            @MainActor func got(_ attributed: AttributedString, final: Bool) {
+                let text = String(attributed.characters).trimmingCharacters(in: .whitespaces)
+                if final {
+                    if !text.isEmpty {
+                        settled += (settled.isEmpty ? "" : " ") + text
                     }
+                    onUpdate(settled, "")
+                } else {
+                    onUpdate(settled, text)
+                }
+            }
+            do {
+                if let t = module as? SpeechTranscriber {
+                    for try await r in t.results { got(r.text, final: r.isFinal) }
+                } else if let t = module as? DictationTranscriber {
+                    for try await r in t.results { got(r.text, final: r.isFinal) }
                 }
             } catch {
                 // the analyzer ended with an error: what settled so far is the result

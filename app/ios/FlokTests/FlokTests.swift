@@ -329,6 +329,32 @@ struct LiveActivityTests {
 }
 
 /// What the app remembers between starts: UserDefaults, read back at init.
+struct VoiceLanguagesTests {
+    @Test func theMenuOffersTheTickedLanguagesBehindTheCurrentOne() {
+        let nl = Locale(identifier: "nl-NL")
+        #expect(VoiceLanguages.offered(chosen: [], current: "", phone: nl) == ["nl-NL"], "nothing ticked: the phone's language alone")
+        #expect(VoiceLanguages.offered(chosen: ["en-US", "sk-SK"], current: "", phone: nl) == ["nl-NL", "en-US", "sk-SK"])
+        #expect(VoiceLanguages.offered(chosen: ["en-US", "sk-SK"], current: "sk-SK", phone: nl) == ["sk-SK", "en-US"], "the current one first, once")
+    }
+
+    @Test func theButtonShowsTheLanguageCode() {
+        #expect(VoiceLanguages.code("nl-NL") == "NL")
+        #expect(VoiceLanguages.code("sk-SK") == "SK")
+        #expect(VoiceLanguages.code("", phone: Locale(identifier: "en-GB")) == "EN")
+        #expect(VoiceLanguages.name("nl-NL", phone: Locale(identifier: "en-US")) == "Dutch (Netherlands)")
+    }
+
+    @MainActor @Test func theLanguagesAreKept() {
+        let d = UserDefaults.standard
+        let before = d.stringArray(forKey: "voiceLanguages")
+        defer { if let before { d.set(before, forKey: "voiceLanguages") } else { d.removeObject(forKey: "voiceLanguages") } }
+        d.removeObject(forKey: "voiceLanguages")
+        #expect(Settings().voiceLanguages.isEmpty)
+        Settings().voiceLanguages = ["nl-NL", "sk-SK"]
+        #expect(Settings().voiceLanguages == ["nl-NL", "sk-SK"])
+    }
+}
+
 struct SettingsTests {
     @MainActor @Test func wrapIsTheDefaultAndAChoiceIsKept() {
         let d = UserDefaults.standard

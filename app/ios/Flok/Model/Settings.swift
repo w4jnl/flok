@@ -21,11 +21,13 @@ final class Settings {
     /// "screen"), so an agent opens the way it was left; newest last, the last `keptPanes` kept.
     private(set) var paneChoices: [PaneChoice] { didSet { defaults.set(try? JSONEncoder().encode(paneChoices), forKey: "paneChoices") } }
     static let keptPanes = 200
-    /// Voice: tidy the dictated text with the on-device model, send it as soon as the button
-    /// is released, and the language ("" = the phone's).
+    /// Voice: tidy the dictated text with the on-device model, send it as soon as listening
+    /// stops, the language it listens in ("" = the phone's) and the languages the
+    /// microphone's menu offers (locale identifiers; empty = the one it listens in alone).
     var voiceCleanup: Bool { didSet { defaults.set(voiceCleanup, forKey: "voiceCleanup") } }
     var voiceSendOnRelease: Bool { didSet { defaults.set(voiceSendOnRelease, forKey: "voiceSendOnRelease") } }
     var voiceLocale: String { didSet { defaults.set(voiceLocale, forKey: "voiceLocale") } }
+    var voiceLanguages: [String] { didSet { defaults.set(voiceLanguages, forKey: "voiceLanguages") } }
     /// "<relay>|<apns token>" of the last device registration, so it is not repeated at every start.
     var registered: String? { didSet { defaults.set(registered, forKey: "registered") } }
     /// The pairing this phone's key came from (flok phone pair); nil when a device token was typed.
@@ -60,6 +62,7 @@ final class Settings {
         voiceCleanup = defaults.object(forKey: "voiceCleanup") as? Bool ?? true
         voiceSendOnRelease = defaults.bool(forKey: "voiceSendOnRelease")
         voiceLocale = defaults.string(forKey: "voiceLocale") ?? ""
+        voiceLanguages = defaults.stringArray(forKey: "voiceLanguages") ?? []
         registered = defaults.string(forKey: "registered")
         pairedPhoneID = defaults.string(forKey: "pairedPhoneID")
         pairedPhoneName = defaults.string(forKey: "pairedPhoneName")
