@@ -6,6 +6,18 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+- **The reply bar's buttons tap back and give.** The keys, the microphone, the paste button,
+  the send button and the chevrons are small and their press was easy to miss; each now gives
+  a light haptic tap (the microphone and send a firmer one) and bounces on the tap, dipping,
+  flashing in the accent colour and springing back; a reply the agent did not get is an error
+  buzz with its message.
+- **Dictate in Dutch, Slovak, or any language the phone can hear, and switch under the
+  microphone.** Tap the microphone to talk and tap it again to stop (the hold-to-talk is gone,
+  a tap does both); hold it to pick the language, among the ones you ticked in Settings ›
+  Voice › Languages, and the current one's code shows on the button. On iOS 26 a language
+  Apple's SpeechTranscriber lacks, such as Dutch or Slovak, goes through the keyboard's own
+  dictation model, still on the phone. Ticking a language costs nothing: iOS fetches its model
+  once, at the first dictation in it.
 - **Pasting a picture no longer asks "flok would like to paste from…".** The paperclip's
   *Paste Image* read the clipboard itself, which iOS guards with that question every time.
   The clipboard's picture now goes through the system's own paste button, which appears next

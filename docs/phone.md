@@ -111,11 +111,16 @@ plain mode: `send-keys` over ssh, the files streamed into `~/.local/state/flok/a
   (shrunk on the phone; the agent gets them as files and reads them); while the clipboard
   holds a picture, the system's paste button stands beside it and attaches that one without
   iOS asking whether flok may paste; and a
-  microphone: **hold it and talk**, let go and the words are in the field (or sent, if you
-  say so in Settings). On iOS 26 the recogniser runs on the phone (Apple's
-  `SpeechTranscriber`, nothing leaves it), with your agents' names and the identifiers on the
-  agent's screen as context, and Apple Intelligence tidies the text: punctuation, filler words
-  out, `relay.go` spelled as code. Before iOS 26 it is Apple's speech recognition.
+  microphone (every button in this bar taps back through the phone's haptics, so a press is
+  felt where it is hard to see): **tap it and talk**, tap again and the words are in the field (or sent, if you
+  say so in Settings). Hold it to pick the language: the ones you ticked in Settings › Voice ›
+  Languages, the code of the current one on the button (`NL`). On iOS 26 the recogniser runs on
+  the phone (Apple's `SpeechTranscriber`, and for a language it lacks, Dutch or Slovak, the
+  keyboard's dictation model; nothing leaves the phone), with your agents' names and the
+  identifiers on the agent's screen as context, and Apple Intelligence tidies the text:
+  punctuation, filler words out, `relay.go` spelled as code. Ticking a language costs nothing;
+  iOS fetches its model once, at your first dictation in it, and keeps it for every app.
+  Before iOS 26 it is Apple's speech recognition.
 - **The share sheet**: *flok* is among the apps when you share screenshots, photos, a PDF,
   text or a link; pick the agent, add a few words, send.
 - **Pushes**, one per agent that needs you, worded like the sidebar: the agent as the title,

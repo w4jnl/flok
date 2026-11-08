@@ -22,7 +22,7 @@ struct AgentView: View {
     @State private var photoItems: [PhotosPickerItem] = []
     @State private var voice = Voice()
     @State private var voiceBase = "" // what the field held before the microphone was pressed
-    @State private var pressStarted: Date?
+    @State private var showVoiceLanguages = false // Settings › Voice › Languages, from the mic's menu
     @State private var showForm = false // the agent's question form, filled in natively
     @State private var clipboardHasImage = UIPasteboard.general.hasImages // shows the paste button
     /// The user's feed/screen switch, remembered per agent (Settings); nil = the default below.
@@ -86,8 +86,7 @@ struct AgentView: View {
                     }
                 }
                 HStack(spacing: 6) {
-                    Button { inputChoice = false; typing = false } label: { Image(systemName: "chevron.down").fontWeight(.semibold) }
-                        .buttonStyle(.borderless)
+                    BounceButton { inputChoice = false; typing = false } label: { Image(systemName: "chevron.down").fontWeight(.semibold) }
                         .accessibilityLabel("Hide the keys and the reply field")
                     TextField(voice.listening ? "listening…" : "type a reply, Enter sends it", text: $input, axis: .vertical)
                         .textFieldStyle(.roundedBorder)
@@ -97,16 +96,15 @@ struct AgentView: View {
                         .focused($typing)
                         .onSubmit { Task { await sendInput() } }
                     if typing {
-                        Button { typing = false } label: { Image(systemName: "keyboard.chevron.compact.down") }
-                            .buttonStyle(.bordered)
+                        BounceButton(look: .tinted) { typing = false } label: { Image(systemName: "keyboard.chevron.compact.down") }
                             .accessibilityLabel("Hide the keyboard")
                     } else {
                         if takesFiles, clipboardHasImage { pasteButton }
                         attachMenu
-                        VoiceButton(voice: voice, onDown: voiceDown, onUp: voiceUp)
+                        VoiceButton(voice: voice, language: settings.voiceLocale, languages: VoiceLanguages.offered(chosen: settings.voiceLanguages, current: settings.voiceLocale),
+                                    onTap: voiceTap, onPick: voicePick, onMore: { showVoiceLanguages = true })
                     }
-                    Button { Task { await sendInput() } } label: { Image(systemName: "paperplane.fill") }
-                        .buttonStyle(.borderedProminent)
+                    BounceButton(look: .prominent, firm: true) { Task { await sendInput() } } label: { Image(systemName: "paperplane.fill") }
                         .disabled(input.isEmpty && attachments.isEmpty)
                 }
                 .padding(.horizontal, 10).padding(.vertical, compact ? 4 : 8)
@@ -114,8 +112,7 @@ struct AgentView: View {
                 HStack {
                     if let notice { Text(notice).font(.footnote).foregroundStyle(.secondary).lineLimit(1) }
                     Spacer()
-                    Button { inputChoice = true } label: { Label("Keys", systemImage: "chevron.up").labelStyle(.iconOnly) }
-                        .buttonStyle(.borderless)
+                    BounceButton { inputChoice = true } label: { Label("Keys", systemImage: "chevron.up").labelStyle(.iconOnly) }
                         .accessibilityLabel("Show the keys")
                 }
                 .padding(.horizontal, 12).padding(.vertical, 4)
@@ -147,6 +144,7 @@ struct AgentView: View {
             }
             .ignoresSafeArea()
         }
+        .sheet(isPresented: $showVoiceLanguages) { NavigationStack { VoiceLanguagesView() } }
         .sheet(isPresented: $showForm) {
             if let (_, a) = found, let form = a.form {
                 QuestionFormView(agentName: a.name, form: form) { body in await submitForm(body) }
@@ -303,6 +301,7 @@ struct AgentView: View {
     private var pasteButton: some View {
         PasteButton(supportedContentTypes: [.image]) { providers in
             guard let provider = providers.first else { return }
+            Haptics.tap()
             Task { @MainActor in
                 guard let data = await Self.imageData(provider), let image = UIImage(data: data) else {
                     flash("that picture cannot be used")
@@ -313,6 +312,7 @@ struct AgentView: View {
         }
         .labelStyle(.iconOnly)
         .buttonBorderShape(.roundedRectangle(radius: 8))
+        .bounce(on: attachments.count) // the picture arrived
         .accessibilityLabel("Paste the clipboard's picture")
     }
 
@@ -342,6 +342,7 @@ struct AgentView: View {
                 .font(.body.weight(.semibold))
                 .frame(width: 34, height: 32)
                 .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                .bounce(on: attachments.count) // a picture arrived or left
         }
         .accessibilityLabel("Attach a picture")
     }
@@ -424,14 +425,15 @@ struct AgentView: View {
     private var vocabulary: [String] { Vocabulary.build(instances: relay.instances, screen: relay.screens[target]) }
     private var voiceLocale: Locale { settings.voiceLocale.isEmpty ? Locale.current : Locale(identifier: settings.voiceLocale) }
 
-    /// The microphone pressed: start listening, after whatever the field holds. A press while
-    /// it listens (tap mode) ends it on release.
-    private func voiceDown() {
-        guard !voice.listening else {
-            pressStarted = nil
+    /// The microphone tapped: start listening, after whatever the field holds; tapped while
+    /// it listens, stop and take the words.
+    private func voiceTap() {
+        if voice.listening {
+            Haptics.tap()
+            Task { await finishVoice() }
             return
         }
-        pressStarted = .now
+        Haptics.press()
         typing = false
         let base = input.trimmingCharacters(in: .whitespacesAndNewlines)
         voiceBase = base.isEmpty ? "" : base + " "
@@ -440,14 +442,14 @@ struct AgentView: View {
         Task { await voice.start(vocabulary: words, locale: locale) }
     }
 
-    /// Released: a hold ends the dictation, a tap leaves it listening until the next tap.
-    private func voiceUp() {
-        if let started = pressStarted, Date.now.timeIntervalSince(started) < 0.35 {
-            pressStarted = nil
-            return
-        }
-        pressStarted = nil
-        Task { await finishVoice() }
+    /// A language picked under the mic: kept, and a dictation under way starts over in it.
+    private func voicePick(_ id: String) {
+        Haptics.tap()
+        settings.voiceLocale = id
+        guard voice.listening else { return }
+        voice.cancel()
+        input = voiceBase.trimmingCharacters(in: .whitespaces)
+        voiceTap()
     }
 
     private func finishVoice() async {
@@ -501,6 +503,7 @@ struct AgentView: View {
             await seenIfUnseen()
             flash(files.isEmpty ? "sent" : files.count == 1 ? "sent with \(files[0].name)" : "sent with \(files.count) files")
         } catch {
+            Haptics.failed()
             flash(error.localizedDescription)
         }
     }
@@ -719,8 +722,7 @@ struct KeyBar: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
                 ForEach(form ? Self.formKeys : Self.keys) { k in
-                    Button(k.label) { onKey(k) }
-                        .buttonStyle(.bordered)
+                    BounceButton(look: .tinted) { onKey(k) } label: { Text(k.label) }
                         .font(.system(.body, design: .monospaced))
                 }
             }
