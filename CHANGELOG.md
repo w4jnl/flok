@@ -6,6 +6,11 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+- **A killed work pane comes back.** Killing the work pane next to the sidebar (the Kill item
+  of tmux's right-click pane menu, or the kill control in a pane border) left the sidebar alone
+  with "no client attached to inner tmux", and neither `flok reload` nor a new `flok up` brought
+  the pane back. The sidebar now starts a new one within a few seconds and restarts itself on
+  it; your tmux and its sessions are untouched.
 - **The reply bar's buttons tap back and give.** The keys, the microphone, the paste button,
   the send button and the chevrons are small and their press was easy to miss; each now gives
   a light haptic tap (the microphone and send a firmer one) and bounces on the tap, dipping,

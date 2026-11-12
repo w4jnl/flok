@@ -36,6 +36,16 @@ expect "client re-attached to the remaining session" "^$OTHER\$" "$(IN list-clie
 expect "sidebar still alive" '^sessions' "$(capture)"
 expect "FLOK_OUTER_SOCKET survives the re-attach" "^FLOK_OUTER_SOCKET=$OUTER_SOCK\$" "$(outer_env)"
 
+# a killed work pane (the kill item of the outer's pane menu) takes the attach loop with it and
+# no teardown runs: the sidebar starts a new loop next to itself and respawns on it
+OUT kill-pane -t "$RIGHT"
+expect_soon -t 15 "a killed work pane is replaced by a new attach loop" ' _attach-loop"?$' OUT list-panes -t "$SIDEBAR" -F '#{pane_start_command}'
+RIGHT=$(OUT list-panes -t "$SIDEBAR" -F '#{pane_id} #{pane_start_command}' | grep '_attach-loop' | cut -d' ' -f1 || true)
+expect_soon "runtime.json names the new work pane" "^$RIGHT\$" rt "r['right_pane']"
+expect_soon "the sidebar respawned on it" "FLOK_RIGHT_PANE=$RIGHT " OUT display -p -t "$SIDEBAR" '#{pane_start_command}'
+expect_soon "the inner server has its client back" '^1$' sh -c "tmux -L e2e-inner list-clients | wc -l | tr -d ' '"
+expect_soon "the sidebar renders the sessions again" '^sessions' capture
+
 IN detach-client -t "$(IN list-clients -F '#{client_tty}' | head -1)"; sleep 1.2
 if OUT has-session -t flok 2>/dev/null; then bad "outer still running after an explicit detach"; else ok "explicit detach closes the outer"; fi
 if IN ls >/dev/null 2>&1; then ok "inner server untouched"; else bad "inner server died"; fi

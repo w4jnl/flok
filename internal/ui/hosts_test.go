@@ -379,6 +379,71 @@ func TestSiblingPaneAndFrontResync(t *testing.T) {
 	}
 }
 
+// outerStub is the outer server for recovery: the sidebar %1 alone in its window, the panes
+// list-panes -a reports, and %9 for a new pane.
+type outerStub struct {
+	panes string
+	calls [][]string
+}
+
+func (o *outerStub) Label() string { return "outer" }
+func (o *outerStub) Run(args ...string) (string, error) {
+	o.calls = append(o.calls, args)
+	switch {
+	case args[0] == "list-panes" && args[1] == "-a":
+		return o.panes, nil
+	case args[0] == "list-panes":
+		return "%1\n", nil
+	case args[0] == "split-window":
+		return "%9\n", nil
+	}
+	return "", nil
+}
+
+func (o *outerStub) ran(cmd string) []string {
+	for _, c := range o.calls {
+		if c[0] == cmd {
+			return c
+		}
+	}
+	return nil
+}
+
+// A killed work pane takes the local attach loop with it: the sidebar starts a new one next to
+// itself and respawns on it. A loop that still runs elsewhere is joined back, never doubled.
+func TestRecoverRestartsAKilledLocalLoop(t *testing.T) {
+	t.Setenv("FLOK_STATE", t.TempDir())
+	if err := launcher.WriteRuntime(launcher.Runtime{SidebarPane: "%1", RightPane: "%0"}); err != nil {
+		t.Fatal(err)
+	}
+	m, _ := newTestModel(t)
+	sidebarOnly := `%1 @0 "env FLOK_OUTER=1 FLOK_RIGHT_PANE=%0 '/x/flok' sidebar"` + "\n"
+	o := &outerStub{panes: sidebarOnly}
+	m.d.Outer, m.d.SidebarPane, m.d.Bin = o, "%1", "/x/flok"
+	msg, ok := m.recoverCmd("")().(frontMsg)
+	if !ok || msg.err != nil || msg.pane != "%9" {
+		t.Fatalf("recover: %+v", msg)
+	}
+	if c := o.ran("split-window"); c == nil || c[len(c)-1] != "env FLOK_OUTER=1 '/x/flok' _attach-loop" {
+		t.Fatalf("new loop: %q", c)
+	}
+	if c := o.ran("respawn-pane"); c == nil || c[len(c)-1] != launcher.SidebarCommand("/x/flok", "%9") {
+		t.Fatalf("sidebar respawn: %q", c)
+	}
+	if rt, _ := launcher.ReadRuntime(); rt.RightPane != "%9" || rt.LocalPane != "" {
+		t.Fatalf("runtime: %+v", rt)
+	}
+
+	o = &outerStub{panes: sidebarOnly + `%0 @2 "env FLOK_OUTER=1 '/x/flok' _attach-loop"` + "\n"}
+	m.d.Outer = o
+	if msg, _ := m.recoverCmd("")().(frontMsg); msg.pane != "%0" {
+		t.Fatalf("rejoin: %+v", msg)
+	}
+	if o.ran("split-window") != nil || o.ran("respawn-pane") != nil || o.ran("join-pane") == nil {
+		t.Fatalf("a running loop is joined back: %q", o.calls)
+	}
+}
+
 func TestCursorBarWhenFocused(t *testing.T) {
 	m := multiHostModel(t)
 	m.panel, m.cursor[panelHosts] = panelHosts, 1

@@ -544,6 +544,29 @@ func ensureSidebar(cfg config.Config, bin string, outer *tmux.Local) error {
 	return err
 }
 
+// RestoreLocalPane starts a new local attach loop next to a sidebar left alone in its window and
+// records it as the front. It is for a work pane that was killed (the kill item of the outer's
+// pane menu): the loop never ran its teardown, so the outer, the sidebar and runtime.json stayed
+// behind with nothing attached to the inner server, and `flok up` only re-attached to that.
+func RestoreLocalPane(outer tmux.Client, sidebar, bin string) (string, error) {
+	home, _ := os.UserHomeDir()
+	out, err := outer.Run("split-window", "-h", "-d", "-t", sidebar, "-c", home, "-P", "-F", "#{pane_id}", attachLoopCommand(bin))
+	if err != nil {
+		return "", fmt.Errorf("create work pane: %w", err)
+	}
+	pane := strings.TrimSpace(out)
+	if pane == "" {
+		return "", errors.New("create work pane: tmux named no pane")
+	}
+	_, _ = outer.Run("select-layout", "-t", sidebar, "main-vertical", ";", "select-pane", "-t", pane)
+	return pane, UpdateRuntime(func(r *Runtime) {
+		r.RightPane, r.FrontHost = pane, ""
+		if r.LocalPane != "" || len(r.Hosts) > 0 {
+			r.LocalPane = pane
+		}
+	})
+}
+
 // runAttach attaches this terminal to the outer session and waits. A deliberate teardown
 // (prefix d, `flok down`) kills the outer server, which makes the tmux client exit 1 with
 // "[server exited]"; that is a normal end for `flok up`, so it returns nil then and launcher

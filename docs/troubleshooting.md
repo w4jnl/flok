@@ -14,6 +14,10 @@
 - `FLOK_DEBUG=1 flok up` logs every key the sidebar receives to `sidebar.log` in the state dir.
 - If you moved the binary (for example from `make install` to Homebrew), run `flok install` again;
   it rewrites the hook commands to the new absolute path.
+- The sidebar says `no client attached to inner tmux`: the work pane next to it was killed (the
+  Kill item of tmux's right-click pane menu). The sidebar starts a new one within a few seconds;
+  a sidebar older than that fix needs `flok down` then `flok up`, which leave your tmux and its
+  sessions running.
 - A host reads `needs auth` or `host key`: run `ssh <target>` once by hand (flok uses
   `BatchMode=yes`, so it never types a password or accepts a key); `no flok`: the host has no
   flok on its non-interactive PATH: `flok host install <name>` (or `I` on its row) puts this one

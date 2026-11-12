@@ -536,10 +536,12 @@ func (m *Model) resyncFront(actual string) tea.Cmd {
 	return nil
 }
 
-// recoverCmd puts the local work pane back next to a sidebar left alone in its window.
+// recoverCmd puts the local work pane back next to a sidebar left alone in its window. When the
+// local attach loop is gone altogether (its pane was killed), a new one is started there and
+// the sidebar respawns itself on it: the inner client's tty it watches went with the old pane.
 func (m Model) recoverCmd(local string) tea.Cmd {
-	outer, sidebar := m.d.Outer, m.d.SidebarPane
-	if outer == nil || sidebar == "" || local == "" {
+	outer, sidebar, bin := m.d.Outer, m.d.SidebarPane, m.d.Bin
+	if outer == nil || sidebar == "" {
 		return nil
 	}
 	return func() tea.Msg {
@@ -547,6 +549,23 @@ func (m Model) recoverCmd(local string) tea.Cmd {
 		defer swapMu.Unlock()
 		if observedRight(outer, sidebar, "") != "" {
 			return nil // something arrived meanwhile
+		}
+		if local == "" { // only on tmux's word that no loop runs: a failed scan fell back to runtime.json
+			wp, err := launcher.ScanWorkPanes(outer)
+			if err != nil {
+				return nil
+			}
+			local = wp.Local
+		}
+		if local == "" {
+			if bin == "" {
+				return nil
+			}
+			pane, err := launcher.RestoreLocalPane(outer, sidebar, bin)
+			if err == nil {
+				_, err = outer.Run("respawn-pane", "-k", "-t", sidebar, launcher.SidebarCommand(bin, pane))
+			}
+			return frontMsg{"", pane, err}
 		}
 		if _, err := outer.Run("join-pane", "-d", "-h", "-s", local, "-t", sidebar, ";", "select-layout", "-t", sidebar, "main-vertical"); err != nil {
 			return frontMsg{"", "", err}
