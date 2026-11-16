@@ -21,6 +21,7 @@ struct FlokApp: App {
             lock.scene(now, settings: Settings.shared) // the relay keeps connecting behind the cover
             switch now {
             case .active:
+                Settings.shared.rereadKeychain() // a start before the first unlock did not get the token
                 Relay.shared.connect()
                 Relay.shared.expireMutes()
                 Task { await Notifications.shared.refreshAuthorization() }

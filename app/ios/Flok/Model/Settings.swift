@@ -54,7 +54,9 @@ final class Settings {
         relayURL = defaults.string(forKey: "relayURL") ?? ""
         // -deviceToken on the command line (a scripted start) wins over the keychain's token
         let launched = defaults.volatileDomain(forName: UserDefaults.argumentDomain)["deviceToken"] as? String
-        deviceToken = launched ?? Keychain.get("deviceToken") ?? defaults.string(forKey: "deviceToken") ?? ""
+        let start = Self.startToken(launched: launched, kept: Keychain.read("deviceToken"), old: defaults.string(forKey: "deviceToken"))
+        deviceToken = start.token
+        keychainRead = start.trust
         fontSize = defaults.object(forKey: "fontSize") as? Double ?? 11
         wrapLines = defaults.object(forKey: "wrapLines") as? Bool ?? true   // wrap until the user says otherwise
         openOnScreen = defaults.bool(forKey: "openOnScreen")
@@ -74,8 +76,41 @@ final class Settings {
         hideDetailsLocked = Privacy.hideDetails()
         // Saved again at every start: an item from a build before the shared keychain group moves
         // into it, and the extension finds the relay even when only the token was in the keychain.
-        Keychain.set(deviceToken, for: "deviceToken")
-        Keychain.set(relayURL, for: "relayURL")
+        // Not while the keychain is shut (before the first unlock): the write would delete the
+        // key it could not read, and the phone would have to pair again.
+        if keychainRead {
+            Keychain.set(deviceToken, for: "deviceToken")
+            Keychain.set(relayURL, for: "relayURL")
+        }
+    }
+
+    /// Whether the start read the keychain; false in a launch before the phone's first unlock,
+    /// when the token is not known yet and nothing may be written over it.
+    private(set) var keychainRead: Bool
+
+    /// The token to start with and whether the keychain answered: a launch argument first, else
+    /// the keychain's item, else (nothing kept there) the one a build before the keychain left in
+    /// the defaults; a keychain that cannot be read now leaves the token unknown, not gone.
+    nonisolated static func startToken(launched: String?, kept: Keychain.Read, old: String?) -> (token: String, trust: Bool) {
+        switch kept {
+        case .found(let t): (launched ?? t, true)
+        case .missing: (launched ?? old ?? "", true)
+        case .locked: (launched ?? "", false)
+        }
+    }
+
+    /// The phone was unlocked since a start that could not read the keychain: the token now.
+    func rereadKeychain() {
+        guard !keychainRead else { return }
+        switch Keychain.read("deviceToken") {
+        case .found(let t):
+            keychainRead = true
+            if deviceToken.isEmpty { deviceToken = t }
+        case .missing:
+            keychainRead = true
+        case .locked:
+            break
+        }
     }
 
     /// The switch as last set for this agent, nil when never touched.

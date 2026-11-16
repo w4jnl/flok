@@ -479,6 +479,18 @@ struct LockTests {
         #expect(!Privacy.hideDetails(nil) && !Privacy.hideDetails("0"), "off by default: the Lock Screen shows the names")
         #expect(Privacy.hideDetails("1"))
         #expect(Privacy.key == "hideDetailsLocked", "the content extension and the widget read this account")
+        #expect(Privacy.hideDetails(.locked), "before the first unlock the Lock Screen hides, it does not show")
+        #expect(!Privacy.hideDetails(.missing) && Privacy.hideDetails(.found("1")))
+    }
+
+    /// A launch before the phone's first unlock after a restart (a background push) cannot read
+    /// the keychain; the token is then unknown, not gone, and nothing is written over it.
+    @Test func aShutKeychainDoesNotLoseThePairing() {
+        #expect(Settings.startToken(launched: nil, kept: .found("k1"), old: nil) == ("k1", true))
+        #expect(Settings.startToken(launched: nil, kept: .missing, old: "k0") == ("k0", true), "a build before the keychain left it in the defaults")
+        #expect(Settings.startToken(launched: nil, kept: .missing, old: nil) == ("", true), "never paired")
+        #expect(Settings.startToken(launched: nil, kept: .locked, old: "k0") == ("", false), "not readable now: unknown, and no write-back")
+        #expect(Settings.startToken(launched: "arg", kept: .locked, old: nil) == ("arg", false), "a launch argument still wins")
     }
 }
 

@@ -110,7 +110,9 @@ the choices in `FormDraft`): the phone sends the choices, the instance presses t
 agent's own form key by key and reads the screen after each, so Claude gets what a keyboard
 would have typed; the key bar under such a screen offers the form's keys for the rest.
 Everything is logged on the instance in `events.log`, by size and file name, never the text.
-The app keeps the relay address and the phone's key (the keychain group the extensions read),
+The app keeps the relay address and the phone's key (the keychain group the extensions read;
+a start before the phone's first unlock, which iOS allows for a push, finds the keychain shut
+and leaves it alone, `Keychain.Read.locked`, until the app comes to the front unlocked),
 what the pairing said (the phone's id and name, the tenant), its notification settings and
 mutes, the list's filter, the font size, the voice settings and the lock settings; nothing of
 the agents between starts.
