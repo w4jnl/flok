@@ -11,7 +11,16 @@ enum Privacy {
 
     /// The flag as stored: "1" for on, nothing for off.
     nonisolated static func hideDetails(_ stored: String?) -> Bool { stored == "1" }
-    nonisolated static func hideDetails() -> Bool { hideDetails(Keychain.get(key)) }
+    /// As read: before the phone's first unlock after a restart the keychain says nothing,
+    /// and a Lock Screen nobody has unlocked yet hides the details rather than shows them.
+    nonisolated static func hideDetails(_ read: Keychain.Read) -> Bool {
+        switch read {
+        case .found(let s): hideDetails(s)
+        case .missing: false
+        case .locked: true
+        }
+    }
+    nonisolated static func hideDetails() -> Bool { hideDetails(Keychain.read(key)) }
     nonisolated static func setHideDetails(_ on: Bool) { Keychain.set(on ? "1" : "", for: key) }
 }
 

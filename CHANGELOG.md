@@ -4,6 +4,15 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
+## Unreleased
+
+- **A restart no longer unpairs the phone.** After a reboot the pairing key is sealed until the
+  first unlock, and iOS may start the app before that, for a silent push. That start read
+  nothing and then saved the nothing it read, which deleted the key: the next opening asked to
+  pair again, while the relay still knew the phone. A start that cannot read the keychain now
+  leaves it alone and reads it again when you open the app; while the phone is in that state the
+  Live Activity and the notification cards hide the details rather than show them.
+
 ## 0.14.0 (2026-11-16)
 
 - **A killed work pane comes back.** Killing the work pane next to the sidebar (the Kill item
