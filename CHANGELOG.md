@@ -4,7 +4,7 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
-## Unreleased
+## 0.14.0 (2026-11-16)
 
 - **A killed work pane comes back.** Killing the work pane next to the sidebar (the Kill item
   of tmux's right-click pane menu, or the kill control in a pane border) left the sidebar alone
