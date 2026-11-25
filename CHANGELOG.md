@@ -4,7 +4,7 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
-## Unreleased
+## 0.14.1 (2026-11-25)
 
 - **A session report names the directory the session started in.** A report that began
   mid-session (reports turned on while the agent already ran, or after its journal was
