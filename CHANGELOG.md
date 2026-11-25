@@ -6,6 +6,11 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+- **A session report names the directory the session started in.** A report that began
+  mid-session (reports turned on while the agent already ran, or after its journal was
+  pruned) took the directory the agent's shell had `cd`'d into at that moment and kept it,
+  so the project in the report's name was the shell's, not the session's. A SessionStart,
+  a resume or a compaction now corrects it, and the branch and head are read again there.
 - **A restart no longer unpairs the phone.** After a reboot the pairing key is sealed until the
   first unlock, and iOS may start the app before that, for a silent push. That start read
   nothing and then saved the nothing it read, which deleted the key: the next opening asked to

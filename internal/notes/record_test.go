@@ -153,3 +153,30 @@ func TestApplyResumeReopensTheSession(t *testing.T) {
 		t.Fatalf("second end: %+v", r)
 	}
 }
+
+func TestApplySessionStartCorrectsTheDirectory(t *testing.T) {
+	now := time.Now()
+	var j Journal
+	ev := func(kind agent.EventKind, name, cwd string) agent.Event {
+		return agent.Event{Kind: kind, Name: name, Agent: "claude", AgentSessionID: "s1", Cwd: cwd}
+	}
+	// Reports turned on mid-session: the first event carries the Bash tool's directory.
+	Apply(&j, ev(agent.EvToolStart, "PreToolUse", "/work/docker/portainer/app"), now)
+	j.GitProbed = true
+	if j.Record.Cwd != "/work/docker/portainer/app" {
+		t.Fatalf("first cwd: %q", j.Record.Cwd)
+	}
+	// A later tool hook from another directory does not move it.
+	if changed, _ := Apply(&j, ev(agent.EvToolStart, "PreToolUse", "/work/docker/other"), now.Add(time.Second)); j.Record.Cwd != "/work/docker/portainer/app" {
+		t.Fatalf("tool hook moved cwd (changed=%v): %q", changed, j.Record.Cwd)
+	}
+	// A SessionStart (a compaction here) says where the session started; the git state is read again.
+	changed, _ := Apply(&j, ev(agent.EvSessionStart, "SessionStart", "/work/docker"), now.Add(2*time.Second))
+	if !changed || j.Record.Cwd != "/work/docker" || j.GitProbed {
+		t.Fatalf("session start: changed=%v cwd=%q git_probed=%v", changed, j.Record.Cwd, j.GitProbed)
+	}
+	// The same directory again changes nothing about it.
+	if _, _ = Apply(&j, ev(agent.EvSessionStart, "SessionStart", "/work/docker"), now.Add(3*time.Second)); j.Record.Cwd != "/work/docker" {
+		t.Fatalf("repeat: %q", j.Record.Cwd)
+	}
+}
