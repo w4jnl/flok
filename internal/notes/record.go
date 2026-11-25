@@ -98,8 +98,14 @@ func Apply(j *Journal, ev agent.Event, now time.Time) (changed, imp bool) {
 	if ev.Model != "" && r.Model == "" {
 		r.Model, changed = ev.Model, true
 	}
-	if r.Cwd == "" && ev.Cwd != "" {
+	// The directory is the session's start directory, as the sidebar's row has it: Claude's Bash
+	// tool keeps a `cd` between calls and reports it as cwd on every later hook, so a journal
+	// that began mid-session (reports turned on, a pruned journal) took the shell's directory.
+	// A SessionStart (a start, a resume, a compaction) says where the session really started
+	// and corrects it; the git state is read again for the new directory.
+	if ev.Cwd != "" && (r.Cwd == "" || (ev.Kind == agent.EvSessionStart && ev.Cwd != r.Cwd)) {
 		r.Cwd, changed = ev.Cwd, true
+		j.GitProbed = false
 	}
 	open := func() *Turn {
 		if n := len(r.Log); n > 0 && r.Log[n-1].Ended.IsZero() {

@@ -180,7 +180,7 @@ fields it does not know; a `version` above what it accepts is refused with exit 
 | `agent` | nt's slug: `claude-code`, `copilot-cli` |
 | `session` | the agent's own session id, whole |
 | `host` | `""`: this machine, nt uses its configured host; else flok's alias for the remote host the agent runs on, used as given |
-| `cwd`, `branch`, `head` | the directory the session started in and its git state; `head` is taken again at the end |
+| `cwd`, `branch`, `head` | the directory the session started in (taken at a SessionStart, never from a later hook, since the agent's shell keeps a `cd`) and its git state; `head` is taken again at the end |
 | `model` | when the agent names it |
 | `created`, `updated`, `ended` | RFC 3339 with offset; `ended` is absent while the session runs, and is cleared again when the session is resumed after it (a SessionStart after the end); `created`'s day is the first report's folder |
 | `end_reason` | with `ended`: `error` (the last turn failed), `clear`, `logout`, `exit`, `other` |
